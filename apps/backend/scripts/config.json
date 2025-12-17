@@ -1,0 +1,25 @@
+{
+
+  "device": "cuda",              
+  "compute_type": "float16",     
+  "model_size": "adi-gov-tw/Taiwan-Tongues-ASR-CE",
+
+
+  "as_dir_path": "D:/AIAworkshop/TranscriptHub_MVP/apps/backend/upload",       
+  "aslc_dir_path": "D:/AIAworkshop/TranscriptHub_MVP/apps/backend/uploadlc",    
+  "tr_dir_path": "D:/AIAworkshop/TranscriptHub_MVP/apps/backend/transcribe",    
+  "log_path": "D:/AIAworkshop/TranscriptHub_MVP/apps/backend/log",              
+
+
+  "batch_size": 4,              
+  "chunk_size": 10,             
+
+
+  "print_progress": false,      
+  "return_char_alignments": false, 
+
+
+  "min_speaker": 1,             
+  "max_speaker": 10             
+}
+

@@ -1,0 +1,28 @@
+{
+  // Compute Configuration
+  "device": "cuda",              // cuda, cpu
+  "compute_type": "float16",     // float16, int8, float32
+  "model_size": "large-v3",      // tiny, base, small, medium, large-v3
+
+  // Directory Paths
+  // path is backend folder
+  "as_dir_path": "/path/to/upload",        // Audio source directory
+  "aslc_dir_path": "/path/to/uploadlc",    // Lowercase audio directory
+  "tr_dir_path": "/path/to/transcribe",    // Transcription output directory
+  "log_path": "/path/to/log",              // Log files directory
+
+  // Processing Parameters
+  "batch_size": 4,              // Number of parallel processes
+  "chunk_size": 10,             // Audio chunk size in seconds
+
+  // Runtime Options
+  "print_progress": false,       // Enable progress logging
+  "return_char_alignments": false, // Enable character-level alignment
+
+  // Speaker Diarization
+  "min_speaker": 1,             // Minimum speaker count
+  "max_speaker": 10             // Maximum speaker count
+}
+
+// Note: Replace all paths and tokens with actual values
+// Do not commit the actual config.json with sensitive data

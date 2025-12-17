@@ -1,0 +1,8 @@
+flask
+torch
+transformers
+accelerate
+bitsandbytes
+scipy
+timm
+einops

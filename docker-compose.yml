@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: transcripthub
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://user:password@postgres/transcripthub
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+
+  celery_worker:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    restart: always
+    command: celery -A app.main.celery_app worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql://user:password@postgres/transcripthub
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+      - backend
+
+  frontend:
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
