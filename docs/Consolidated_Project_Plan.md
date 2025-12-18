@@ -74,7 +74,7 @@
 +--------------------------------+
 |   Backend Gateway (Python/FastAPI) |
 | - WebSocket Handler            |
-| - Auth & User Management       |
+| - Auth & User Management (via NextAuth.js JWT)       |
 | - REST API Endpoints           |
 +--------------------------------+
       |         |         |
@@ -245,10 +245,10 @@
 - **MECE 解構**：
     - **應用程式層**：使用 **Tauri** (Rust + React) 框架，兼顧了執行的效能與前端開發的效率。
     - **儲存層**：**本地優先（Local-first）**架構，所有筆記和逐字稿預設儲存在使用者本機，可能採用 SQLite。
-    - **AI 模型層**：**可插拔設計（Pluggable）**。支援完全離線的本地 LLM（如 **Ollama**, **LM Studio**），同時也提供選項連接到雲端 LLM API（如 Gemini, Claude）。
+    - **AI 模型層**：**可插插拔設計（Pluggable）**。支援完全離線的本地 LLM（如 **Ollama**, **LM Studio**），同時也提供選項連接到雲端 LLM API（如 Gemini, Claude）。
     - **整合層**：支援與 Apple Calendar, Obsidian 等本地應用程式整合，強化個人工作流程。
 - **本專案重構策略**：
-    1.  **強化模型服務的彈性**：`hyprnote` 的可插拔 LLM 策略是重要的啟示。我們的 **LLM Service** 必須設計成一個具有標準化介面的「路由器」，使其能輕易地在不同的 LLM 提供者之間切換。這不僅包括雲端 API，也應預留連接到本地（或企業私有雲）Ollama 服務的選項，以滿足不同客戶的資安等級和成本考量。
+    1.  **強化模型服務的彈性**：`hyprnote` 的可插插拔 LLM 策略是重要的啟示。我們的 **LLM Service** 必須設計成一個具有標準化介面的「路由器」，使其能輕易地在不同的 LLM 提供者之間切換。這不僅包括雲端 API，也應預留連接到本地（或企業私有雲）Ollama 服務的選項，以滿足不同客戶的資安等級和成本考量。
     2.  **使用者為中心的摘要**：其「基於使用者筆記生成個人化摘要」的功能點，為我們的摘要演算法提供了新思路。我們的 **CrewAI** 分析師 Agent 不應只對完整逐字稿進行無差別摘要，而應優先分析使用者在會議中標記的「重點」（Timestamp Markers），並結合這些重點來生成更貼近使用者需求的摘要。
     3.  **探索混合架構**：雖然我們的專案是雲端優先，但 `hyprnote` 的成功驗證了市場對本地化、高隱私方案的需求。在產品的未來藍圖中，可以規劃一個「企業內部部署 (On-Premise)」版本或一個功能有限的「離線版」桌面應用，作為產品線的延伸。
 
@@ -304,6 +304,18 @@
         - **Agent A (記錄員)**：負責清理逐字稿，修正錯別字。
         - **Agent B (分析師)**：根據選定的模板（如 BANT 銷售模板[^1]）提取關鍵資訊。
         - **Agent C (稽核員)**：檢查是否有遺漏的欄位（如「待辦事項」未指定負責人），落實 MeetingInk 提到的治理需求[^1]。
+
+#### 3.1.4 身份驗證與角色管理 (Authentication & RBAC)
+- **評估結論**: 採用 **NextAuth.js (Auth.js)**。
+- **技術依據**: **NextAuth.js** 是 Next.js 生態系統的標準身份驗證函式庫，原生支援多種 Provider，包括 `Credentials Provider` (用於開發階段的本地管理帳號) 與 `Azure AD Provider` (符合正式上線串接 Azure Entra ID 的需求)。
+- **實作策略**:
+    - **Next.js 前端**: 處理登入流程、Session 管理，並在使用者登入後獲取 JWT (JSON Web Token)。
+    - **FastAPI 後端**: 透過驗證前端傳來的 JWT 來保護 API 端點，並根據 JWT 中包含的角色資訊實作 RBAC。
+
+#### 3.1.5 管理介面與 UI 組件 (Admin UI & Components)
+- **評估結論**: 採用 **Shadcn/ui** 或類似的 Tailwind CSS 組件集合。
+- **技術依據**: 專案已使用 **Tailwind CSS**。與 AdminLTE (基於 Bootstrap) 相較，Shadcn/ui 能無縫整合，避免樣式衝突。它提供了一系列可高度自定義、無障礙的 UI 組件，非常適合構建管理儀表板，同時保持專案現有的前端設計哲學。
+- **實作策略**: 在 Next.js 中建立獨立的 `/dashboard` 路由，並利用 Shadcn/ui 組件快速搭建使用者管理、模板管理等功能頁面。
 
 ### 3.2 meetingmind 與 x-meet 前端資訊的深度洞察
 根據 `prompt.md` 中對於這些專案的描述（模擬），我們歸納出以下前端設計規範：
@@ -398,13 +410,41 @@ GCP 部署工程師需構建以下基礎設施：
     - Next.js 前端具備基本的錄音與即時顯示功能。
 - **驗收標準**：即時字幕延遲 < 3 秒，中英夾雜識別率可接受。
 
+### Sprint 4.7: 前端音訊優化與降噪 (Frontend Audio Optimization & Noise Suppression) - New!
+- [ ] **優化任務 (前端)**: **AudioWorklet 遷移** - 將現有基於 `ScriptProcessorNode` 的音訊處理架構，重構為使用 `AudioWorklet`，確保音訊處理在獨立執行緒中進行，避免主執行緒卡頓。
+- [ ] **優化任務 (前端)**: **RNNoise 降噪整合** - 在 `AudioWorklet` 中整合 `sapphi-red/web-noise-suppressor` 庫 (基於 RNNoise WASM)，實現客戶端即時降噪功能，有效過濾背景雜訊。
+- [ ] **測試任務**: 在高噪音環境下，測試前端降噪效果，並確認音訊延遲與 ASR 辨識準確度是否提升。同時，監控 CPU 資源佔用，確保不影響整體前端效能。
+
+---
+
 ### 第二階段：結構化智慧 (第 5-8 週)
-- **目標**：整合 CrewAI 與模板系統。
-- **關鍵產出**：
-    - 實作 Sales, HR, R&D 三大基礎模板。
-    - 完成後端非同步任務隊列（Celery/Redis）。
-    - 前端儀表板支援會議歷史瀏覽與摘要編輯。
-- **驗收標準**：MeetingInk 的 `SCR (Summary Creation Rate)` 指標追蹤機制上線。
+
+### Sprint 7: 會議記錄核心功能與歷史儀表板
+- [ ] **後端任務 (FastAPI)**:
+    - [ ] **非同步任務佇列**: 設置 Celery/Redis 或 FastAPI Background Tasks 處理長時任務。
+    - [ ] **CrewAI 整合**: 實作 CrewAI 代理人協作流 (`Map-Reduce-Extract-Verify`)，處理會議逐字稿生成結構化摘要。
+    - [ ] **文件匯出 API**: 開發 `GET /api/v1/meetings/{id}/download` API，支援 TXT, SRT, JSON, PDF, DOCX 格式轉換與匯出。
+    - [ ] **排程任務**: 設置 Cron Job (或 Cloud Scheduler) 執行資料保留政策檢查與清理。
+- [ ] **前端任務 (Next.js)**:
+    - [ ] **會議列表頁面**: 開發 `/dashboard/meetings` 頁面，展示所有歷史會議，支援分頁與過濾。
+    - [ ] **會議詳情頁面**: 開發 `/dashboard/meetings/{id}` 頁面，展示結構化摘要與原始逐字稿，支援編輯、搜尋、點擊時間戳播放。
+    - [ ] **下載功能**: 在會議詳情頁面提供多格式下載按鈕。
+    - [ ] **狀態通知**: 接收後端推送的摘要生成狀態通知。
+- [ ] **測試任務**:
+    - [ ] 驗證 CrewAI 摘要生成功能的準確性與穩定性。
+    - [ ] 測試所有文件格式的匯出與下載功能。
+    - [ ] 驗證資料保留政策的正確執行。
+
+### Sprint 8: 多媒體上傳與進階整合
+- [ ] **後端任務 (FastAPI)**:
+    - [ ] **檔案上傳 API**: 開發 `POST /api/v1/meetings/upload`，支援大檔案分段上傳與 GCS (或本地) 儲存。
+    - [ ] **上傳後處理**: 觸發非同步任務 (ASR 轉錄、摘要生成)。
+- [ ] **前端任務 (Next.js)**:
+    - [ ] **上傳介面**: 開發使用者友善的檔案上傳介面，包含進度條與狀態顯示。
+    - [ ] **拖曳上傳**: 支援拖曳檔案上傳功能。
+- [ ] **測試任務**:
+    - [ ] 測試不同格式與大小的音訊/影片檔案上傳與完整處理流程。
+    - [ ] 驗證上傳後的逐字稿與摘要的生成準確性。
 
 ### 第三階段：企業級交付 (第 9-12 週)
 - **目標**：資安合規、檔案上傳與匯出。
@@ -530,7 +570,15 @@ GCP 部署工程師需構建以下基礎設施：
     - **任務 (全端)**: 完成前端 UI，包括語言切換按鈕、狀態顯示、美觀的逐字稿列表。
     - **驗收標準**: MVP 所有核心功能在本機環境完美運行。
 
-### 部署階段二：類伺服器平台部署 (Staging Deployment)
+
+### Sprint 4.7: 前端音訊優化與降噪 (Frontend Audio Optimization & Noise Suppression) - New!
+- [ ] **優化任務 (前端)**: **AudioWorklet 遷移** - 將現有基於 `ScriptProcessorNode` 的音訊處理架構，重構為使用 `AudioWorklet`，確保音訊處理在獨立執行緒中進行，避免主執行緒卡頓。
+- [ ] **優化任務 (前端)**: **RNNoise 降噪整合** - 在 `AudioWorklet` 中整合 `sapphi-red/web-noise-suppressor` 庫 (基於 RNNoise WASM)，實現客戶端即時降噪功能，有效過濾背景雜訊。
+- [ ] **測試任務**: 在高噪音環境下，測試前端降噪效果，並確認音訊延遲與 ASR 辨識準確度是否提升。同時，監控 CPU 資源佔用，確保不影響整體前端效能。
+
+---
+
+## 部署階段二：類伺服器平台部署 (Staging Deployment)
 
 - **Sprint 4: 遷移至 Railway/Cloudflare/Neon**
     - **任務 (全端/GCP)**: 將 Next.js 前端部署到 **Cloudflare Pages**。
@@ -541,10 +589,25 @@ GCP 部署工程師需構建以下基礎設施：
         2.  **選項 B**: 在本地保留 ASR 服務，並使用 ngrok 等工具建立通道供 Railway 呼叫（僅供測試）。
     - **驗收標準**: 整個系統在公網環境下可供內部團隊測試。
 
-### 部署階段三：GCP 生產環境部署 (Production Deployment)
+### 部署階段三：GCP 生產環境部署與帳號管控 (Production Deployment & RBAC)
 
-- **Sprint 5: 遷移至 GCP**
+- **Sprint 5: 身份驗證、權限管控與雲端遷移**
+    - **任務 (身份驗證)**:
+        - **資料庫**: 在 Postgres 中新增 `users` 與 `roles` 表，並設定初始 `admin` 帳號。
+        - **後端**: 實作 JWT 驗證機制 (Middleware/Dependency)，保護敏感 API 端點。
+        - **前端**: 安裝 `NextAuth.js`，實作登入頁面與 Session 管理 (開發階段使用 Credentials Provider)。
+    - **任務 (管理後台)**:
+        - **前端**: 使用 `Shadcn/ui` 搭建 `/dashboard` 頁面，提供使用者管理與權限設定介面。
+        - **前端**: 實作基於角色的路由保護 (Role-Based Route Protection)。
     - **任務 (GCP)**: 在 **GKE** 上建立 GPU 節點池，並將容器化的 `Taiwan-Tongues-ASR-CE` 部署上去。
     - **任務 (GCP)**: 將 Railway 上的 FastAPI 與 LLM 服務遷移至 **Cloud Run** 或 GKE。
     - **任務 (全端)**: 將 Cloudflare Pages 的後端 API 指向 GCP 的負載均衡器。
-    - **驗收標準**: MVP 在最終的生產環境上穩定運行，具備高可用性與擴展性。
+    - **驗收標準**: 
+        1. 系統強制要求登入才能使用轉錄服務。
+        2. `admin` 帳號可進入管理後台管理使用者。
+        3. MVP 在最終的生產環境上穩定運行，具備高可用性與擴展性。
+
+- **Sprint 6: Azure Entra ID 整合與正式上線**
+    - **任務 (身份驗證)**: 將 NextAuth.js 的 Provider 切換/新增為 **Azure AD (Entra ID)**，並完成與公司目錄服務的串接測試。
+    - **任務 (資安)**: 執行滲透測試與資安合規性檢查。
+    - **驗收標準**: 內部員工可使用公司帳號直接登入系統。

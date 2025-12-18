@@ -88,7 +88,7 @@ export default function Home() {
   // --- Refs ---
   const socketRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioQueueRef = useRef<ArrayBuffer[]>([]);
@@ -155,30 +155,7 @@ export default function Home() {
     }
   }, [segments, displayMode, fontSize, maxLines]);
 
-  // --- Audio Logic (Identical to previous, condensed) ---
-  const processAudio = useCallback((audioProcessingEvent: AudioProcessingEvent) => {
-    if (!isRecordingRef.current) return;
-    const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
-    let maxAmp = 0;
-    const pcmData = new Int16Array(inputData.length);
-    for (let i = 0; i < inputData.length; i++) {
-      const s = Math.max(-1, Math.min(1, inputData[i]));
-      if (Math.abs(s) > maxAmp) maxAmp = Math.abs(s); 
-      pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-    }
-    if (maxAmp < 0.001) return; // Silence filter
 
-    const socket = socketRef.current;
-    if (socket && socket.readyState === WebSocket.OPEN) {
-        if (audioQueueRef.current.length > 0) {
-            audioQueueRef.current.forEach(chunk => socket.send(chunk));
-            audioQueueRef.current = [];
-        }
-        socket.send(pcmData.buffer);
-    } else {
-        audioQueueRef.current.push(pcmData.buffer);
-    }
-  }, []);
 
   const initAudio = async () => {
       let stream: MediaStream;
@@ -202,13 +179,51 @@ export default function Home() {
       audioContextRef.current = audioContext;
       const source = audioContext.createMediaStreamSource(stream);
       sourceRef.current = source;
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      processor.onaudioprocess = processAudio;
-      processorRef.current = processor;
-      source.connect(processor);
-      processor.connect(audioContext.destination);
+      
+      // Load and create AudioWorkletNode
+      await audioContext.audioWorklet.addModule('/audio-worklet-processor.js'); // Path needs to be relative to public dir or build output
+      const audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-pass-through-processor');
+      audioWorkletNodeRef.current = audioWorkletNode; // Store ref for disconnection
+
+      // Send initialization message to AudioWorklet
+      // This path assumes rnnoise.wasm is copied to /public/rnnoise-wasm/
+      const wasmFilePath = '/rnnoise-wasm/rnnoise.wasm'; 
+      const frameSize = 480; // Common frame size for RNNoise at 16kHz (30ms)
+      audioWorkletNode.port.postMessage({
+        type: 'init',
+        wasmFilePath,
+        sampleRate: SAMPLE_RATE,
+        frameSize: frameSize
+      });
+
+      // Handle messages from the AudioWorklet (processed audio data)
+      audioWorkletNode.port.onmessage = (event) => {
+        if (event.data.type === 'initialized') {
+            console.log('AudioWorkletProcessor initialized successfully.');
+            // Optionally update a state here to indicate worklet is ready
+            return;
+        }
+
+        if (!isRecordingRef.current) return;
+        const pcmDataBuffer = event.data;
+        const socket = socketRef.current;
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            if (audioQueueRef.current.length > 0) {
+                audioQueueRef.current.forEach(chunk => socket.send(chunk));
+                audioQueueRef.current = [];
+            }
+            socket.send(pcmDataBuffer);
+        } else {
+            audioQueueRef.current.push(pcmDataBuffer);
+        }
+      };
+
+      // Connect source to AudioWorkletNode and then to destination
+      source.connect(audioWorkletNode);
+      audioWorkletNode.connect(audioContext.destination);
+
       if (audioContext.state === 'suspended') await audioContext.resume();
-      // Stop video track if system audio
+      // Stop video track if system audio (for getDisplayMedia)
       if (audioSource === 'system') stream.getVideoTracks().forEach(t => t.stop());
   };
 
@@ -258,7 +273,7 @@ export default function Home() {
     setStatus("idle");
     if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
     if (sourceRef.current) { sourceRef.current.disconnect(); sourceRef.current = null; }
-    if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
+    if (audioWorkletNodeRef.current) { audioWorkletNodeRef.current.disconnect(); audioWorkletNodeRef.current = null; }
     if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
     if (socketRef.current) { if (socketRef.current.readyState === WebSocket.OPEN) socketRef.current.close(); socketRef.current = null; }
   };

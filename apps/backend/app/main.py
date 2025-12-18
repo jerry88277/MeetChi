@@ -30,9 +30,9 @@ LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://localhost:5000") # New LL
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Celery Configuration (Temporarily commented out for Sprint 1 simplicity)
-# REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-# celery_app = Celery("transcripthub", broker=REDIS_URL, backend=REDIS_URL)
+# Celery App Import
+from app.celery_app import celery_app
+from app.tasks import generate_meeting_minutes
 
 # FastAPI App
 app = FastAPI()
@@ -46,9 +46,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging for main app
-import sys
-from logging.handlers import TimedRotatingFileHandler
+# ... (Logging configuration remains same) ...
+
+# --- API Endpoints ---
+
+@app.post("/api/v1/meetings/{meeting_id}/generate-summary")
+def trigger_summary_generation(meeting_id: str, template_type: str = "general", db: Session = Depends(get_db)):
+    """
+    Trigger background task to generate meeting minutes.
+    """
+    # In a real app, verify meeting exists first
+    task = generate_meeting_minutes.delay(meeting_id, template_type)
+    return {"message": "Summary generation started", "task_id": task.id}
+
+@app.get("/api/v1/meetings")
+def list_meetings(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """
+    List historical meetings.
+    """
+    # Placeholder: return mock data or query DB
+    # meetings = db.query(Meeting).offset(skip).limit(limit).all()
+    return []
+
+@app.get("/api/v1/meetings/{meeting_id}")
+def get_meeting(meeting_id: str, db: Session = Depends(get_db)):
+    """
+    Get meeting details including transcript and summary.
+    """
+    # Placeholder
+    return {"id": meeting_id, "title": "Mock Meeting", "transcript": [], "summary": {}}
+
+
 
 # Ensure log directory exists
 LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "log")
@@ -120,12 +148,7 @@ def db_test(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database connection failed: {e}")
 
-# Celery Task (Temporarily commented out for Sprint 1 simplicity)
-# @celery_app.task
-# def example_task(word):
-#     return f"Processed word: {word}"
 
-import whisperx # Import whisperx for loading audio
 import time # Import time for partial transcription throttling
 import json # Import json for config parsing
 
