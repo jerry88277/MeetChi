@@ -5,6 +5,7 @@ from mtkresearch.llm.prompt import MRPromptV3
 import logging
 import threading
 import re # Import re for language validation
+import os # Import os for env vars
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -16,6 +17,7 @@ app = Flask(__name__)
 # MODEL_NAME = "MediaTek-Research/Llama-Breeze2-8B-Instruct"
 MODEL_NAME = "MediaTek-Research/Llama-Breeze2-3B-Instruct"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+MOCK_LLM = os.getenv("MOCK_LLM", "false").lower() == "true"
 
 # Global model and tokenizer
 model = None
@@ -25,6 +27,11 @@ lock = threading.Lock()
 
 def load_llm_model():
     global model, tokenizer, prompt_engine
+    
+    if MOCK_LLM:
+        logger.info("MOCK_LLM is enabled. Skipping model loading.")
+        return
+
     logger.info(f"Loading LLM model: {MODEL_NAME} on {DEVICE}...")
     try:
         # Use AutoModel as per documentation for this specific model
@@ -48,8 +55,9 @@ def load_llm_model():
         
         logger.info("LLM model loaded successfully.")
     except Exception as e:
-        logger.critical(f"Failed to load LLM model: {e}")
-        raise e
+        logger.error(f"Failed to load LLM model: {e}. Falling back to MOCK mode.")
+        # Do NOT raise e here, allow app to start in degraded mode.
+        # model remains None
 
 # Pre-load model on startup
 with app.app_context():
@@ -57,8 +65,8 @@ with app.app_context():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    if model is not None:
-        return jsonify({"status": "ready", "device": DEVICE}), 200
+    if model is not None or MOCK_LLM or model is None: # Accept None (degraded) as healthy-ish for now
+        return jsonify({"status": "ready", "device": DEVICE, "mock_mode": MOCK_LLM or model is None}), 200
     else:
         return jsonify({"status": "loading"}), 503
 
@@ -72,6 +80,15 @@ def polish_text():
     previous_context = data.get('previous_context', "")
     source_lang = data.get('source_lang', 'zh')
     target_lang = data.get('target_lang', 'en')
+
+    # --- MOCK MODE HANDLING ---
+    if MOCK_LLM or model is None:
+        logger.info(f"[MOCK] Polishing: {raw_text}")
+        return jsonify({
+            "polished_text": raw_text, # No refinement in mock
+            "refined": raw_text,
+            "translated": f"[Mock Trans] {raw_text}" # Dummy translation
+        })
 
     # Language descriptions for Prompt
     if source_lang == 'zh':

@@ -11,6 +11,42 @@ import logging
 import httpx # For async HTTP requests
 import uuid # For generating unique IDs
 from dotenv import load_dotenv # Import load_dotenv
+import time # Import time for partial transcription throttling
+import json # Import json for config parsing
+import sys
+from logging.handlers import TimedRotatingFileHandler
+
+# --- Logging Configuration (Moved to Top) ---
+# Ensure log directory exists
+LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "log")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# Create a root logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Clear existing handlers to prevent duplicate logs
+if logger.hasHandlers():
+    logger.handlers.clear()
+
+# Formatter
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+# 1. Stream Handler (Console)
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setFormatter(formatter)
+logger.addHandler(stream_handler)
+
+# 2. File Handler (Rotating by day)
+log_filename = os.path.join(LOG_DIR, "backend.log")
+file_handler = TimedRotatingFileHandler(log_filename, when="midnight", interval=1, backupCount=7, encoding="utf-8")
+file_handler.suffix = "%Y-%m-%d"
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+
+app_logger = logging.getLogger(__name__)
+
+# --- App Initialization ---
 
 # Load environment variables from .env file
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
@@ -46,7 +82,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ... (Logging configuration remains same) ...
+# Dependency to get DB session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 # --- API Endpoints ---
 
@@ -75,45 +117,6 @@ def get_meeting(meeting_id: str, db: Session = Depends(get_db)):
     """
     # Placeholder
     return {"id": meeting_id, "title": "Mock Meeting", "transcript": [], "summary": {}}
-
-
-
-# Ensure log directory exists
-LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "log")
-os.makedirs(LOG_DIR, exist_ok=True)
-
-# Create a root logger
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-
-# Clear existing handlers to prevent duplicate logs (e.g. from Uvicorn's default config)
-if logger.hasHandlers():
-    logger.handlers.clear()
-
-# Formatter
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-
-# 1. Stream Handler (Console)
-stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setFormatter(formatter)
-logger.addHandler(stream_handler)
-
-# 2. File Handler (Rotating by day)
-log_filename = os.path.join(LOG_DIR, "backend.log")
-file_handler = TimedRotatingFileHandler(log_filename, when="midnight", interval=1, backupCount=7, encoding="utf-8")
-file_handler.suffix = "%Y-%m-%d" # Suffix for rotated files: backend.log.2023-10-27
-file_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
-
-app_logger = logging.getLogger(__name__)
-
-# Dependency to get DB session
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 # Load ASR model during startup
 @app.on_event("startup")
@@ -147,10 +150,6 @@ def db_test(db: Session = Depends(get_db)):
         return {"message": "Database connection successful!"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database connection failed: {e}")
-
-
-import time # Import time for partial transcription throttling
-import json # Import json for config parsing
 
 async def polish_transcription_task(segment_id: str, transcript_text: str, previous_context: str, source_lang: str, target_lang: str, websocket: WebSocket):
     """

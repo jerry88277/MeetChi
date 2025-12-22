@@ -34,3 +34,6 @@ uvicorn==0.38.0
 vine==5.1.0
 wcwidth==0.2.14
 alembic==1.13.2
+
+crewai
+langchain_openai

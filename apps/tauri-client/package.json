@@ -1,5 +1,5 @@
 {
-  "name": "TranscriptHub_MVP",
+  "name": "tauri-client",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,21 +9,22 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "lucide-react": "^0.556.0",
-    "next": "16.0.1",
-    "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "@tauri-apps/api": "^2.9.1",
+    "lucide-react": "^0.562.0",
+    "next": "16.1.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@tauri-apps/cli": "^2.9.6",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
-    "eslint-config-next": "16.0.1",
+    "eslint-config-next": "16.1.0",
     "tailwindcss": "^4",
     "typescript": "^5"
-  },
-  "license": "ISC"
+  }
 }
