@@ -29,13 +29,15 @@
       {
         "label": "settings",
         "title": "TranscriptHub Settings",
+        "url": "/settings",
         "width": 400,
         "height": 600,
-        "resizable": false,
+        "resizable": true,
         "fullscreen": false,
-        "transparent": false,
-        "decorations": true,
+        "transparent": true,
+        "decorations": false,
         "alwaysOnTop": false,
+        "shadow": false,
         "visible": false
       }
     ],
@@ -52,6 +54,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/silero_vad.onnx"
     ]
   }
 }
