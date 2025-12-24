@@ -4,7 +4,8 @@ use ringbuf::{HeapRb, traits::{Producer, Consumer, Split, Observer}};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Emitter};
-use anyhow::{Result, anyhow};
+// Remove unused imports to keep it clean
+// use anyhow::{Result, anyhow};
 use std::sync::mpsc;
 use std::error::Error;
 use webrtc_vad::{Vad, SampleRate as VadSampleRate, VadMode};
