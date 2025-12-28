@@ -18,6 +18,9 @@ Thumbs.db
 .env.test.local
 .env.production.local
 
+# Database config
+apps/backend/alembic.ini
+
 # Next.js build output
 apps/frontend/.next/
 apps/frontend/out/
@@ -27,6 +30,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 *.log
+*.log.*
+apps/backend/log/
+apps/llm_service/log/
 
 # Large Media Files
 *.mp4

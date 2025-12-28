@@ -13,12 +13,15 @@ from mtkresearch.llm.prompt import MRPromptV3 # New import
 app = FastAPI()
 
 # --- Hugging Face Login (for models requiring authentication) ---
-HF_TOKEN = os.getenv("HF_TOKEN", "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") # Use env var or default
-if HF_TOKEN:
-    login(token=HF_TOKEN)
-    print("Logged into Hugging Face Hub.")
-else:
-    print("WARNING: HF_TOKEN not found. Model download/access might fail if authentication is required.")
+HF_TOKEN = os.getenv("HF_TOKEN")
+if not HF_TOKEN:
+    # Fallback or raise error. Ideally raise error in production.
+    # For now, let's just log a warning if possible, or raise.
+    # Given this is a script, raising is better.
+    print("Warning: HF_TOKEN not set. Some features may not work.")
+    HF_TOKEN = "" 
+
+login(token=HF_TOKEN)
 
 # --- Model and Tokenizer Initialization ---
 model = None
