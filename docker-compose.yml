@@ -2,12 +2,12 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:alpine
     restart: always
     environment:
-      POSTGRES_DB: transcripthub
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      POSTGRES_DB: MeetChi
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 5352e930
     ports:
       - "5432:5432"
     volumes:
@@ -19,6 +19,17 @@ services:
     ports:
       - "6379:6379"
 
+  llm_service:
+    build:
+      context: ./apps/llm_service
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      # Set to true if you don't want to load heavy models in docker
+      MOCK_LLM: "true" 
+
   backend:
     build:
       context: ./apps/backend
@@ -27,11 +38,14 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://user:password@postgres/transcripthub
+      # IMPORTANT: Use service name 'postgres', not localhost
+      DATABASE_URL: postgresql://postgres:5352e930@postgres:5432/MeetChi
       REDIS_URL: redis://redis:6379/0
+      LLM_SERVICE_URL: http://llm_service:5000
     depends_on:
       - postgres
       - redis
+      - llm_service
 
   celery_worker:
     build:
@@ -40,22 +54,14 @@ services:
     restart: always
     command: celery -A app.main.celery_app worker --loglevel=info
     environment:
-      DATABASE_URL: postgresql://user:password@postgres/transcripthub
+      DATABASE_URL: postgresql://postgres:5352e930@postgres:5432/MeetChi
       REDIS_URL: redis://redis:6379/0
+      LLM_SERVICE_URL: http://llm_service:5000
     depends_on:
       - postgres
       - redis
       - backend
-
-  frontend:
-    build:
-      context: ./apps/frontend
-      dockerfile: Dockerfile
-    restart: always
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
+      - llm_service
 
 volumes:
   postgres_data:

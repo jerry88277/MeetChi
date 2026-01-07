@@ -39,7 +39,9 @@ impl AudioProcessor {
         &mut self,
         app_handle: AppHandle,
         device_id: String,
-        vad_threshold: f32, 
+        vad_threshold: f32,
+        meeting_id: String,
+        overlap_duration: f32, // <-- New parameter
     ) -> Result<(), String> {
         if *self.stream_active.lock().unwrap() {
             return Err("Audio stream already running".into());
@@ -55,9 +57,24 @@ impl AudioProcessor {
         let (ws_stream, _) = rt.block_on(connect_async(url.to_string()))
             .map_err(|e| format!("Failed to connect to backend: {}", e))?;
             
+        let (mut write, mut read) = ws_stream.split(); // Split immediately
+            
         log::info!("WebSocket connected");
 
-        let (mut write, mut read) = ws_stream.split();
+        // --- Send Config Message ---
+        let config_msg = serde_json::json!({
+            "type": "config",
+            "meeting_id": meeting_id,
+            "source_lang": "zh",
+            "target_lang": "en",
+            "overlap_duration": overlap_duration // <-- Send to backend
+        });
+        let config_msg_str = config_msg.to_string();
+        rt.block_on(write.send(Message::Text(config_msg_str))) 
+            .map_err(|e| format!("Failed to send config to WS: {}", e))?;
+        log::info!("Sent config to WebSocket with meeting_id: {}", meeting_id);
+
+
         let (audio_tx, mut audio_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
 
         // Writer Task

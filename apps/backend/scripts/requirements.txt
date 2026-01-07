@@ -1,6 +1,8 @@
-ffmpeg-python==0.2.0
 whisperx
 opencc-python-reimplemented
-python-dotenv
-huggingface-hub
-hf_xet
+ckip-transformers
+torch # required by whisperx and pyannote
+omegaconf
+huggingface_hub
+pyannote.audio
+ffmpeg-python # Python wrapper for ffmpeg

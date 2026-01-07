@@ -1,88 +1,73 @@
-from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, status, BackgroundTasks
+from fastapi.responses import JSONResponse # Import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware # Import CORSMiddleware
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import create_engine, String, DateTime, Text, Enum, Float, Boolean, Integer, desc # Import missing types
+from sqlalchemy.orm import sessionmaker, Session, relationship # Import relationship for eager loading
+from sqlalchemy.ext.declarative import declarative_base # Need to re-declare Base
+from sqlalchemy import Column, ForeignKey # Need Column and ForeignKey
+from sqlalchemy.orm import selectinload # New: For eager loading relationships
+
 import os
 import io
 import asyncio
 import numpy as np
 import logging
 import httpx # For async HTTP requests
-import uuid # For generating unique IDs
-from dotenv import load_dotenv # Import load_dotenv
-import time # Import time for partial transcription throttling
-import json # Import json for config parsing
+import uuid # For UUID generation
+from datetime import datetime # For datetime fields
+from dotenv import load_dotenv
+import time
+import json
 import sys
 from logging.handlers import TimedRotatingFileHandler
+from pydantic import BaseModel, Field
+from typing import List, Optional
+import wave # <-- New import
 
-# --- Logging Configuration (Moved to Top) ---
-# Ensure log directory exists
+# --- Logging Configuration ---
 LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "log")
 os.makedirs(LOG_DIR, exist_ok=True)
-
-# Create a root logger
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-
-# Clear existing handlers to prevent duplicate logs
 if logger.hasHandlers():
     logger.handlers.clear()
-
-# Formatter
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-
-# 1. Stream Handler (Console)
 stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
-
-# 2. File Handler (Rotating by day)
 log_filename = os.path.join(LOG_DIR, "backend.log")
 file_handler = TimedRotatingFileHandler(log_filename, when="midnight", interval=1, backupCount=7, encoding="utf-8")
 file_handler.suffix = "%Y-%m-%d"
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
-
 app_logger = logging.getLogger(__name__)
 
 # --- App Initialization ---
-
-# Load environment variables from .env file
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
-# Import models to ensure they are registered with SQLAlchemy Base
-from app.models import Base, Meeting, Artifact, TaskStatus
-from app.vad import VADAudioBuffer # Import VAD Logic
-
-# Import ASR transcription function
-# With PYTHONPATH="apps/backend", 'scripts' is a top-level package
+# --- Re-declare Base if needed, or import from models.py ---
+# Assuming Base is already declared in models.py and imported via 'from app.models import Base, ...'
+from app.models import Base, Meeting, TranscriptSegment, Artifact, TaskStatus # Import all relevant models
+from app.vad import VADAudioBuffer
 from scripts.transcribe_sprint0 import get_transcription, load_asr_model, logger as asr_logger 
 
-# Database Configuration
-# Default to a local SQLite for basic testing if DATABASE_URL is not set
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sql_app.db")
-LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://localhost:5000") # New LLM Service URL
+LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://localhost:5000")
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Celery App Import
 from app.celery_app import celery_app
-from app.tasks import generate_meeting_minutes
+from app.tasks import generate_meeting_minutes # Assuming this task exists
 
-# FastAPI App
 app = FastAPI()
-
-# Add CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allow all origins for development
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Dependency to get DB session
 def get_db():
     db = SessionLocal()
     try:
@@ -90,51 +75,246 @@ def get_db():
     finally:
         db.close()
 
+# --- Pydantic Models for API ---
+class TranscriptSegmentRead(BaseModel):
+    id: str
+    order: int
+    start_time: float
+    end_time: float
+    speaker: Optional[str]
+    content_raw: str
+    content_polished: Optional[str]
+    content_translated: Optional[str]
+    is_final: bool
+
+    class Config:
+        from_attributes = True
+
+class TranscriptSegmentCreate(BaseModel):
+    id: Optional[str] = None
+    order: int
+    start_time: float
+    end_time: float
+    speaker: Optional[str] = None
+    content_raw: str
+    content_polished: Optional[str] = None
+    content_translated: Optional[str] = None
+    is_final: bool
+
+class MeetingRead(BaseModel):
+    id: str
+    title: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    duration: Optional[float]
+    audio_url: Optional[str]
+    language: str
+    template_name: str
+    transcript_raw: Optional[str]
+    transcript_polished: Optional[str]
+    summary_json: Optional[str]
+    
+    transcript_segments: List[TranscriptSegmentRead] = [] # Include segments for detail view
+
+    class Config:
+        from_attributes = True
+
+class MeetingCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    language: str = Field("zh", min_length=2, max_length=10)
+    template_name: str = Field("general", min_length=1, max_length=50)
+
+class SummarizeRequestModel(BaseModel):
+    transcript: str
+    template_name: str = "general"
+
+class SummarizeResponseModel(BaseModel):
+    summary: str
+    action_items: List[str]
+    decisions: List[str]
+    risks: List[str]
+
+
 # --- API Endpoints ---
 
-@app.post("/api/v1/meetings/{meeting_id}/generate-summary")
-def trigger_summary_generation(meeting_id: str, template_type: str = "general", db: Session = Depends(get_db)):
+@app.post("/api/v1/meetings", response_model=MeetingRead, status_code=status.HTTP_201_CREATED)
+async def create_meeting(meeting_data: MeetingCreate, db: Session = Depends(get_db)):
     """
-    Trigger background task to generate meeting minutes.
+    Creates a new meeting entry.
     """
-    # In a real app, verify meeting exists first
-    task = generate_meeting_minutes.delay(meeting_id, template_type)
-    return {"message": "Summary generation started", "task_id": task.id}
+    db_meeting = Meeting(
+        title=meeting_data.title,
+        language=meeting_data.language,
+        template_name=meeting_data.template_name
+    )
+    db.add(db_meeting)
+    db.commit()
+    db.refresh(db_meeting) # Refresh to get ID and other defaults
+    return MeetingRead.from_orm(db_meeting) # Return Pydantic model
 
-@app.get("/api/v1/meetings")
-def list_meetings(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+@app.get("/api/v1/meetings", response_model=List[MeetingRead])
+async def list_meetings(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """
     List historical meetings.
     """
-    # Placeholder: return mock data or query DB
-    # meetings = db.query(Meeting).offset(skip).limit(limit).all()
-    return []
+    meetings = db.query(Meeting).options(
+        # Load segments if needed, or keep it light for list view
+        # selectinload(Meeting.transcript_segments)
+    ).order_by(desc(Meeting.created_at)).offset(skip).limit(limit).all()
+    return [MeetingRead.from_orm(m) for m in meetings]
 
-@app.get("/api/v1/meetings/{meeting_id}")
-def get_meeting(meeting_id: str, db: Session = Depends(get_db)):
+@app.get("/api/v1/meetings/{meeting_id}", response_model=MeetingRead)
+async def get_meeting(meeting_id: str, db: Session = Depends(get_db)):
     """
     Get meeting details including transcript and summary.
     """
-    # Placeholder
-    return {"id": meeting_id, "title": "Mock Meeting", "transcript": [], "summary": {}}
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).options(
+        selectinload(Meeting.transcript_segments), # Eager load segments
+    ).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    return MeetingRead.from_orm(meeting)
+
+@app.post("/api/v1/meetings/{meeting_id}/add_segments")
+async def add_transcript_segments(meeting_id: str, segments: List[TranscriptSegmentCreate], db: Session = Depends(get_db)):
+    """
+    Adds a list of transcript segments to a specific meeting.
+    This is typically called after a recording has finished.
+    """
+    db_meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not db_meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    new_segments = []
+    for segment_data in segments:
+        data = segment_data.dict(exclude_unset=True)
+        if "id" not in data or data["id"] is None:
+            data["id"] = str(uuid.uuid4())
+        new_segment = TranscriptSegment(**data, meeting_id=meeting_id) # Assign meeting_id
+        db.add(new_segment)
+        new_segments.append(new_segment)
+    
+    db.commit()
+    db.refresh(db_meeting) 
+    return {"message": f"Added {len(new_segments)} segments to meeting {meeting_id}"}
+
+
+@app.post("/api/v1/meetings/{meeting_id}/generate-summary")
+def trigger_summary_generation(
+    meeting_id: str, 
+    template_type: str = "general", 
+    context: str = "",
+    length: str = "medium",
+    style: str = "formal",
+    background_tasks: BackgroundTasks = None, 
+    db: Session = Depends(get_db)
+):
+    """
+    Trigger background task to generate meeting minutes.
+    FORCE FALLBACK MODE: Skip Celery to avoid Redis connection timeouts in dev environment without Redis.
+    """
+    app_logger.info(f"Triggering local background summary for {meeting_id}")
+    
+    # Fallback: Run in background task (local thread)
+    from app.tasks import generate_summary_core
+    background_tasks.add_task(generate_summary_core, meeting_id, template_type, context, length, style)
+    
+    return JSONResponse(
+        content={"message": "Summary generation started (Local Force)", "task_id": "local-force"},
+        status_code=status.HTTP_200_OK
+    )
+
+CORRECTIONS_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "corrections.json")
+
+@app.get("/api/v1/settings/corrections")
+async def get_corrections():
+    """Get current keyword correction rules."""
+    if os.path.exists(CORRECTIONS_CONFIG_PATH):
+        with open(CORRECTIONS_CONFIG_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+@app.post("/api/v1/settings/corrections")
+async def update_corrections(corrections: dict):
+    """Update keyword correction rules."""
+    try:
+        with open(CORRECTIONS_CONFIG_PATH, 'w', encoding='utf-8') as f:
+            json.dump(corrections, f, ensure_ascii=False, indent=4)
+        return {"message": "Corrections updated"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save corrections: {e}")
+
+@app.delete("/api/v1/meetings/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_meeting(meeting_id: str, db: Session = Depends(get_db)):
+    """
+    Delete a meeting and its associated resources (audio file, transcripts).
+    """
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    # 1. Delete Audio File
+    if meeting.audio_url and os.path.exists(meeting.audio_url):
+        try:
+            os.remove(meeting.audio_url)
+            app_logger.info(f"Deleted audio file: {meeting.audio_url}")
+        except Exception as e:
+            app_logger.error(f"Failed to delete audio file {meeting.audio_url}: {e}")
+
+    # 2. Delete Transcripts (Cascade delete handles this usually, but let's be explicit if needed)
+    # SQLAlchemy relationship with cascade="all, delete" is preferred, but manual for now:
+    db.query(TranscriptSegment).filter(TranscriptSegment.meeting_id == meeting_id).delete()
+    
+    # 3. Delete Meeting Record
+    db.delete(meeting)
+    db.commit()
+    
+    return None
+
+@app.post("/api/v1/summarize", response_model=SummarizeResponseModel)
+async def summarize_full_transcript(request_data: SummarizeRequestModel):
+    """
+    Triggers a summarization task for a full transcript using the LLM service.
+    """
+    app_logger.info(f"Received summarization request for transcript (len: {len(request_data.transcript)}) with template: {request_data.template_name}")
+    try:
+        async with httpx.AsyncClient() as client:
+            llm_response = await client.post(
+                f"{LLM_SERVICE_URL}/summarize",
+                json={
+                    "text": request_data.transcript,
+                    "template_name": request_data.template_name
+                },
+                timeout=120.0 # Longer timeout for summarization
+            )
+            llm_response.raise_for_status()
+            summary_data = llm_response.json()
+            
+            return SummarizeResponseModel(
+                summary=summary_data.get("summary", "無法生成摘要。"),
+                action_items=summary_data.get("action_items", []),
+                decisions=summary_data.get("decisions", []),
+                risks=summary_data.get("risks", [])
+            )
+    except Exception as e:
+        app_logger.error(f"Error calling LLM /summarize service: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to generate summary: {e}")
+
 
 # Load ASR model during startup
 @app.on_event("startup")
 async def on_startup():
     app_logger.info("Application startup event triggered.")
-    # Create database tables if they don't exist (only for SQLite or if DB user has rights)
-    # For Neon, tables will likely be managed externally or by alembic migrations.
     Base.metadata.create_all(bind=engine)
     app_logger.info("Database tables checked/created.")
     
-    # Pre-load ASR model. Use asyncio.to_thread for blocking call in async context
     app_logger.info("Pre-loading ASR model...")
     try:
         await asyncio.to_thread(load_asr_model)
         app_logger.info("ASR model pre-loaded successfully.")
     except Exception as e:
         app_logger.critical(f"Failed to pre-load ASR model during startup: {e}")
-        # Depending on criticality, might raise exception to prevent app startup
         raise RuntimeError("ASR model pre-loading failed. Cannot start application.") from e
 
 @app.get("/")
@@ -144,9 +324,7 @@ def read_root():
 @app.get("/db-test")
 def db_test(db: Session = Depends(get_db)):
     try:
-        # Try to query something simple to test connection
-        # db.execute("SELECT 1") # Use session.execute for SQLAlchemy 2.0
-        db.scalar("SELECT 1") # Use scalar for simple select 1
+        db.scalar("SELECT 1")
         return {"message": "Database connection successful!"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database connection failed: {e}")
@@ -215,17 +393,28 @@ async def polish_transcription_task(segment_id: str, transcript_text: str, previ
 
 # WebSocket Endpoint for Real-time Transcription
 @app.websocket("/ws/transcribe")
-async def websocket_transcribe(websocket: WebSocket):
+async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_db)): # Inject DB session
     await websocket.accept()
     app_logger.info(f"WebSocket client {websocket.client.host}:{websocket.client.port} connected for transcription.")
 
+    # --- Audio Recording Setup ---
+    AUDIO_SAVE_DIR = os.path.join(os.path.dirname(__file__), "..", "transcribe", "audio")
+    os.makedirs(AUDIO_SAVE_DIR, exist_ok=True) # Ensure dir exists
+    audio_file_path = os.path.join(AUDIO_SAVE_DIR, f"{uuid.uuid4()}.wav")
+    wav_file = None 
+    
+    # Store meeting_id received from frontend for associating audio
+    current_meeting_id: Optional[str] = None
+
     # Initialize VAD Buffer (Defaults from vad.py: 5.0s max)
     RATE = 16000
+    CHANNELS = 1
+    SAMPLE_WIDTH = 2 # 16-bit audio
     vad_buffer = VADAudioBuffer(
         sample_rate=RATE, 
-        silence_threshold=0.4, 
-        min_silence_duration=0.8, 
-        max_duration=3
+        silence_threshold=0.3, 
+        min_silence_duration=0.6, 
+        max_duration=7
     )
     
     # Pseudo-streaming state
@@ -235,7 +424,8 @@ async def websocket_transcribe(websocket: WebSocket):
     
     # --- Overlapping Window Buffer ---
     # Store history of processed audio to prepend to next segment
-    OVERLAP_DURATION_SECONDS = 0.2 # How much previous audio to overlap
+    # Set to 0.0 to prevent duplication issues, relying on VAD to split at silence.
+    OVERLAP_DURATION_SECONDS = 0.0 
     last_flushed_segment_np = np.array([], dtype=np.float32) # Store the last VAD-flushed segment
     
     # Language Configuration (Default: ZH -> EN)
@@ -260,7 +450,15 @@ async def websocket_transcribe(websocket: WebSocket):
                         source_lang = config.get("source_lang", source_lang)
                         target_lang = config.get("target_lang", target_lang)
                         custom_initial_prompt = config.get("initial_prompt", "")
-                        app_logger.info(f"Config updated: {source_lang} -> {target_lang} | Prompt len: {len(custom_initial_prompt)}")
+                        # Receive meeting_id from frontend (essential for saving audio_url)
+                        if "meeting_id" in config:
+                            current_meeting_id = config["meeting_id"]
+                            app_logger.info(f"Received meeting_id: {current_meeting_id}")
+                        
+                        if "overlap_duration" in config:
+                            OVERLAP_DURATION_SECONDS = float(config["overlap_duration"])
+                            
+                        app_logger.info(f"Config updated: {source_lang} -> {target_lang} | Prompt len: {len(custom_initial_prompt)} | Overlap: {OVERLAP_DURATION_SECONDS}")
                 except Exception as e:
                     app_logger.error(f"Failed to parse config message: {e}")
                 continue # Skip audio processing for this loop iteration
@@ -271,6 +469,17 @@ async def websocket_transcribe(websocket: WebSocket):
                 if first_audio_time is None:
                     first_audio_time = time.time()
                     app_logger.info("First audio packet received. Starting forced speech window.")
+                
+                # --- Audio File Writing ---
+                if wav_file is None:
+                    wav_file = wave.open(audio_file_path, 'wb')
+                    wav_file.setnchannels(CHANNELS)
+                    wav_file.setsampwidth(SAMPLE_WIDTH)
+                    wav_file.setframerate(RATE)
+                    app_logger.info(f"Opened WAV file for writing: {audio_file_path}")
+                wav_file.writeframes(data) # Write raw bytes
+                # --- End Audio File Writing ---
+
             else:
                 continue # Should not happen if receive() returns correctly
             
@@ -328,8 +537,9 @@ async def websocket_transcribe(websocket: WebSocket):
                         # Longer timeout (e.g., 10s) to accommodate potentially slow ASR or longer segments
                         transcript_text = await asyncio.wait_for(
                             asyncio.to_thread(get_transcription, audio_for_transcription, source_lang, combined_prompt),
-                            timeout=10.0 
+                            timeout=20.0 
                         )
+                        app_logger.info(f"ASR Output: '{transcript_text}'") # Log ASR output for debugging
                     except asyncio.TimeoutError:
                         app_logger.error(f"ASR transcription timed out for segment {current_segment_id}. Skipping segment.")
                         transcript_text = "" # Treat as empty on timeout
@@ -366,7 +576,13 @@ async def websocket_transcribe(websocket: WebSocket):
                         last_partial_time = time.time()
 
                     else:
-                        app_logger.debug("Received empty transcription from ASR.")
+                        app_logger.info(f"Received empty transcription from ASR for [{current_segment_id}]. Clearing partial.")
+                        # Send empty raw to finalize/clear the partial on frontend
+                        await websocket.send_json({
+                            "type": "raw",
+                            "id": current_segment_id,
+                            "content": "" 
+                        })
                         # Reset ID anyway to prevent Partial ghosting if previous was noise
                         current_segment_id = str(uuid.uuid4())
                         last_partial_time = time.time()
@@ -382,4 +598,14 @@ async def websocket_transcribe(websocket: WebSocket):
     except Exception as e:
         app_logger.error(f"WebSocket error: {e}", exc_info=True)
     finally:
-        app_logger.info(f"Closing WebSocket connection for {websocket.client.host}:{websocket.client.port}.")
+        if wav_file:
+            wav_file.close()
+            app_logger.info(f"Closed WAV file: {audio_file_path}")
+            
+            # Update Meeting's audio_url
+            if current_meeting_id:
+                meeting_to_update = db.query(Meeting).filter(Meeting.id == current_meeting_id).first()
+                if meeting_to_update:
+                    meeting_to_update.audio_url = audio_file_path
+                    db.commit()
+                    app_logger.info(f"Updated meeting {current_meeting_id} with audio_url: {audio_file_path}")

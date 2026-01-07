@@ -1,8 +1,9 @@
 {
 
   "device": "cuda",              
-  "compute_type": "float16",     
-  "model_size": "adi-gov-tw/Taiwan-Tongues-ASR-CE",
+  "compute_type": "float16",       
+  "model_size": "SoybeanMilk/faster-whisper-Breeze-ASR-25",
+  
 
 
   "as_dir_path": "D:/AIAworkshop/TranscriptHub_MVP/apps/backend/upload",       

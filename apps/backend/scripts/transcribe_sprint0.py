@@ -5,6 +5,8 @@ import torch
 from faster_whisper import WhisperModel # Import faster_whisper
 import numpy as np
 import ffmpeg # For audio processing utilities if needed for file input
+import string # For string manipulation in Hallucination Filter
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -12,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 # Global model variable to cache the loaded model
 MODEL = None
-# MODEL_NAME = "large-v3" # Upgrade to large-v3 for better accuracy
 MODEL_NAME = "SoybeanMilk/faster-whisper-Breeze-ASR-25" # Switch to Breeze-ASR-25 (CTranslate2)
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -32,6 +33,53 @@ def load_asr_model():
             logger.error(f"Failed to load faster-whisper model: {e}")
             raise e
     return MODEL
+
+def correct_keywords(text):
+    """
+    Performs specific keyword corrections.
+    Loads from apps/backend/config/corrections.json if available.
+    """
+    corrections = {}
+    config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "corrections.json")
+    
+    try:
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                corrections = json.load(f)
+        else:
+            # Fallback defaults if file missing
+            corrections = {
+                "剩副總": "盛副總",
+                "勝負總": "盛副總",
+                "黃學禮": "黃協理",
+                "陳廉政": "陳連振",
+                "陳連震": "陳連振",
+                "徐全誠": "徐全成",
+                "郭明珠": "郭銘洲",
+                "趙令羽": "趙令瑜",
+                "陳蓮妮": "陳連振",
+                "公務": "工務",
+                "齊美": "奇美",
+                "旗美": "奇美",
+                "刑美": "奇美",
+                "邢美": "奇美",
+                "體美": "奇美",
+                "其美": "奇美",
+                "A Step Up": "Step Up",
+                "a step up": "Step Up",
+                "step up": "Step Up",
+            }
+    except Exception as e:
+        logger.error(f"Error reading corrections config: {e}")
+        # Use minimal fallback to avoid crash
+        corrections = {"齊美": "奇美"}
+
+    for wrong, correct in corrections.items():
+        # Use regex to replace only whole words or specific phrases if needed
+        # For simplicity, using simple replace for now.
+        text = text.replace(wrong, correct)
+    return text
+
 
 def get_transcription(audio_input, language="zh", initial_prompt=None):
     """
@@ -72,10 +120,6 @@ def get_transcription(audio_input, language="zh", initial_prompt=None):
 3. 繁體中文：所有輸出必須使用台灣正體中文（Traditional Chinese, Taiwan）。絕對禁止出現簡體字。
 4. 標點符號：請根據語氣與停頓，自動加入正確的全形標點符號（，。？！）。
 
-[中英夾雜處理]
-- 若講者使用英文術語，請保留英文原文，不要強行音譯（例如保留 "APP"，不要寫成 "欸屁屁"）。
-- 英文與中文之間請自動加入半形空格（例如：使用 AI 技術）。
-
 [上下文參考]
 以下是使用者提供的本次對話背景知識（專有名詞、主題、關鍵字），請利用這些資訊來消除歧義並修正同音異字：
 """
@@ -110,36 +154,53 @@ def get_transcription(audio_input, language="zh", initial_prompt=None):
         valid_texts = []
         for segment in segments:
             # Filter out segments that Whisper thinks are "no speech" (silence/noise)
-            # Reduced threshold to 0.5 for more aggressive filtering of non-speech segments.
-            if segment.no_speech_prob < 0.5: 
+            # Increased threshold to 0.85 to be more lenient and allow more partial/noisy speech to pass through.
+            if segment.no_speech_prob < 0.85: 
                 valid_texts.append(segment.text.strip())
             else:
                 logger.debug(f"Skipped high no_speech_prob segment ({segment.no_speech_prob:.2f}): {segment.text}")
 
         transcript_text = " ".join(valid_texts)
         
-        # --- Hallucination Filter ---
-        # Expanded list for more aggressive filtering of common Whisper hallucinations
-        HALLUCINATIONS = [
+        # --- Apply Keyword Corrections ---
+        transcript_text = correct_keywords(transcript_text) # <--- ADDED HERE
+        # --- End Keyword Corrections ---
+        
+        # --- Hallucination Filter (Relaxed) ---
+        HALLUCINATIONS_SUBSTRING = [
+            "字幕", "字幕提供", "字幕来源", "提供字幕", "本字幕", "自動產生",
+            "MBC", "TVBS", "Amara", "subtitles", "Copyright", "©", 
+            "MING PAO", "Ming Pao", "請不吝點贊訂閱", "歡迎訂閱",
+            "多謝您的觀看", "感謝您的觀看"
+        ]
+        
+        # Exact match blacklist (Filter ONLY if the text equals these, ignoring punctuation)
+        # This prevents deleting sentences like "謝謝大家的參與"
+        HALLUCINATIONS_EXACT = [
             "謝謝你", "謝謝", "谢谢", "谢谢你", 
             "Thank you", "Thanks", "You're welcome",
-            "字幕", "字幕提供", "字幕来源", "提供字幕", "本字幕", "自動產生",
-            "MBC", "TVBS", "Go", "go", "Yeah", "Right", "Okay",
-            "Amara", "amara", "Subtitles", "subtitles",
-            "Copyright", "copyright", "©", 
-            "MING PAO", "Ming Pao", "YouTube", "youtube", "Facebook", "facebook",
-            "多謝您的觀看", "感謝您的觀看", "請不吝點贊訂閱", "歡迎訂閱",
-            "大家好", "大家好", "Hello", "hello",
-            "嗯", "啊", "哦", "喔", "哎", "呀", # Common interjections that are often noise
+            "Go", "go", "Yeah", "Right", "Okay",
+            "大家好", "Hello", "hello",
+            "嗯", "啊", "哦", "喔", "哎", "呀"
         ]
         
         cleaned_text = transcript_text.strip()
         
-        # 1. Substring match filter (More aggressive)
-        # Check if ANY part of the cleaned text contains a hallucination pattern
-        if any(h.lower() in cleaned_text.lower() for h in HALLUCINATIONS):
-            logger.warning(f"Filtered hallucination: {cleaned_text}")
+        # 1. Substring match (Spam/Copyright)
+        if any(h.lower() in cleaned_text.lower() for h in HALLUCINATIONS_SUBSTRING):
+            logger.warning(f"Filtered hallucination (substring): {cleaned_text}")
             return ""
+
+        # 2. Exact match (Interjections)
+        # Remove punctuation for check
+        
+        # Need to import string first
+        import string
+        text_no_punct = cleaned_text.translate(str.maketrans('', '', string.punctuation + "，。？！、"))
+        
+        if text_no_punct.strip() in HALLUCINATIONS_EXACT:
+             logger.warning(f"Filtered hallucination (exact): {cleaned_text}")
+             return ""
             
         return transcript_text
 

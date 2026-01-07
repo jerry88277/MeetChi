@@ -23,4 +23,29 @@ body {
   background: transparent;
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  overflow: hidden; /* Hide body scrollbar by default, let containers handle it */
+}
+
+/* Custom Scrollbar for Dark Glass Theme */
+::-webkit-scrollbar {
+  width: 6px; /* Thinner */
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent; 
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1); 
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3); 
+}
+
+/* Hide scrollbar corner */
+::-webkit-scrollbar-corner {
+  background: transparent;
 }

@@ -1,0 +1,3383 @@
+{
+    "segments": [
+        {
+            "start": 0.031,
+            "end": 6.666,
+            "text": "這些不一定能夠被看得到但是我相信未來奇美在經過這段時間以後",
+            "words": [
+                {
+                    "word": "這",
+                    "start": 0.031,
+                    "end": 0.152,
+                    "score": 0.938,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "些",
+                    "start": 0.152,
+                    "end": 0.172,
+                    "score": 0.593,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "不",
+                    "start": 0.172,
+                    "end": 0.212,
+                    "score": 0.958,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "一",
+                    "start": 0.212,
+                    "end": 0.252,
+                    "score": 0.965,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "定",
+                    "start": 0.252,
+                    "end": 0.292,
+                    "score": 0.9,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "能",
+                    "start": 0.292,
+                    "end": 0.312,
+                    "score": 0.617,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "夠",
+                    "start": 0.312,
+                    "end": 0.333,
+                    "score": 0.731,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "被",
+                    "start": 0.333,
+                    "end": 0.393,
+                    "score": 0.949,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "看",
+                    "start": 0.393,
+                    "end": 0.413,
+                    "score": 0.596,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "得",
+                    "start": 0.413,
+                    "end": 0.453,
+                    "score": 0.887,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "到",
+                    "start": 0.453,
+                    "end": 0.493,
+                    "score": 0.634,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "但",
+                    "start": 0.493,
+                    "end": 0.514,
+                    "score": 0.997,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "是",
+                    "start": 0.514,
+                    "end": 0.956,
+                    "score": 0.995,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "我",
+                    "start": 0.956,
+                    "end": 1.016,
+                    "score": 0.855,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "相",
+                    "start": 1.016,
+                    "end": 1.077,
+                    "score": 0.777,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "信",
+                    "start": 1.077,
+                    "end": 1.097,
+                    "score": 0.848,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "未",
+                    "start": 1.097,
+                    "end": 1.157,
+                    "score": 0.91,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "來",
+                    "start": 1.157,
+                    "end": 1.197,
+                    "score": 0.685,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "奇",
+                    "start": 1.197,
+                    "end": 1.278,
+                    "score": 0.65,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "美",
+                    "start": 1.278,
+                    "end": 1.318,
+                    "score": 0.493,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "在",
+                    "start": 1.318,
+                    "end": 1.338,
+                    "score": 0.74,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "經",
+                    "start": 1.338,
+                    "end": 1.358,
+                    "score": 0.53,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "過",
+                    "start": 1.358,
+                    "end": 1.378,
+                    "score": 0.694,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "這",
+                    "start": 1.378,
+                    "end": 1.438,
+                    "score": 0.916,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "段",
+                    "start": 1.438,
+                    "end": 1.519,
+                    "score": 0.628,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "時",
+                    "start": 1.519,
+                    "end": 1.539,
+                    "score": 0.439,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "間",
+                    "start": 1.539,
+                    "end": 1.579,
+                    "score": 0.747,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "以",
+                    "start": 1.579,
+                    "end": 1.66,
+                    "score": 0.653,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "後",
+                    "start": 1.66,
+                    "end": 6.666,
+                    "score": 0.628,
+                    "speaker": "SPEAKER_00"
+                }
+            ],
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "start": 6.646,
+            "end": 13.247,
+            "text": "會以每年 15 公分的速度一直往上成長阻止在第五年的時候",
+            "words": [
+                {
+                    "word": "會",
+                    "start": 6.646,
+                    "end": 6.807,
+                    "score": 0.729,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "以",
+                    "start": 6.807,
+                    "end": 6.827,
+                    "score": 0.359,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "每",
+                    "start": 6.827,
+                    "end": 6.988,
+                    "score": 0.741,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "年",
+                    "start": 6.988,
+                    "end": 7.049,
+                    "score": 0.837,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "1",
+                    "start": 7.069,
+                    "end": 7.109,
+                    "score": 0.994,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "5",
+                    "start": 7.109,
+                    "end": 7.23,
+                    "score": 0.977,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "公",
+                    "start": 7.25,
+                    "end": 7.35,
+                    "score": 0.786,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "分",
+                    "start": 7.35,
+                    "end": 7.371,
+                    "score": 0.679,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "的",
+                    "start": 7.371,
+                    "end": 7.451,
+                    "score": 0.673,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "速",
+                    "start": 7.451,
+                    "end": 7.572,
+                    "score": 0.824,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "度",
+                    "start": 7.572,
+                    "end": 7.632,
+                    "score": 0.889,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "一",
+                    "start": 7.632,
+                    "end": 7.713,
+                    "score": 0.828,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "直",
+                    "start": 7.713,
+                    "end": 8.135,
+                    "score": 0.997,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "往",
+                    "start": 8.135,
+                    "end": 8.296,
+                    "score": 0.874,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "上",
+                    "start": 8.296,
+                    "end": 8.357,
+                    "score": 0.765,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "成",
+                    "start": 8.357,
+                    "end": 8.457,
+                    "score": 0.818,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "長",
+                    "start": 8.457,
+                    "end": 8.477,
+                    "score": 0.616,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "阻",
+                    "start": 8.477,
+                    "end": 8.498,
+                    "score": 0.56,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "止",
+                    "start": 8.498,
+                    "end": 8.558,
+                    "score": 0.956,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "在",
+                    "start": 8.558,
+                    "end": 8.598,
+                    "score": 0.769,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "第",
+                    "start": 8.598,
+                    "end": 8.659,
+                    "score": 0.666,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "五",
+                    "start": 8.659,
+                    "end": 8.719,
+                    "score": 0.776,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "年",
+                    "start": 8.719,
+                    "end": 8.739,
+                    "score": 0.871,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "的",
+                    "start": 8.739,
+                    "end": 8.779,
+                    "score": 0.713,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "時",
+                    "start": 8.779,
+                    "end": 8.799,
+                    "score": 0.433,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "候",
+                    "start": 8.799,
+                    "end": 13.247,
+                    "score": 0.625,
+                    "speaker": "SPEAKER_00"
+                }
+            ],
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "start": 13.227,
+            "end": 23.052,
+            "text": "它一年是長 15 公分所以相信等到我們等到機會來的時候我們就有機會茁壯也有機會成長大家說對不對",
+            "words": [
+                {
+                    "word": "它",
+                    "start": 13.227,
+                    "end": 13.528,
+                    "score": 0.814,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "一",
+                    "start": 13.528,
+                    "end": 13.548,
+                    "score": 0.716,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "年",
+                    "start": 13.548,
+                    "end": 13.648,
+                    "score": 0.796,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "是",
+                    "start": 13.648,
+                    "end": 13.829,
+                    "score": 0.958,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "長",
+                    "start": 13.829,
+                    "end": 13.889,
+                    "score": 0.749,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "1",
+                    "start": 13.929,
+                    "end": 14.009,
+                    "score": 0.763,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "5",
+                    "start": 14.009,
+                    "end": 14.029,
+                    "score": 0.751,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "公",
+                    "start": 14.089,
+                    "end": 14.149,
+                    "score": 0.706,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "分",
+                    "start": 14.149,
+                    "end": 14.23,
+                    "score": 0.721,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "所",
+                    "start": 14.23,
+                    "end": 14.31,
+                    "score": 0.842,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "以",
+                    "start": 14.31,
+                    "end": 14.37,
+                    "score": 0.807,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "相",
+                    "start": 14.37,
+                    "end": 14.49,
+                    "score": 0.861,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "信",
+                    "start": 14.49,
+                    "end": 14.51,
+                    "score": 0.845,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "等",
+                    "start": 14.51,
+                    "end": 14.59,
+                    "score": 0.982,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "到",
+                    "start": 14.59,
+                    "end": 14.711,
+                    "score": 0.872,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "我",
+                    "start": 14.711,
+                    "end": 14.791,
+                    "score": 0.791,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "們",
+                    "start": 14.791,
+                    "end": 14.871,
+                    "score": 0.751,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "等",
+                    "start": 14.871,
+                    "end": 14.911,
+                    "score": 0.687,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "到",
+                    "start": 14.911,
+                    "end": 14.971,
+                    "score": 0.916,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "機",
+                    "start": 14.971,
+                    "end": 15.012,
+                    "score": 0.697,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "會",
+                    "start": 15.012,
+                    "end": 15.072,
+                    "score": 0.75,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "來",
+                    "start": 15.072,
+                    "end": 15.152,
+                    "score": 0.825,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "的",
+                    "start": 15.152,
+                    "end": 15.212,
+                    "score": 0.777,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "時",
+                    "start": 15.212,
+                    "end": 15.292,
+                    "score": 0.868,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "候",
+                    "start": 15.292,
+                    "end": 15.553,
+                    "score": 0.989,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "我",
+                    "start": 15.553,
+                    "end": 15.593,
+                    "score": 0.603,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "們",
+                    "start": 15.593,
+                    "end": 15.713,
+                    "score": 0.741,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "就",
+                    "start": 15.713,
+                    "end": 15.773,
+                    "score": 0.78,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "有",
+                    "start": 15.773,
+                    "end": 15.794,
+                    "score": 0.795,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "機",
+                    "start": 15.794,
+                    "end": 15.814,
+                    "score": 0.791,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "會",
+                    "start": 15.814,
+                    "end": 15.854,
+                    "score": 0.56,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "茁",
+                    "start": 15.854,
+                    "end": 15.894,
+                    "score": 0.792,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "壯",
+                    "start": 15.894,
+                    "end": 15.934,
+                    "score": 0.747,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "也",
+                    "start": 15.934,
+                    "end": 15.974,
+                    "score": 0.617,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "有",
+                    "start": 15.974,
+                    "end": 16.014,
+                    "score": 0.779,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "機",
+                    "start": 16.014,
+                    "end": 16.114,
+                    "score": 0.768,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "會",
+                    "start": 16.114,
+                    "end": 16.134,
+                    "score": 0.626,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "成",
+                    "start": 16.134,
+                    "end": 16.215,
+                    "score": 0.905,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "長",
+                    "start": 16.215,
+                    "end": 16.535,
+                    "score": 0.985,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "大",
+                    "start": 16.535,
+                    "end": 16.596,
+                    "score": 0.757,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "家",
+                    "start": 16.596,
+                    "end": 16.636,
+                    "score": 0.815,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "說",
+                    "start": 16.636,
+                    "end": 16.696,
+                    "score": 0.713,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "對",
+                    "start": 16.696,
+                    "end": 16.756,
+                    "score": 0.743,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "不",
+                    "start": 16.756,
+                    "end": 16.896,
+                    "score": 0.679,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "對",
+                    "start": 16.896,
+                    "end": 23.052,
+                    "score": 0.625,
+                    "speaker": "SPEAKER_00"
+                }
+            ],
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "start": 23.808,
+            "end": 25.819,
+            "text": "有沒有信心有",
+            "words": [
+                {
+                    "word": "有",
+                    "start": 23.808,
+                    "end": 23.889,
+                    "score": 0.548,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "沒",
+                    "start": 23.889,
+                    "end": 23.91,
+                    "score": 0.806,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "有",
+                    "start": 23.91,
+                    "end": 23.93,
+                    "score": 0.53,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "信",
+                    "start": 23.93,
+                    "end": 23.971,
+                    "score": 0.823,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "心",
+                    "start": 23.971,
+                    "end": 24.011,
+                    "score": 0.673,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "有",
+                    "start": 24.011,
+                    "end": 25.819,
+                    "score": 0.714,
+                    "speaker": "SPEAKER_00"
+                }
+            ],
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "start": 27.807,
+            "end": 36.298,
+            "text": "這段話聽說是黃學禮他媽媽教會他的但是我在網路上都找到了",
+            "words": [
+                {
+                    "word": "這",
+                    "start": 27.807,
+                    "end": 28.008,
+                    "score": 0.835,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "段",
+                    "start": 28.008,
+                    "end": 28.028,
+                    "score": 0.594,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "話",
+                    "start": 28.028,
+                    "end": 28.088,
+                    "score": 0.792,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "聽",
+                    "start": 28.088,
+                    "end": 28.148,
+                    "score": 0.918,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "說",
+                    "start": 28.148,
+                    "end": 28.208,
+                    "score": 0.714,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "是",
+                    "start": 28.208,
+                    "end": 28.229,
+                    "score": 0.537,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "黃",
+                    "start": 28.229,
+                    "end": 28.369,
+                    "score": 0.905,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "學",
+                    "start": 28.369,
+                    "end": 28.51,
+                    "score": 0.814,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "禮",
+                    "start": 28.51,
+                    "end": 28.61,
+                    "score": 0.883,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "他",
+                    "start": 28.61,
+                    "end": 28.73,
+                    "score": 0.742,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "媽",
+                    "start": 28.73,
+                    "end": 28.811,
+                    "score": 0.622,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "媽",
+                    "start": 28.811,
+                    "end": 28.891,
+                    "score": 0.628,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "教",
+                    "start": 28.891,
+                    "end": 28.971,
+                    "score": 0.666,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "會",
+                    "start": 28.971,
+                    "end": 29.132,
+                    "score": 0.739,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "他",
+                    "start": 29.132,
+                    "end": 29.252,
+                    "score": 0.863,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "的",
+                    "start": 29.252,
+                    "end": 29.272,
+                    "score": 0.695,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "但",
+                    "start": 29.272,
+                    "end": 29.573,
+                    "score": 0.97,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "是",
+                    "start": 29.573,
+                    "end": 29.594,
+                    "score": 0.597,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "我",
+                    "start": 29.594,
+                    "end": 29.634,
+                    "score": 0.71,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "在",
+                    "start": 29.634,
+                    "end": 29.674,
+                    "score": 0.627,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "網",
+                    "start": 29.674,
+                    "end": 29.694,
+                    "score": 0.853,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "路",
+                    "start": 29.694,
+                    "end": 29.834,
+                    "score": 0.886,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "上",
+                    "start": 29.834,
+                    "end": 29.895,
+                    "score": 0.839,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "都",
+                    "start": 29.895,
+                    "end": 29.995,
+                    "score": 0.863,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "找",
+                    "start": 29.995,
+                    "end": 30.015,
+                    "score": 0.8,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "到",
+                    "start": 30.015,
+                    "end": 30.356,
+                    "score": 0.959,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "了",
+                    "start": 30.356,
+                    "end": 36.298,
+                    "score": 0.679,
+                    "speaker": "SPEAKER_00"
+                }
+            ],
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "start": 36.768,
+            "end": 44.432,
+            "text": "所以各位如果想聽他媽媽的教誨的話不妨上網去查一下應該都有不過在這裡容我介紹一下",
+            "words": [
+                {
+                    "word": "所",
+                    "start": 36.768,
+                    "end": 36.828,
+                    "score": 0.991,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "以",
+                    "start": 36.828,
+                    "end": 36.869,
+                    "score": 0.847,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "各",
+                    "start": 36.869,
+                    "end": 36.909,
+                    "score": 0.601,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "位",
+                    "start": 36.909,
+                    "end": 36.989,
+                    "score": 0.624,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "如",
+                    "start": 36.989,
+                    "end": 37.07,
+                    "score": 0.755,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "果",
+                    "start": 37.07,
+                    "end": 37.11,
+                    "score": 0.4,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "想",
+                    "start": 37.11,
+                    "end": 37.15,
+                    "score": 0.747,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "聽",
+                    "start": 37.15,
+                    "end": 37.271,
+                    "score": 0.581,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "他",
+                    "start": 37.271,
+                    "end": 37.311,
+                    "score": 0.548,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "媽",
+                    "start": 37.311,
+                    "end": 37.331,
+                    "score": 0.781,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "媽",
+                    "start": 37.331,
+                    "end": 37.351,
+                    "score": 0.757,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "的",
+                    "start": 37.351,
+                    "end": 37.371,
+                    "score": 0.239,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "教",
+                    "start": 37.371,
+                    "end": 37.452,
+                    "score": 0.696,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "誨",
+                    "start": 37.452,
+                    "end": 37.512,
+                    "score": 0.584,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "的",
+                    "start": 37.512,
+                    "end": 37.532,
+                    "score": 0.372,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "話",
+                    "start": 37.532,
+                    "end": 37.573,
+                    "score": 0.748,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "不",
+                    "start": 37.573,
+                    "end": 37.613,
+                    "score": 0.67,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "妨",
+                    "start": 37.613,
+                    "end": 37.653,
+                    "score": 0.831,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "上",
+                    "start": 37.653,
+                    "end": 37.693,
+                    "score": 0.75,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "網",
+                    "start": 37.693,
+                    "end": 37.713,
+                    "score": 0.778,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "去",
+                    "start": 37.713,
+                    "end": 37.794,
+                    "score": 0.823,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "查",
+                    "start": 37.794,
+                    "end": 37.834,
+                    "score": 0.718,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "一",
+                    "start": 37.834,
+                    "end": 37.894,
+                    "score": 0.895,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "下",
+                    "start": 37.894,
+                    "end": 37.955,
+                    "score": 0.896,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "應",
+                    "start": 37.955,
+                    "end": 37.975,
+                    "score": 0.99,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "該",
+                    "start": 37.975,
+                    "end": 37.995,
+                    "score": 0.97,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "都",
+                    "start": 37.995,
+                    "end": 38.196,
+                    "score": 0.912,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "有",
+                    "start": 38.196,
+                    "end": 38.257,
+                    "score": 0.824,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "不",
+                    "start": 38.257,
+                    "end": 38.317,
+                    "score": 0.561,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "過",
+                    "start": 38.317,
+                    "end": 38.337,
+                    "score": 0.427,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "在",
+                    "start": 38.337,
+                    "end": 38.377,
+                    "score": 0.596,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "這",
+                    "start": 38.377,
+                    "end": 38.438,
+                    "score": 0.679,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "裡",
+                    "start": 38.438,
+                    "end": 38.458,
+                    "score": 0.395,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "容",
+                    "start": 38.458,
+                    "end": 38.478,
+                    "score": 0.9,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "我",
+                    "start": 38.478,
+                    "end": 38.498,
+                    "score": 0.669,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "介",
+                    "start": 38.498,
+                    "end": 38.578,
+                    "score": 0.787,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "紹",
+                    "start": 38.578,
+                    "end": 38.599,
+                    "score": 0.973,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "一",
+                    "start": 38.599,
+                    "end": 38.639,
+                    "score": 0.964,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "下",
+                    "start": 38.639,
+                    "end": 44.432,
+                    "score": 0.627,
+                    "speaker": "SPEAKER_00"
+                }
+            ],
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "start": 44.412,
+            "end": 53.106,
+            "text": "我們的團隊也有一些變化我們行政的陳世賢陳副總在哪裡大家把掌聲給他好嗎",
+            "words": [
+                {
+                    "word": "我",
+                    "start": 44.412,
+                    "end": 44.673,
+                    "score": 0.923,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "們",
+                    "start": 44.673,
+                    "end": 44.693,
+                    "score": 0.83,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "的",
+                    "start": 44.693,
+                    "end": 44.713,
+                    "score": 0.33,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "團",
+                    "start": 44.713,
+                    "end": 44.814,
+                    "score": 0.687,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "隊",
+                    "start": 44.814,
+                    "end": 44.834,
+                    "score": 0.543,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "也",
+                    "start": 44.834,
+                    "end": 44.854,
+                    "score": 0.478,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "有",
+                    "start": 44.854,
+                    "end": 44.894,
+                    "score": 0.76,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "一",
+                    "start": 44.894,
+                    "end": 44.934,
+                    "score": 0.671,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "些",
+                    "start": 44.934,
+                    "end": 44.954,
+                    "score": 0.658,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "變",
+                    "start": 44.954,
+                    "end": 44.974,
+                    "score": 0.898,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "化",
+                    "start": 44.974,
+                    "end": 45.014,
+                    "score": 0.679,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "我",
+                    "start": 45.014,
+                    "end": 45.135,
+                    "score": 0.829,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "們",
+                    "start": 45.135,
+                    "end": 45.195,
+                    "score": 0.93,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "行",
+                    "start": 45.195,
+                    "end": 45.215,
+                    "score": 0.871,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "政",
+                    "start": 45.215,
+                    "end": 45.316,
+                    "score": 0.693,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "的",
+                    "start": 45.316,
+                    "end": 45.336,
+                    "score": 0.795,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "陳",
+                    "start": 45.336,
+                    "end": 45.436,
+                    "score": 0.91,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "世",
+                    "start": 45.436,
+                    "end": 45.476,
+                    "score": 0.777,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "賢",
+                    "start": 45.476,
+                    "end": 45.536,
+                    "score": 0.968,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "陳",
+                    "start": 45.536,
+                    "end": 45.556,
+                    "score": 0.662,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "副",
+                    "start": 45.556,
+                    "end": 45.737,
+                    "score": 0.966,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "總",
+                    "start": 45.737,
+                    "end": 45.777,
+                    "score": 0.83,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "在",
+                    "start": 45.777,
+                    "end": 45.797,
+                    "score": 0.622,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "哪",
+                    "start": 45.797,
+                    "end": 45.938,
+                    "score": 0.888,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "裡",
+                    "start": 45.938,
+                    "end": 46.099,
+                    "score": 0.813,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "大",
+                    "start": 46.099,
+                    "end": 46.199,
+                    "score": 0.73,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "家",
+                    "start": 46.199,
+                    "end": 46.239,
+                    "score": 0.463,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "把",
+                    "start": 46.239,
+                    "end": 46.34,
+                    "score": 0.606,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "掌",
+                    "start": 46.34,
+                    "end": 46.44,
+                    "score": 0.608,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "聲",
+                    "start": 46.44,
+                    "end": 46.48,
+                    "score": 0.862,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "給",
+                    "start": 46.48,
+                    "end": 46.581,
+                    "score": 0.717,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "他",
+                    "start": 46.581,
+                    "end": 46.621,
+                    "score": 0.707,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "好",
+                    "start": 46.621,
+                    "end": 46.661,
+                    "score": 0.65,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "嗎",
+                    "start": 46.661,
+                    "end": 53.106,
+                    "score": 0.673,
+                    "speaker": "SPEAKER_00"
+                }
+            ],
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "start": 57.912,
+            "end": 63.113,
+            "text": "公司未來非常重要的一個部門特化的勝負總跟大家揮揮手勝負總",
+            "words": [
+                {
+                    "word": "公",
+                    "start": 57.912,
+                    "end": 57.972,
+                    "score": 0.498,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "司",
+                    "start": 57.972,
+                    "end": 57.993,
+                    "score": 0.671,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "未",
+                    "start": 57.993,
+                    "end": 58.033,
+                    "score": 0.918,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "來",
+                    "start": 58.033,
+                    "end": 58.114,
+                    "score": 0.71,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "非",
+                    "start": 58.114,
+                    "end": 58.134,
+                    "score": 0.711,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "常",
+                    "start": 58.134,
+                    "end": 58.214,
+                    "score": 0.695,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "重",
+                    "start": 58.214,
+                    "end": 58.315,
+                    "score": 0.693,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "要",
+                    "start": 58.315,
+                    "end": 58.376,
+                    "score": 0.707,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "的",
+                    "start": 58.376,
+                    "end": 58.416,
+                    "score": 0.822,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "一",
+                    "start": 58.416,
+                    "end": 58.456,
+                    "score": 0.626,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "個",
+                    "start": 58.456,
+                    "end": 58.476,
+                    "score": 0.577,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "部",
+                    "start": 58.476,
+                    "end": 58.497,
+                    "score": 0.746,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "門",
+                    "start": 58.497,
+                    "end": 58.557,
+                    "score": 0.726,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "特",
+                    "start": 58.557,
+                    "end": 58.597,
+                    "score": 0.626,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "化",
+                    "start": 58.597,
+                    "end": 58.658,
+                    "score": 0.658,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "的",
+                    "start": 58.658,
+                    "end": 58.739,
+                    "score": 0.774,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "勝",
+                    "start": 58.739,
+                    "end": 58.779,
+                    "score": 0.487,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "負",
+                    "start": 58.779,
+                    "end": 58.819,
+                    "score": 0.755,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "總",
+                    "start": 58.819,
+                    "end": 58.859,
+                    "score": 0.895,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "跟",
+                    "start": 58.859,
+                    "end": 58.9,
+                    "score": 0.644,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "大",
+                    "start": 58.9,
+                    "end": 58.94,
+                    "score": 0.514,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "家",
+                    "start": 58.94,
+                    "end": 59.001,
+                    "score": 0.901,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "揮",
+                    "start": 59.001,
+                    "end": 59.041,
+                    "score": 0.848,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "揮",
+                    "start": 59.041,
+                    "end": 59.142,
+                    "score": 0.639,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "手",
+                    "start": 59.142,
+                    "end": 59.222,
+                    "score": 0.595,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "勝",
+                    "start": 59.222,
+                    "end": 59.263,
+                    "score": 0.729,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "負",
+                    "start": 59.263,
+                    "end": 59.303,
+                    "score": 0.678,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "總",
+                    "start": 59.303,
+                    "end": 63.113,
+                    "score": 0.638,
+                    "speaker": "SPEAKER_00"
+                }
+            ],
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "start": 68.088,
+            "end": 68.717,
+            "text": "研發",
+            "words": [
+                {
+                    "word": "研",
+                    "start": 68.088,
+                    "end": 68.56,
+                    "score": 0.606,
+                    "speaker": "SPEAKER_00"
+                },
+                {
+                    "word": "發",
+                    "start": 68.56,
+                    "end": 68.717,
+                    "score": 0.472,
+                    "speaker": "SPEAKER_00"
+                }
+            ],
+            "speaker": "SPEAKER_00"
+        }
+    ],
+    "word_segments": [
+        {
+            "word": "這",
+            "start": 0.031,
+            "end": 0.152,
+            "score": 0.938,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "些",
+            "start": 0.152,
+            "end": 0.172,
+            "score": 0.593,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "不",
+            "start": 0.172,
+            "end": 0.212,
+            "score": 0.958,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "一",
+            "start": 0.212,
+            "end": 0.252,
+            "score": 0.965,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "定",
+            "start": 0.252,
+            "end": 0.292,
+            "score": 0.9,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "能",
+            "start": 0.292,
+            "end": 0.312,
+            "score": 0.617,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "夠",
+            "start": 0.312,
+            "end": 0.333,
+            "score": 0.731,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "被",
+            "start": 0.333,
+            "end": 0.393,
+            "score": 0.949,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "看",
+            "start": 0.393,
+            "end": 0.413,
+            "score": 0.596,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "得",
+            "start": 0.413,
+            "end": 0.453,
+            "score": 0.887,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "到",
+            "start": 0.453,
+            "end": 0.493,
+            "score": 0.634,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "但",
+            "start": 0.493,
+            "end": 0.514,
+            "score": 0.997,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "是",
+            "start": 0.514,
+            "end": 0.956,
+            "score": 0.995,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "我",
+            "start": 0.956,
+            "end": 1.016,
+            "score": 0.855,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "相",
+            "start": 1.016,
+            "end": 1.077,
+            "score": 0.777,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "信",
+            "start": 1.077,
+            "end": 1.097,
+            "score": 0.848,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "未",
+            "start": 1.097,
+            "end": 1.157,
+            "score": 0.91,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "來",
+            "start": 1.157,
+            "end": 1.197,
+            "score": 0.685,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "奇",
+            "start": 1.197,
+            "end": 1.278,
+            "score": 0.65,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "美",
+            "start": 1.278,
+            "end": 1.318,
+            "score": 0.493,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "在",
+            "start": 1.318,
+            "end": 1.338,
+            "score": 0.74,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "經",
+            "start": 1.338,
+            "end": 1.358,
+            "score": 0.53,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "過",
+            "start": 1.358,
+            "end": 1.378,
+            "score": 0.694,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "這",
+            "start": 1.378,
+            "end": 1.438,
+            "score": 0.916,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "段",
+            "start": 1.438,
+            "end": 1.519,
+            "score": 0.628,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "時",
+            "start": 1.519,
+            "end": 1.539,
+            "score": 0.439,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "間",
+            "start": 1.539,
+            "end": 1.579,
+            "score": 0.747,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "以",
+            "start": 1.579,
+            "end": 1.66,
+            "score": 0.653,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "後",
+            "start": 1.66,
+            "end": 6.666,
+            "score": 0.628,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "會",
+            "start": 6.646,
+            "end": 6.807,
+            "score": 0.729,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "以",
+            "start": 6.807,
+            "end": 6.827,
+            "score": 0.359,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "每",
+            "start": 6.827,
+            "end": 6.988,
+            "score": 0.741,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "年",
+            "start": 6.988,
+            "end": 7.049,
+            "score": 0.837,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "1",
+            "start": 7.069,
+            "end": 7.109,
+            "score": 0.994,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "5",
+            "start": 7.109,
+            "end": 7.23,
+            "score": 0.977,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "公",
+            "start": 7.25,
+            "end": 7.35,
+            "score": 0.786,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "分",
+            "start": 7.35,
+            "end": 7.371,
+            "score": 0.679,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "的",
+            "start": 7.371,
+            "end": 7.451,
+            "score": 0.673,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "速",
+            "start": 7.451,
+            "end": 7.572,
+            "score": 0.824,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "度",
+            "start": 7.572,
+            "end": 7.632,
+            "score": 0.889,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "一",
+            "start": 7.632,
+            "end": 7.713,
+            "score": 0.828,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "直",
+            "start": 7.713,
+            "end": 8.135,
+            "score": 0.997,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "往",
+            "start": 8.135,
+            "end": 8.296,
+            "score": 0.874,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "上",
+            "start": 8.296,
+            "end": 8.357,
+            "score": 0.765,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "成",
+            "start": 8.357,
+            "end": 8.457,
+            "score": 0.818,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "長",
+            "start": 8.457,
+            "end": 8.477,
+            "score": 0.616,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "阻",
+            "start": 8.477,
+            "end": 8.498,
+            "score": 0.56,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "止",
+            "start": 8.498,
+            "end": 8.558,
+            "score": 0.956,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "在",
+            "start": 8.558,
+            "end": 8.598,
+            "score": 0.769,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "第",
+            "start": 8.598,
+            "end": 8.659,
+            "score": 0.666,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "五",
+            "start": 8.659,
+            "end": 8.719,
+            "score": 0.776,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "年",
+            "start": 8.719,
+            "end": 8.739,
+            "score": 0.871,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "的",
+            "start": 8.739,
+            "end": 8.779,
+            "score": 0.713,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "時",
+            "start": 8.779,
+            "end": 8.799,
+            "score": 0.433,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "候",
+            "start": 8.799,
+            "end": 13.247,
+            "score": 0.625,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "它",
+            "start": 13.227,
+            "end": 13.528,
+            "score": 0.814,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "一",
+            "start": 13.528,
+            "end": 13.548,
+            "score": 0.716,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "年",
+            "start": 13.548,
+            "end": 13.648,
+            "score": 0.796,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "是",
+            "start": 13.648,
+            "end": 13.829,
+            "score": 0.958,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "長",
+            "start": 13.829,
+            "end": 13.889,
+            "score": 0.749,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "1",
+            "start": 13.929,
+            "end": 14.009,
+            "score": 0.763,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "5",
+            "start": 14.009,
+            "end": 14.029,
+            "score": 0.751,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "公",
+            "start": 14.089,
+            "end": 14.149,
+            "score": 0.706,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "分",
+            "start": 14.149,
+            "end": 14.23,
+            "score": 0.721,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "所",
+            "start": 14.23,
+            "end": 14.31,
+            "score": 0.842,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "以",
+            "start": 14.31,
+            "end": 14.37,
+            "score": 0.807,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "相",
+            "start": 14.37,
+            "end": 14.49,
+            "score": 0.861,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "信",
+            "start": 14.49,
+            "end": 14.51,
+            "score": 0.845,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "等",
+            "start": 14.51,
+            "end": 14.59,
+            "score": 0.982,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "到",
+            "start": 14.59,
+            "end": 14.711,
+            "score": 0.872,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "我",
+            "start": 14.711,
+            "end": 14.791,
+            "score": 0.791,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "們",
+            "start": 14.791,
+            "end": 14.871,
+            "score": 0.751,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "等",
+            "start": 14.871,
+            "end": 14.911,
+            "score": 0.687,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "到",
+            "start": 14.911,
+            "end": 14.971,
+            "score": 0.916,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "機",
+            "start": 14.971,
+            "end": 15.012,
+            "score": 0.697,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "會",
+            "start": 15.012,
+            "end": 15.072,
+            "score": 0.75,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "來",
+            "start": 15.072,
+            "end": 15.152,
+            "score": 0.825,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "的",
+            "start": 15.152,
+            "end": 15.212,
+            "score": 0.777,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "時",
+            "start": 15.212,
+            "end": 15.292,
+            "score": 0.868,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "候",
+            "start": 15.292,
+            "end": 15.553,
+            "score": 0.989,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "我",
+            "start": 15.553,
+            "end": 15.593,
+            "score": 0.603,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "們",
+            "start": 15.593,
+            "end": 15.713,
+            "score": 0.741,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "就",
+            "start": 15.713,
+            "end": 15.773,
+            "score": 0.78,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "有",
+            "start": 15.773,
+            "end": 15.794,
+            "score": 0.795,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "機",
+            "start": 15.794,
+            "end": 15.814,
+            "score": 0.791,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "會",
+            "start": 15.814,
+            "end": 15.854,
+            "score": 0.56,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "茁",
+            "start": 15.854,
+            "end": 15.894,
+            "score": 0.792,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "壯",
+            "start": 15.894,
+            "end": 15.934,
+            "score": 0.747,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "也",
+            "start": 15.934,
+            "end": 15.974,
+            "score": 0.617,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "有",
+            "start": 15.974,
+            "end": 16.014,
+            "score": 0.779,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "機",
+            "start": 16.014,
+            "end": 16.114,
+            "score": 0.768,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "會",
+            "start": 16.114,
+            "end": 16.134,
+            "score": 0.626,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "成",
+            "start": 16.134,
+            "end": 16.215,
+            "score": 0.905,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "長",
+            "start": 16.215,
+            "end": 16.535,
+            "score": 0.985,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "大",
+            "start": 16.535,
+            "end": 16.596,
+            "score": 0.757,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "家",
+            "start": 16.596,
+            "end": 16.636,
+            "score": 0.815,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "說",
+            "start": 16.636,
+            "end": 16.696,
+            "score": 0.713,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "對",
+            "start": 16.696,
+            "end": 16.756,
+            "score": 0.743,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "不",
+            "start": 16.756,
+            "end": 16.896,
+            "score": 0.679,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "對",
+            "start": 16.896,
+            "end": 23.052,
+            "score": 0.625,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "有",
+            "start": 23.808,
+            "end": 23.889,
+            "score": 0.548,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "沒",
+            "start": 23.889,
+            "end": 23.91,
+            "score": 0.806,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "有",
+            "start": 23.91,
+            "end": 23.93,
+            "score": 0.53,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "信",
+            "start": 23.93,
+            "end": 23.971,
+            "score": 0.823,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "心",
+            "start": 23.971,
+            "end": 24.011,
+            "score": 0.673,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "有",
+            "start": 24.011,
+            "end": 25.819,
+            "score": 0.714,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "這",
+            "start": 27.807,
+            "end": 28.008,
+            "score": 0.835,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "段",
+            "start": 28.008,
+            "end": 28.028,
+            "score": 0.594,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "話",
+            "start": 28.028,
+            "end": 28.088,
+            "score": 0.792,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "聽",
+            "start": 28.088,
+            "end": 28.148,
+            "score": 0.918,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "說",
+            "start": 28.148,
+            "end": 28.208,
+            "score": 0.714,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "是",
+            "start": 28.208,
+            "end": 28.229,
+            "score": 0.537,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "黃",
+            "start": 28.229,
+            "end": 28.369,
+            "score": 0.905,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "學",
+            "start": 28.369,
+            "end": 28.51,
+            "score": 0.814,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "禮",
+            "start": 28.51,
+            "end": 28.61,
+            "score": 0.883,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "他",
+            "start": 28.61,
+            "end": 28.73,
+            "score": 0.742,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "媽",
+            "start": 28.73,
+            "end": 28.811,
+            "score": 0.622,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "媽",
+            "start": 28.811,
+            "end": 28.891,
+            "score": 0.628,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "教",
+            "start": 28.891,
+            "end": 28.971,
+            "score": 0.666,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "會",
+            "start": 28.971,
+            "end": 29.132,
+            "score": 0.739,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "他",
+            "start": 29.132,
+            "end": 29.252,
+            "score": 0.863,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "的",
+            "start": 29.252,
+            "end": 29.272,
+            "score": 0.695,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "但",
+            "start": 29.272,
+            "end": 29.573,
+            "score": 0.97,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "是",
+            "start": 29.573,
+            "end": 29.594,
+            "score": 0.597,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "我",
+            "start": 29.594,
+            "end": 29.634,
+            "score": 0.71,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "在",
+            "start": 29.634,
+            "end": 29.674,
+            "score": 0.627,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "網",
+            "start": 29.674,
+            "end": 29.694,
+            "score": 0.853,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "路",
+            "start": 29.694,
+            "end": 29.834,
+            "score": 0.886,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "上",
+            "start": 29.834,
+            "end": 29.895,
+            "score": 0.839,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "都",
+            "start": 29.895,
+            "end": 29.995,
+            "score": 0.863,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "找",
+            "start": 29.995,
+            "end": 30.015,
+            "score": 0.8,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "到",
+            "start": 30.015,
+            "end": 30.356,
+            "score": 0.959,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "了",
+            "start": 30.356,
+            "end": 36.298,
+            "score": 0.679,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "所",
+            "start": 36.768,
+            "end": 36.828,
+            "score": 0.991,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "以",
+            "start": 36.828,
+            "end": 36.869,
+            "score": 0.847,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "各",
+            "start": 36.869,
+            "end": 36.909,
+            "score": 0.601,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "位",
+            "start": 36.909,
+            "end": 36.989,
+            "score": 0.624,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "如",
+            "start": 36.989,
+            "end": 37.07,
+            "score": 0.755,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "果",
+            "start": 37.07,
+            "end": 37.11,
+            "score": 0.4,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "想",
+            "start": 37.11,
+            "end": 37.15,
+            "score": 0.747,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "聽",
+            "start": 37.15,
+            "end": 37.271,
+            "score": 0.581,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "他",
+            "start": 37.271,
+            "end": 37.311,
+            "score": 0.548,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "媽",
+            "start": 37.311,
+            "end": 37.331,
+            "score": 0.781,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "媽",
+            "start": 37.331,
+            "end": 37.351,
+            "score": 0.757,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "的",
+            "start": 37.351,
+            "end": 37.371,
+            "score": 0.239,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "教",
+            "start": 37.371,
+            "end": 37.452,
+            "score": 0.696,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "誨",
+            "start": 37.452,
+            "end": 37.512,
+            "score": 0.584,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "的",
+            "start": 37.512,
+            "end": 37.532,
+            "score": 0.372,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "話",
+            "start": 37.532,
+            "end": 37.573,
+            "score": 0.748,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "不",
+            "start": 37.573,
+            "end": 37.613,
+            "score": 0.67,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "妨",
+            "start": 37.613,
+            "end": 37.653,
+            "score": 0.831,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "上",
+            "start": 37.653,
+            "end": 37.693,
+            "score": 0.75,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "網",
+            "start": 37.693,
+            "end": 37.713,
+            "score": 0.778,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "去",
+            "start": 37.713,
+            "end": 37.794,
+            "score": 0.823,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "查",
+            "start": 37.794,
+            "end": 37.834,
+            "score": 0.718,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "一",
+            "start": 37.834,
+            "end": 37.894,
+            "score": 0.895,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "下",
+            "start": 37.894,
+            "end": 37.955,
+            "score": 0.896,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "應",
+            "start": 37.955,
+            "end": 37.975,
+            "score": 0.99,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "該",
+            "start": 37.975,
+            "end": 37.995,
+            "score": 0.97,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "都",
+            "start": 37.995,
+            "end": 38.196,
+            "score": 0.912,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "有",
+            "start": 38.196,
+            "end": 38.257,
+            "score": 0.824,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "不",
+            "start": 38.257,
+            "end": 38.317,
+            "score": 0.561,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "過",
+            "start": 38.317,
+            "end": 38.337,
+            "score": 0.427,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "在",
+            "start": 38.337,
+            "end": 38.377,
+            "score": 0.596,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "這",
+            "start": 38.377,
+            "end": 38.438,
+            "score": 0.679,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "裡",
+            "start": 38.438,
+            "end": 38.458,
+            "score": 0.395,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "容",
+            "start": 38.458,
+            "end": 38.478,
+            "score": 0.9,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "我",
+            "start": 38.478,
+            "end": 38.498,
+            "score": 0.669,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "介",
+            "start": 38.498,
+            "end": 38.578,
+            "score": 0.787,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "紹",
+            "start": 38.578,
+            "end": 38.599,
+            "score": 0.973,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "一",
+            "start": 38.599,
+            "end": 38.639,
+            "score": 0.964,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "下",
+            "start": 38.639,
+            "end": 44.432,
+            "score": 0.627,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "我",
+            "start": 44.412,
+            "end": 44.673,
+            "score": 0.923,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "們",
+            "start": 44.673,
+            "end": 44.693,
+            "score": 0.83,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "的",
+            "start": 44.693,
+            "end": 44.713,
+            "score": 0.33,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "團",
+            "start": 44.713,
+            "end": 44.814,
+            "score": 0.687,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "隊",
+            "start": 44.814,
+            "end": 44.834,
+            "score": 0.543,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "也",
+            "start": 44.834,
+            "end": 44.854,
+            "score": 0.478,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "有",
+            "start": 44.854,
+            "end": 44.894,
+            "score": 0.76,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "一",
+            "start": 44.894,
+            "end": 44.934,
+            "score": 0.671,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "些",
+            "start": 44.934,
+            "end": 44.954,
+            "score": 0.658,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "變",
+            "start": 44.954,
+            "end": 44.974,
+            "score": 0.898,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "化",
+            "start": 44.974,
+            "end": 45.014,
+            "score": 0.679,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "我",
+            "start": 45.014,
+            "end": 45.135,
+            "score": 0.829,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "們",
+            "start": 45.135,
+            "end": 45.195,
+            "score": 0.93,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "行",
+            "start": 45.195,
+            "end": 45.215,
+            "score": 0.871,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "政",
+            "start": 45.215,
+            "end": 45.316,
+            "score": 0.693,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "的",
+            "start": 45.316,
+            "end": 45.336,
+            "score": 0.795,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "陳",
+            "start": 45.336,
+            "end": 45.436,
+            "score": 0.91,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "世",
+            "start": 45.436,
+            "end": 45.476,
+            "score": 0.777,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "賢",
+            "start": 45.476,
+            "end": 45.536,
+            "score": 0.968,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "陳",
+            "start": 45.536,
+            "end": 45.556,
+            "score": 0.662,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "副",
+            "start": 45.556,
+            "end": 45.737,
+            "score": 0.966,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "總",
+            "start": 45.737,
+            "end": 45.777,
+            "score": 0.83,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "在",
+            "start": 45.777,
+            "end": 45.797,
+            "score": 0.622,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "哪",
+            "start": 45.797,
+            "end": 45.938,
+            "score": 0.888,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "裡",
+            "start": 45.938,
+            "end": 46.099,
+            "score": 0.813,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "大",
+            "start": 46.099,
+            "end": 46.199,
+            "score": 0.73,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "家",
+            "start": 46.199,
+            "end": 46.239,
+            "score": 0.463,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "把",
+            "start": 46.239,
+            "end": 46.34,
+            "score": 0.606,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "掌",
+            "start": 46.34,
+            "end": 46.44,
+            "score": 0.608,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "聲",
+            "start": 46.44,
+            "end": 46.48,
+            "score": 0.862,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "給",
+            "start": 46.48,
+            "end": 46.581,
+            "score": 0.717,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "他",
+            "start": 46.581,
+            "end": 46.621,
+            "score": 0.707,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "好",
+            "start": 46.621,
+            "end": 46.661,
+            "score": 0.65,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "嗎",
+            "start": 46.661,
+            "end": 53.106,
+            "score": 0.673,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "公",
+            "start": 57.912,
+            "end": 57.972,
+            "score": 0.498,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "司",
+            "start": 57.972,
+            "end": 57.993,
+            "score": 0.671,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "未",
+            "start": 57.993,
+            "end": 58.033,
+            "score": 0.918,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "來",
+            "start": 58.033,
+            "end": 58.114,
+            "score": 0.71,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "非",
+            "start": 58.114,
+            "end": 58.134,
+            "score": 0.711,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "常",
+            "start": 58.134,
+            "end": 58.214,
+            "score": 0.695,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "重",
+            "start": 58.214,
+            "end": 58.315,
+            "score": 0.693,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "要",
+            "start": 58.315,
+            "end": 58.376,
+            "score": 0.707,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "的",
+            "start": 58.376,
+            "end": 58.416,
+            "score": 0.822,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "一",
+            "start": 58.416,
+            "end": 58.456,
+            "score": 0.626,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "個",
+            "start": 58.456,
+            "end": 58.476,
+            "score": 0.577,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "部",
+            "start": 58.476,
+            "end": 58.497,
+            "score": 0.746,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "門",
+            "start": 58.497,
+            "end": 58.557,
+            "score": 0.726,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "特",
+            "start": 58.557,
+            "end": 58.597,
+            "score": 0.626,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "化",
+            "start": 58.597,
+            "end": 58.658,
+            "score": 0.658,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "的",
+            "start": 58.658,
+            "end": 58.739,
+            "score": 0.774,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "勝",
+            "start": 58.739,
+            "end": 58.779,
+            "score": 0.487,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "負",
+            "start": 58.779,
+            "end": 58.819,
+            "score": 0.755,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "總",
+            "start": 58.819,
+            "end": 58.859,
+            "score": 0.895,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "跟",
+            "start": 58.859,
+            "end": 58.9,
+            "score": 0.644,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "大",
+            "start": 58.9,
+            "end": 58.94,
+            "score": 0.514,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "家",
+            "start": 58.94,
+            "end": 59.001,
+            "score": 0.901,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "揮",
+            "start": 59.001,
+            "end": 59.041,
+            "score": 0.848,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "揮",
+            "start": 59.041,
+            "end": 59.142,
+            "score": 0.639,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "手",
+            "start": 59.142,
+            "end": 59.222,
+            "score": 0.595,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "勝",
+            "start": 59.222,
+            "end": 59.263,
+            "score": 0.729,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "負",
+            "start": 59.263,
+            "end": 59.303,
+            "score": 0.678,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "總",
+            "start": 59.303,
+            "end": 63.113,
+            "score": 0.638,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "研",
+            "start": 68.088,
+            "end": 68.56,
+            "score": 0.606,
+            "speaker": "SPEAKER_00"
+        },
+        {
+            "word": "發",
+            "start": 68.56,
+            "end": 68.717,
+            "score": 0.472,
+            "speaker": "SPEAKER_00"
+        }
+    ],
+    "language": "zh"
+}
