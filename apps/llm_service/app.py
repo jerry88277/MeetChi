@@ -36,10 +36,6 @@ lock = threading.Lock()
 def load_llm_model():
     global model, tokenizer, prompt_engine
     
-    if MOCK_LLM:
-        logger.info("MOCK_LLM is enabled. Skipping model loading.")
-        return
-
     logger.info(f"Loading LLM model: {MODEL_NAME} on {DEVICE}...")
     try:
         # Use AutoModel as per documentation for this specific model
@@ -63,9 +59,10 @@ def load_llm_model():
         
         logger.info("LLM model loaded successfully.")
     except Exception as e:
-        logger.error(f"Failed to load LLM model: {e}. Falling back to MOCK mode.")
-        # Do NOT raise e here, allow app to start in degraded mode.
-        # model remains None
+        logger.error(f"Failed to load LLM model: {e}.")
+        model = None
+        tokenizer = None
+        prompt_engine = None
 
 # Pre-load model on startup
 with app.app_context():
