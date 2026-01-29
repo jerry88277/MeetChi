@@ -22,7 +22,280 @@ import sys
 from logging.handlers import TimedRotatingFileHandler
 from pydantic import BaseModel, Field
 from typing import List, Optional
-import wave # <-- New import
+import wave 
+import difflib # Import difflib for fuzzy matching
+import re
+
+class ScriptAligner:
+    """
+    Smith-Waterman Based Script Aligner for real-time alignment.
+    
+    Features:
+    1. Smith-Waterman local alignment algorithm
+    2. Character-level flattened script with segment mapping
+    3. Multi-segment matching for long ASR outputs
+    4. Global resync when consecutive matches fail
+    """
+    
+    # Smith-Waterman scoring parameters
+    MATCH_SCORE = 3
+    MISMATCH_SCORE = -1
+    GAP_SCORE = -2
+    
+    # Alignment parameters
+    NORMAL_WINDOW_BACK = 20      # Characters to search backward
+    NORMAL_WINDOW_FORWARD = 200  # Characters to search forward
+    MAX_CONSECUTIVE_FAILURES = 5  # Trigger global resync after this many failures
+    MIN_MATCH_SCORE = 10         # Minimum score to consider a valid match
+    
+    def __init__(self):
+        self.segments = []            # List of {source, target, start_idx, end_idx}
+        self.full_cn_text = ""        # Flattened Chinese text
+        self.char_to_segment = []     # Maps char index -> segment index
+        self.current_cursor = 0       # Current character position
+        self.consecutive_failures = 0 # Track failures for global resync
+        self.last_matched_segments = set()  # Avoid duplicate segment sends
+    
+    def load_script(self, script_text: str):
+        """
+        Parse script text into segments and create flattened character mapping.
+        Format: "[N] Chinese text ||| English text"
+        """
+        self.segments = []
+        self.full_cn_text = ""
+        self.char_to_segment = []
+        self.current_cursor = 0
+        self.consecutive_failures = 0
+        self.last_matched_segments = set()
+        
+        if not script_text:
+            return
+        
+        lines = script_text.split('\n')
+        for line in lines:
+            line = line.strip()
+            if not line or "|||" not in line:
+                continue
+            
+            parts = line.split("|||")
+            if len(parts) >= 2:
+                source = parts[0].strip()
+                target = parts[1].strip()
+                
+                # Remove numbering: [1], 1., (1), etc.
+                clean_source = re.sub(r'^[\[\(]?\d+[\]\)\.]?\s*', '', source)
+                
+                # Remove punctuation for matching
+                normalized = self._normalize(clean_source)
+                
+                if not normalized:
+                    continue
+                
+                start_idx = len(self.full_cn_text)
+                end_idx = start_idx + len(normalized)
+                
+                self.segments.append({
+                    'index': len(self.segments),
+                    'source': clean_source,
+                    'target': target,
+                    'normalized': normalized,
+                    'start_idx': start_idx,
+                    'end_idx': end_idx
+                })
+                
+                # Build character-to-segment mapping
+                for _ in range(len(normalized)):
+                    self.char_to_segment.append(len(self.segments) - 1)
+                
+                self.full_cn_text += normalized
+    
+    def _normalize(self, text: str) -> str:
+        """Remove punctuation and whitespace, keep Chinese/English characters."""
+        return re.sub(r'[\s,.\?!，。？！、：；""''「」（）\u3000\-—]+', '', text)
+    
+    def has_script(self):
+        return len(self.segments) > 0 and len(self.full_cn_text) > 0
+    
+    def smith_waterman(self, query: str, target: str):
+        """
+        Smith-Waterman local alignment algorithm.
+        Returns: (best_start, best_end, best_score) - position in target where query best matches
+        """
+        if not query or not target:
+            return (0, 0, 0)
+        
+        m, n = len(query), len(target)
+        
+        # Initialize scoring matrix
+        H = [[0] * (n + 1) for _ in range(m + 1)]
+        
+        best_score = 0
+        best_end = 0
+        
+        # Fill matrix
+        for i in range(1, m + 1):
+            for j in range(1, n + 1):
+                # Match/Mismatch
+                if query[i-1] == target[j-1]:
+                    diag = H[i-1][j-1] + self.MATCH_SCORE
+                else:
+                    diag = H[i-1][j-1] + self.MISMATCH_SCORE
+                
+                # Gap scores
+                up = H[i-1][j] + self.GAP_SCORE
+                left = H[i][j-1] + self.GAP_SCORE
+                
+                # Smith-Waterman: reset to 0 if negative
+                H[i][j] = max(0, diag, up, left)
+                
+                # Track best score position
+                if H[i][j] > best_score:
+                    best_score = H[i][j]
+                    best_end = j
+        
+        # Traceback to find start position
+        best_start = best_end
+        if best_score > 0:
+            # Simple traceback: find where the match started
+            i, j = m, best_end
+            while i > 0 and j > 0 and H[i][j] > 0:
+                if query[i-1] == target[j-1]:
+                    i -= 1
+                    j -= 1
+                elif H[i-1][j] >= H[i][j-1]:
+                    i -= 1
+                else:
+                    j -= 1
+            best_start = j
+        
+        return (best_start, best_end, best_score)
+    
+    def find_match(self, transcript_text: str, threshold: float = 0.5):
+        """
+        Find best matching segment(s) using Smith-Waterman algorithm.
+        
+        Returns: dict with matched segments, or None if no match
+        When score is below threshold but above MIN_MATCH_SCORE, returns with low_confidence=True
+        """
+        if not transcript_text or not self.has_script():
+            return None
+        
+        normalized_input = self._normalize(transcript_text)
+        
+        if len(normalized_input) < 3:
+            return None
+        
+        # Determine search window
+        if self.consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+            # Global resync: search entire script
+            search_start = 0
+            search_end = len(self.full_cn_text)
+            search_window = self.full_cn_text
+            is_global_search = True
+        else:
+            # Normal windowed search
+            search_start = max(0, self.current_cursor - self.NORMAL_WINDOW_BACK)
+            search_end = min(len(self.full_cn_text), self.current_cursor + self.NORMAL_WINDOW_FORWARD)
+            search_window = self.full_cn_text[search_start:search_end]
+            is_global_search = False
+        
+        if not search_window:
+            return None
+        
+        # Run Smith-Waterman
+        match_start, match_end, score = self.smith_waterman(normalized_input, search_window)
+        
+        # Convert to global indices
+        global_start = search_start + match_start
+        global_end = search_start + match_end
+        
+        # Calculate normalized score (as percentage of query length)
+        max_possible_score = len(normalized_input) * self.MATCH_SCORE
+        normalized_score = score / max_possible_score if max_possible_score > 0 else 0
+        
+        # Determine confidence level
+        low_confidence = False
+        if normalized_score < threshold:
+            if score < self.MIN_MATCH_SCORE:
+                # Score too low, truly no match
+                self.consecutive_failures += 1
+                return None
+            else:
+                # Score below threshold but still reasonable - mark as low confidence
+                low_confidence = True
+                self.consecutive_failures += 1
+                # Don't return None - proceed with best guess
+        else:
+            # Good match - reset failure counter
+            self.consecutive_failures = 0
+        
+        # Find all segments covered by this match
+        matched_segment_indices = set()
+        for char_idx in range(global_start, min(global_end, len(self.char_to_segment))):
+            seg_idx = self.char_to_segment[char_idx]
+            matched_segment_indices.add(seg_idx)
+        
+        if not matched_segment_indices:
+            # Fallback: use the next expected segment
+            next_seg_idx = 0
+            for seg in self.segments:
+                if seg['start_idx'] >= self.current_cursor:
+                    next_seg_idx = seg['index']
+                    break
+            matched_segment_indices = {next_seg_idx}
+        
+        # Filter out already-matched segments (avoid duplicates)
+        # But for low_confidence matches, allow re-showing recent segments
+        if low_confidence:
+            new_segments = matched_segment_indices
+        else:
+            new_segments = matched_segment_indices - self.last_matched_segments
+        
+        if not new_segments:
+            # All segments already matched, but still update cursor
+            self.current_cursor = global_end
+            return None
+        
+        # Update state
+        if not low_confidence:
+            self.last_matched_segments = matched_segment_indices
+            self.current_cursor = global_end
+        # For low_confidence, keep cursor but don't update last_matched
+        
+        # Get the segment data for new matches
+        matched_segments = []
+        for seg_idx in sorted(new_segments):
+            if 0 <= seg_idx < len(self.segments):
+                seg = self.segments[seg_idx]
+                matched_segments.append({
+                    'index': seg_idx,
+                    'source': seg['source'],
+                    'target': seg['target'],
+                    'score': normalized_score,
+                    'low_confidence': low_confidence
+                })
+        
+        if not matched_segments:
+            return None
+        
+        # Return first segment for backward compatibility, but include all
+        first_match = matched_segments[0]
+        return {
+            'source': first_match['source'],
+            'target': first_match['target'],
+            'score': normalized_score,
+            'index': first_match['index'],
+            'all_matches': matched_segments,  # All matched segments
+            'is_global_resync': is_global_search,
+            'cursor_position': self.current_cursor,
+            'low_confidence': low_confidence  # NEW: flag for uncertain matches
+        }
+    
+    def reset_position(self):
+        """Reset alignment state to beginning."""
+        self.current_cursor = 0
+        self.consecutive_failures = 0
+        self.last_matched_segments = set()
 
 # --- Logging Configuration ---
 LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "log")
@@ -49,7 +322,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 # Assuming Base is already declared in models.py and imported via 'from app.models import Base, ...'
 from app.models import Base, Meeting, TranscriptSegment, Artifact, TaskStatus # Import all relevant models
 from app.vad import VADAudioBuffer
-from scripts.transcribe_sprint0 import get_transcription, load_asr_model, logger as asr_logger 
+from scripts.transcribe_sprint0 import get_transcription, load_asr_model, correct_keywords, logger as asr_logger 
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sql_app.db")
 LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://localhost:5000")
@@ -435,7 +708,11 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
     # Custom Initial Prompt from Frontend
     custom_initial_prompt = ""
     
+    
     first_audio_time = None # Track time of first audio packet
+    
+    operation_mode = "transcription" # Default mode
+    script_aligner = ScriptAligner() # Initialize Aligner
 
     try:
         while True:
@@ -457,8 +734,22 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
                         
                         if "overlap_duration" in config:
                             OVERLAP_DURATION_SECONDS = float(config["overlap_duration"])
-                            
-                        app_logger.info(f"Config updated: {source_lang} -> {target_lang} | Prompt len: {len(custom_initial_prompt)} | Overlap: {OVERLAP_DURATION_SECONDS}")
+                        
+                        if "mode" in config:
+                            operation_mode = config["mode"]
+                            app_logger.info(f"[DEBUG] Received mode: {operation_mode}")
+                            # If alignment mode, load the script from initial_prompt
+                            if operation_mode == "alignment":
+                                app_logger.info(f"[DEBUG] Alignment mode activated. initial_prompt length: {len(custom_initial_prompt)}")
+                                app_logger.info(f"[DEBUG] initial_prompt preview: {custom_initial_prompt[:200]}")
+                                script_aligner.load_script(custom_initial_prompt)
+                                app_logger.info(f"[DEBUG] Loaded {len(script_aligner.segments)} segments for Alignment Mode.")
+                                app_logger.info(f"[DEBUG] Flattened text length: {len(script_aligner.full_cn_text)} characters")
+                                if len(script_aligner.segments) > 0:
+                                    first_seg = script_aligner.segments[0]
+                                    app_logger.info(f"[DEBUG] First segment: [{first_seg['start_idx']}-{first_seg['end_idx']}] {first_seg['source'][:30]}...")
+
+                        app_logger.info(f"Config updated: {source_lang} -> {target_lang} | Prompt len: {len(custom_initial_prompt)} | Overlap: {OVERLAP_DURATION_SECONDS} | Mode: {operation_mode}")
                 except Exception as e:
                     app_logger.error(f"Failed to parse config message: {e}")
                 continue # Skip audio processing for this loop iteration
@@ -557,16 +848,70 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
                             "content": transcript_text
                         })
 
-                        # 2. Call LLM service asynchronously (Non-blocking)
-                        # Pass previous_context AND language settings
-                        asyncio.create_task(polish_transcription_task(
-                            current_segment_id, 
-                            transcript_text, 
-                            previous_context, 
-                            source_lang,
-                            target_lang,
-                            websocket
-                        ))
+                        # --- Alignment Mode Logic ---
+                        alignment_success = False
+                        if operation_mode == "alignment" and script_aligner.has_script():
+                            # Apply corrections before matching
+                            corrected_text = correct_keywords(transcript_text)
+                            if corrected_text != transcript_text:
+                                app_logger.info(f"[DEBUG] Corrections applied: '{transcript_text}' -> '{corrected_text}'")
+                            
+                            app_logger.info(f"[DEBUG] Attempting alignment for transcript: '{corrected_text}'")
+                            app_logger.info(f"[DEBUG] Current cursor position: {script_aligner.current_cursor} / {len(script_aligner.full_cn_text)}")
+                            
+                            match_result = script_aligner.find_match(corrected_text, threshold=0.4)
+                            if match_result:
+                                # Log match details
+                                is_global = match_result.get('is_global_resync', False)
+                                is_low_conf = match_result.get('low_confidence', False)
+                                resync_tag = " [GLOBAL RESYNC]" if is_global else ""
+                                conf_tag = " [LOW CONFIDENCE]" if is_low_conf else ""
+                                match_symbol = "⚠️" if is_low_conf else "✅"
+                                
+                                app_logger.info(f"[DEBUG] {match_symbol} Alignment Match!{resync_tag}{conf_tag} Score: {match_result['score']:.2f}")
+                                app_logger.info(f"[DEBUG]    Cursor: {match_result.get('cursor_position', 'N/A')}")
+                                
+                                # Handle multi-segment matches
+                                all_matches = match_result.get('all_matches', [match_result])
+                                app_logger.info(f"[DEBUG]    Matched {len(all_matches)} segment(s)")
+                                
+                                # Send all matched segments
+                                for idx, seg_match in enumerate(all_matches):
+                                    seg_low_conf = seg_match.get('low_confidence', False)
+                                    conf_marker = " [?]" if seg_low_conf else ""
+                                    app_logger.info(f"[DEBUG]    [{seg_match['index']}]{conf_marker} {seg_match['source'][:30]}... -> {seg_match['target'][:30]}...")
+                                    
+                                    # Send each segment as polished
+                                    seg_id = current_segment_id if idx == 0 else f"{current_segment_id}-{idx}"
+                                    await websocket.send_json({
+                                        "type": "polished",
+                                        "id": seg_id,
+                                        "content": seg_match['source'],
+                                        "translated": seg_match['target'],
+                                        "low_confidence": seg_low_conf  # Frontend can style differently
+                                    })
+                                
+                                alignment_success = True
+                            else:
+                                failures = script_aligner.consecutive_failures
+                                app_logger.info(f"[DEBUG] ❌ Alignment completely failed for: '{corrected_text[:50]}...' (failures: {failures}/{script_aligner.MAX_CONSECUTIVE_FAILURES})")
+                                if failures >= script_aligner.MAX_CONSECUTIVE_FAILURES:
+                                    app_logger.info(f"[DEBUG] ⚠️ Next attempt will trigger GLOBAL RESYNC")
+                        elif operation_mode == "alignment":
+                            app_logger.warning(f"[DEBUG] ⚠️ Alignment mode active but no script loaded!")
+
+                        # 2. Call LLM service asynchronously (Only if NOT in alignment mode)
+                        # In alignment mode, if no match is found, we skip translation entirely
+                        if not alignment_success and operation_mode != "alignment":
+                            # Pass previous_context AND language settings
+                            asyncio.create_task(polish_transcription_task(
+                                current_segment_id, 
+                                transcript_text, 
+                                previous_context, 
+                                source_lang,
+                                target_lang,
+                                websocket
+                            ))
                         
                         # Update context for next segment
                         previous_context = transcript_text

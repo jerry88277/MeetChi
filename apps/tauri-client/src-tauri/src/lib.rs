@@ -49,14 +49,18 @@ fn start_audio_command(
     device_id: String,
     vad_threshold: f32,
     meeting_id: String,
-    overlap_duration: f32, // <-- New parameter
+    overlap_duration: f32,
+    mode: String,
+    initial_prompt: String,
 ) -> Result<(), String> {
     (*processor_state).lock().unwrap().start_audio_stream(
         app_handle,
         device_id,
         vad_threshold,
         meeting_id,
-        overlap_duration, // <-- Pass new parameter
+        overlap_duration,
+        mode,
+        initial_prompt,
     )
 }
 
