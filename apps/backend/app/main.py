@@ -322,7 +322,29 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 # Assuming Base is already declared in models.py and imported via 'from app.models import Base, ...'
 from app.models import Base, Meeting, TranscriptSegment, Artifact, TaskStatus # Import all relevant models
 from app.vad import VADAudioBuffer
-from scripts.transcribe_sprint0 import get_transcription, load_asr_model, correct_keywords, logger as asr_logger 
+
+# Conditional import for GPU-dependent ASR functions
+# In Cloud Run CPU environment, these functions are provided by the LLM Service
+try:
+    from scripts.transcribe_sprint0 import get_transcription, load_asr_model, correct_keywords, logger as asr_logger
+    LOCAL_ASR_AVAILABLE = True
+except ImportError as e:
+    import logging
+    asr_logger = logging.getLogger("asr_fallback")
+    asr_logger.warning(f"Local ASR not available (torch not installed): {e}. Using LLM Service for ASR.")
+    LOCAL_ASR_AVAILABLE = False
+    
+    # Placeholder functions - actual ASR handled by LLM Service
+    def get_transcription(*args, **kwargs):
+        raise NotImplementedError("Local ASR not available. Use LLM Service endpoint.")
+    
+    def load_asr_model(*args, **kwargs):
+        asr_logger.info("Skipping local ASR model load - using LLM Service")
+        pass
+    
+    def correct_keywords(text):
+        return text  # Pass through without correction
+
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sql_app.db")
 LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://localhost:5000")
@@ -331,8 +353,13 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 from app.celery_app import celery_app
 from app.tasks import generate_meeting_minutes # Assuming this task exists
+from app.routes import api_router  # Import routes
 
-app = FastAPI()
+app = FastAPI(
+    title="MeetChi API",
+    description="Meeting Intelligence Platform API",
+    version="1.0.0"
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -340,6 +367,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include API routes
+app.include_router(api_router)
+
+# Health check endpoint for Cloud Run
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Cloud Run probes"""
+    return {"status": "healthy", "service": "meetchi-backend"}
 
 def get_db():
     db = SessionLocal()
@@ -596,8 +632,9 @@ def read_root():
 
 @app.get("/db-test")
 def db_test(db: Session = Depends(get_db)):
+    from sqlalchemy import text
     try:
-        db.scalar("SELECT 1")
+        db.scalar(text("SELECT 1"))
         return {"message": "Database connection successful!"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database connection failed: {e}")

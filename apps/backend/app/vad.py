@@ -1,7 +1,14 @@
 import numpy as np
 import io
-import torch
 import logging
+
+# Conditional torch import - only needed for Silero VAD
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
 
 logger = logging.getLogger(__name__)
 
@@ -20,20 +27,25 @@ class VADAudioBuffer:
         self.use_silero = False
         self.model = None
         
-        try:
-            logger.info("Loading Silero VAD model...")
-            # Load Silero VAD from torch hub
-            # This requires internet access on first run to download the model (~2MB)
-            self.model, _ = torch.hub.load(repo_or_dir='snakers4/silero-vad',
-                                           model='silero_vad',
-                                           force_reload=False,
-                                           trust_repo=True)
-            self.model.eval()
-            self.use_silero = True
-            logger.info("Silero VAD loaded successfully.")
-        except Exception as e:
-            logger.error(f"Failed to load Silero VAD: {e}. Fallback to Energy VAD.")
-            self.silence_threshold = 0.01 # Reset threshold for Energy VAD fallback
+        # Only try to load Silero if torch is available
+        if TORCH_AVAILABLE:
+            try:
+                logger.info("Loading Silero VAD model...")
+                # Load Silero VAD from torch hub
+                # This requires internet access on first run to download the model (~2MB)
+                self.model, _ = torch.hub.load(repo_or_dir='snakers4/silero-vad',
+                                               model='silero_vad',
+                                               force_reload=False,
+                                               trust_repo=True)
+                self.model.eval()
+                self.use_silero = True
+                logger.info("Silero VAD loaded successfully.")
+            except Exception as e:
+                logger.error(f"Failed to load Silero VAD: {e}. Fallback to Energy VAD.")
+                self.silence_threshold = 0.01 # Reset threshold for Energy VAD fallback
+        else:
+            logger.info("PyTorch not available. Using Energy-based VAD.")
+            self.silence_threshold = 0.005 # Use energy-based threshold
 
     def process_chunk(self, chunk_bytes, force_speech=False):
         """

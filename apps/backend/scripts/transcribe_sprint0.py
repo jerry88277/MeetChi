@@ -141,7 +141,7 @@ def get_transcription(audio_input, language="zh", initial_prompt=None):
 
         segments, info = model.transcribe(
             audio, 
-            language=language, 
+            language=language,  # Keep language parameter for better accuracy
             initial_prompt=transcribe_prompt,
             beam_size=5, # Increased to 10 for better accuracy (trade-off with speed)
             temperature=0, # Enforce deterministic output
@@ -221,19 +221,39 @@ if __name__ == "__main__":
     # You might want to create a separate helper for file-based transcription outside streaming
     
     try:
-        # Load audio using ffmpeg for faster-whisper (similar to how whisperx does)
-        probe = ffmpeg.probe(audio_file)
-        audio_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'audio'), None)
-        in_sr = int(audio_stream['sample_rate'])
+        # Use faster-whisper's built-in file transcription
+        # It handles audio loading internally
+        model = load_asr_model()
         
-        out, _ = (
-            ffmpeg.input(audio_file)
-            .output("-", format="s16le", acodec="pcm_s16le", ac=1, ar=16000)
-            .run(cmd=["ffmpeg", "-nostdin"], capture_stdout=True, capture_stderr=True)
-        )
-        audio_np = np.frombuffer(out, np.int16).flatten().astype(np.float32) / 32768.0
+        # Optimize prompt for Traditional Chinese
+        system_prompt_base = """
+你是一個專業的 AI 即時聽寫專家。你的任務是將語音精準轉錄為流暢、易讀的【繁體中文】。
 
-        transcript = get_transcription(audio_np) # Pass numpy array
+[核心原則]
+1. 準確性優先：優先保留專有名詞、數字與關鍵術語的正確性。
+2. 語意順暢：在不改變原意的前提下，自動修飾口語中的贅字。
+3. 繁體中文：所有輸出必須使用台灣正體中文（Traditional Chinese, Taiwan）。
+4. 標點符號：請根據語氣與停頓，自動加入正確的全形標點符號（，。？！）。
+"""
+        
+        segments, info = model.transcribe(
+            audio_file,  # Directly pass file path
+            language="zh",
+            initial_prompt=system_prompt_base.strip(),
+            beam_size=5,
+            temperature=0,
+            vad_filter=True,
+        )
+        
+        # Extract text
+        transcript_parts = []
+        for segment in segments:
+            if segment.no_speech_prob < 0.85:
+                transcript_parts.append(segment.text.strip())
+        
+        transcript = "".join(transcript_parts)
+        transcript = correct_keywords(transcript)
+        
         print("\n--- Transcription Result ---")
         print(transcript)
         print("----------------------------")

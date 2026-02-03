@@ -1,365 +1,149 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Mic, Square, Settings, X, Minus, Maximize2, RefreshCw } from "lucide-react"; // RefreshCw for language swap
-import SettingsModal from "./components/SettingsModal";
+import React from 'react';
+import Link from 'next/link';
+import {
+    Mic,
+    FileText,
+    Users,
+    Zap,
+    ArrowRight,
+    CheckCircle2,
+    Globe
+} from 'lucide-react';
 
-// --- Configuration ---
-const SAMPLE_RATE = 16000;
-const WEBSOCKET_URL = "ws://127.0.0.1:8000/ws/transcribe";
+export default function HomePage() {
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 text-white">
 
-type AudioSourceType = 'microphone' | 'system';
-type DisplayMode = 'single' | 'dual';
-type TransMode = 'zh_to_en' | 'en_to_zh';
-
-type Segment = {
-    id: string;
-    content: string;
-    translated?: string;
-    isPolished: boolean;
-    isPartial?: boolean;
-};
-
-// Add declaration for electronAPI
-declare global {
-    interface Window {
-        electronAPI?: {
-            minimize: () => void;
-            maximize: () => void;
-            close: () => void;
-            setAlwaysOnTop: (flag: boolean) => void;
-            setIgnoreMouseEvents: (flag: boolean) => void;
-            setOpacity: (value: number) => void;
-            getDesktopSources: () => Promise<any[]>;
-            resizeWindowStart: (direction: string) => void;
-            resizeWindowStop: () => void;
-            resizeWindowContent: (size: { width?: number, height: number }) => void;
-        };
-    }
-}
-
-export default function Home() {
-  // --- Global State ---
-  const [isRecording, setIsRecording] = useState(false);
-  const [segments, setSegments] = useState<Segment[]>([]);
-  const [status, setStatus] = useState<"idle" | "connecting" | "recording" | "error">("idle");
-  const [errorMessage, setErrorMessage] = useState<string>("");
-  
-  // --- Settings State (Persisted) ---
-  const [audioSource, setAudioSource] = useState<AudioSourceType>('microphone');
-  const [displayMode, setDisplayMode] = useState<DisplayMode>('dual');
-  const [transMode, setTransMode] = useState<TransMode>('zh_to_en');
-  const [initialPrompt, setInitialPrompt] = useState<string>("");
-  const [fontSize, setFontSize] = useState<number>(24); 
-  const [opacity, setOpacity] = useState<number>(0.6); 
-  const [maxLines, setMaxLines] = useState<number>(3); 
-
-  // --- UI State ---
-  const [isElectron, setIsElectron] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
-
-  // --- Refs ---
-  const socketRef = useRef<WebSocket | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const audioQueueRef = useRef<ArrayBuffer[]>([]);
-  const isRecordingRef = useRef(false);
-  
-  const scrollRefOriginal = useRef<HTMLDivElement>(null); 
-  const scrollRefTranslated = useRef<HTMLDivElement>(null); 
-
-  // --- Initialization & Persistence ---
-  useEffect(() => {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-          setIsElectron(true);
-      }
-      
-      if (typeof window !== 'undefined') {
-          setInitialPrompt(localStorage.getItem('initialPrompt') || "");
-          setFontSize(parseInt(localStorage.getItem('fontSize') || "24"));
-          setOpacity(parseFloat(localStorage.getItem('opacity') || "0.6"));
-          setMaxLines(parseInt(localStorage.getItem('maxLines') || "3"));
-      }
-  }, []);
-
-  useEffect(() => { if (typeof window !== 'undefined') localStorage.setItem('initialPrompt', initialPrompt); }, [initialPrompt]);
-  useEffect(() => { if (typeof window !== 'undefined') localStorage.setItem('fontSize', fontSize.toString()); }, [fontSize]);
-  useEffect(() => { if (typeof window !== 'undefined') localStorage.setItem('maxLines', maxLines.toString()); }, [maxLines]);
-  useEffect(() => { if (typeof window !== 'undefined') localStorage.setItem('opacity', opacity.toString()); }, [opacity]);
-
-  // Send config on change
-  useEffect(() => {
-      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-          const source_lang = transMode === 'zh_to_en' ? 'zh' : 'en';
-          const target_lang = transMode === 'zh_to_en' ? 'en' : 'zh';
-          socketRef.current.send(JSON.stringify({
-              type: "config",
-              source_lang,
-              target_lang,
-              initial_prompt: initialPrompt
-          }));
-      }
-  }, [transMode, initialPrompt]);
-
-  // Auto Scroll
-  useEffect(() => {
-    if (scrollRefOriginal.current) {
-        scrollRefOriginal.current.scrollTop = scrollRefOriginal.current.scrollHeight;
-    }
-    if (scrollRefTranslated.current) {
-        scrollRefTranslated.current.scrollTop = scrollRefTranslated.current.scrollHeight;
-    }
-  }, [segments, displayMode]);
-
-  // --- Audio Logic ---
-  const initAudio = async () => {
-      let stream: MediaStream;
-      if (isElectron && audioSource === 'system') {
-          try {
-              const sources = await window.electronAPI!.getDesktopSources();
-              // Try to find screen 1 or default
-              const source = sources.find((s: any) => s.name === 'Entire Screen' || s.name === 'Screen 1') || sources[0];
-              stream = await navigator.mediaDevices.getUserMedia({
-                  audio: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: source.id } } as any,
-                  video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: source.id } } as any
-              });
-          } catch (err: any) { throw new Error(`System Audio Error: ${err.message}`); }
-      } else if (audioSource === 'system') {
-          // @ts-ignore
-          stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: { sampleRate: SAMPLE_RATE, echoCancellation: false } });
-      } else {
-          stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: SAMPLE_RATE, echoCancellation: false } });
-      }
-      streamRef.current = stream;
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: SAMPLE_RATE });
-      audioContextRef.current = audioContext;
-      const source = audioContext.createMediaStreamSource(stream);
-      sourceRef.current = source;
-      
-      try {
-        await audioContext.audioWorklet.addModule('/audio-worklet-processor.js');
-        const audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-pass-through-processor');
-        audioWorkletNodeRef.current = audioWorkletNode;
-
-        // Initialize Worklet
-        audioWorkletNode.port.postMessage({ type: 'init', wasmFilePath: '/rnnoise-wasm/rnnoise.wasm', sampleRate: SAMPLE_RATE, frameSize: 480 });
-
-        audioWorkletNode.port.onmessage = (event) => {
-            if (event.data.type === 'initialized') { console.log('AudioWorklet Initialized'); return; }
-            if (event.data.type === 'error') { console.error(event.data.error); return; }
-            if (!isRecordingRef.current) return;
-
-            const socket = socketRef.current;
-            if (socket && socket.readyState === WebSocket.OPEN) {
-                if (audioQueueRef.current.length > 0) {
-                    audioQueueRef.current.forEach(chunk => socket.send(chunk));
-                    audioQueueRef.current = [];
-                }
-                socket.send(event.data);
-            } else {
-                audioQueueRef.current.push(event.data);
-            }
-        };
-
-        source.connect(audioWorkletNode);
-        audioWorkletNode.connect(audioContext.destination);
-      } catch (e) {
-          console.error("AudioWorklet setup failed:", e);
-          throw e;
-      }
-
-      if (audioContext.state === 'suspended') await audioContext.resume();
-      if (audioSource === 'system') stream.getVideoTracks().forEach(t => t.stop());
-  };
-
-  const startRecording = async () => {
-    setErrorMessage("");
-    setStatus("connecting");
-    isRecordingRef.current = true;
-    audioQueueRef.current = [];
-    try {
-      await initAudio();
-      const socket = new WebSocket(WEBSOCKET_URL);
-      socketRef.current = socket;
-      socket.onopen = () => {
-        const s_lang = transMode === 'zh_to_en' ? 'zh' : 'en';
-        const t_lang = transMode === 'zh_to_en' ? 'en' : 'zh';
-        socket.send(JSON.stringify({ type: "config", source_lang: s_lang, target_lang: t_lang, initial_prompt: initialPrompt }));
-        setStatus("recording");
-        setIsRecording(true);
-      };
-      socket.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-        if (message.type === "error") return;
-        setSegments(prev => {
-            const idx = prev.findIndex(s => s.id === message.id);
-            const newSeg = { id: message.id, content: message.content, translated: message.translated, isPolished: message.type === "polished", isPartial: message.type === "partial" };
-            if (idx !== -1) { const copy = [...prev]; copy[idx] = newSeg; return copy; }
-            return [...prev, newSeg];
-        });
-      };
-      socket.onerror = (e) => { 
-          console.error("WebSocket Error:", e); 
-          setStatus("error"); 
-          setErrorMessage("WebSocket Connection Failed. Check Backend."); 
-          stopRecording(); 
-      };
-      socket.onclose = () => { if (isRecordingRef.current) stopRecording(); };
-    } catch (err: any) {
-      console.error(err);
-      setErrorMessage(err.message || "Failed to start recording");
-      setStatus("error");
-      stopRecording();
-    }
-  };
-
-  const stopRecording = () => {
-    setIsRecording(false);
-    isRecordingRef.current = false;
-    setStatus("idle");
-    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
-    if (sourceRef.current) { sourceRef.current.disconnect(); sourceRef.current = null; }
-    if (audioWorkletNodeRef.current) { audioWorkletNodeRef.current.disconnect(); audioWorkletNodeRef.current = null; }
-    if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
-    if (socketRef.current) { if (socketRef.current.readyState === WebSocket.OPEN) socketRef.current.close(); socketRef.current = null; }
-  };
-
-  const toggleRecording = () => {
-      if (isRecording) stopRecording();
-      else startRecording();
-  };
-
-  // --- Handlers ---
-  const swapLanguages = () => {
-      setTransMode(prev => prev === 'zh_to_en' ? 'en_to_zh' : 'zh_to_en');
-  };
-
-  return (
-    <>
-        {/* iOS 26 Liquid Glass Container */}
-        {/* Outermost container must be FULL SCREEN and TRANSPARENT with NO padding to avoid border artifacts at window edges */}
-        <div 
-            className="w-screen h-screen flex flex-col overflow-hidden relative group bg-transparent"
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
-        >
-            {/* The Glass Lens - Floating with Margin */}
-            <div 
-                className="flex-1 flex flex-col overflow-hidden rounded-3xl relative transition-all duration-500 ease-out border border-white/20 shadow-2xl backdrop-blur-2xl m-2"
-                style={{ backgroundColor: `rgba(255, 255, 255, ${opacity * 0.1})` }} 
-            >
-            
-            {/* Title Bar - Floating Liquid Bar */}
-            <div 
-                className={`absolute top-4 left-4 right-4 h-12 bg-white/10 backdrop-blur-md border border-white/20 rounded-full flex items-center justify-between px-4 select-none z-50 transition-all duration-300 title-drag ${isHovered || showSettings ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}`}
-            >
-                <div className="flex items-center gap-3">
-                    {/* Record Button */}
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); toggleRecording(); }}
-                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg no-drag ${isRecording ? 'bg-red-500/80 hover:bg-red-500' : 'bg-white/20 hover:bg-white/30'}`}
-                        title={isRecording ? "Stop Recording" : "Start Recording"}
-                    >
-                        {isRecording ? <Square className="h-3 w-3 text-white fill-current" /> : <Mic className="h-4 w-4 text-white" />}
-                    </button>
-                </div>
-
-                <div className="flex items-center gap-2 no-drag">
-                    {/* Swap Language */}
-                    <button onClick={swapLanguages} className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors" title="Swap Languages">
-                        <RefreshCw className="h-4 w-4" />
-                    </button>
-
-                    {/* Settings */}
-                    <button 
-                        onClick={() => setShowSettings(true)}
-                        className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                    >
-                        <Settings className="h-4 w-4" />
-                    </button>
-                    
-                    {/* Status Indicators */}
-                    {status === 'connecting' && <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse shadow-[0_0_10px_rgba(250,204,21,0.5)]"></div>}
-                    {status === 'error' && <div className="w-2 h-2 bg-red-500 rounded-full shadow-[0_0_10px_rgba(239,68,68,0.5)]"></div>}
-
-                    {/* Window Controls (Mac-style traffic lights) */}
-                    {isElectron && (
-                        <div className="flex gap-2 ml-3 pl-3 border-l border-white/10">
-                            <button onClick={() => window.electronAPI?.minimize()} className="w-3 h-3 rounded-full bg-yellow-500/80 hover:bg-yellow-500 shadow-inner" />
-                            <button onClick={() => window.electronAPI?.maximize()} className="w-3 h-3 rounded-full bg-green-500/80 hover:bg-green-500 shadow-inner" />
-                            <button onClick={() => window.electronAPI?.close()} className="w-3 h-3 rounded-full bg-red-500/80 hover:bg-red-500 shadow-inner" />
+            {/* Navigation */}
+            <nav className="container mx-auto px-6 py-6">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                            <span className="font-bold text-xl">M</span>
                         </div>
-                    )}
+                        <span className="text-2xl font-bold tracking-tight">MeetChi</span>
+                    </div>
+                    <Link
+                        href="/dashboard"
+                        className="px-5 py-2.5 bg-white/10 hover:bg-white/20 rounded-lg font-medium transition-colors backdrop-blur-sm border border-white/10"
+                    >
+                        進入應用
+                    </Link>
                 </div>
-            </div>
+            </nav>
 
-            {/* Content Area - Split View */}
-            <div 
-                className="flex-1 flex flex-col p-6 gap-4 select-none mt-14" // Push content down for title bar
-                style={{ 
-                    fontSize: `${fontSize}px`,
-                    lineHeight: '1.6',
-                    textShadow: '0 2px 10px rgba(0,0,0,0.3)' // Deep shadow for glass readability
-                }}
-            >
-                {/* Original Text Area */}
-                <div 
-                    ref={scrollRefOriginal}
-                    className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden mask-image-gradient-b" // Hide scrollbar
-                >
-                    <div className="flex flex-wrap content-end min-h-full pb-2">
-                        {segments.map((seg) => (
-                            <span 
-                                key={seg.id} 
-                                className={`mr-2 transition-colors duration-500 ${seg.isPartial ? 'text-white/40 italic' : (seg.isPolished ? 'text-blue-300' : 'text-white')}`}
-                            >
-                                {seg.content}
-                            </span>
-                        ))}
+            {/* Hero Section */}
+            <section className="container mx-auto px-6 py-20 md:py-32 text-center">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-500/20 text-indigo-300 text-sm font-medium mb-8 border border-indigo-500/30">
+                    <Zap size={16} />
+                    AI 驅動的會議智慧助理
+                </div>
+
+                <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold leading-tight mb-6">
+                    <span className="bg-gradient-to-r from-white via-indigo-200 to-indigo-400 bg-clip-text text-transparent">
+                        讓每場會議
+                    </span>
+                    <br />
+                    <span className="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+                        都有價值
+                    </span>
+                </h1>
+
+                <p className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto mb-12">
+                    MeetChi 自動錄製您的會議，即時轉錄語音，並用 AI 生成摘要、
+                    提取待辦事項，讓您專注於對話本身。
+                </p>
+
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                    <Link
+                        href="/dashboard"
+                        className="w-full sm:w-auto px-8 py-4 bg-indigo-600 hover:bg-indigo-700 rounded-xl font-semibold text-lg shadow-xl shadow-indigo-600/30 hover:shadow-indigo-600/50 transition-all flex items-center justify-center gap-2"
+                    >
+                        開始使用 <ArrowRight size={20} />
+                    </Link>
+                    <button className="w-full sm:w-auto px-8 py-4 bg-white/5 hover:bg-white/10 rounded-xl font-semibold text-lg border border-white/10 transition-colors">
+                        觀看演示
+                    </button>
+                </div>
+            </section>
+
+            {/* Features Section */}
+            <section className="container mx-auto px-6 py-20">
+                <div className="grid md:grid-cols-3 gap-8">
+
+                    <div className="bg-white/5 rounded-2xl p-8 border border-white/10 hover:bg-white/10 transition-colors group">
+                        <div className="w-14 h-14 bg-indigo-500/20 rounded-xl flex items-center justify-center mb-6 group-hover:bg-indigo-500/30 transition-colors">
+                            <Mic size={28} className="text-indigo-400" />
+                        </div>
+                        <h3 className="text-xl font-bold mb-3">即時語音轉錄</h3>
+                        <p className="text-slate-400 leading-relaxed">
+                            支援中文、英文及台語的高精度語音辨識，即時將會議對話轉為文字。
+                        </p>
+                    </div>
+
+                    <div className="bg-white/5 rounded-2xl p-8 border border-white/10 hover:bg-white/10 transition-colors group">
+                        <div className="w-14 h-14 bg-emerald-500/20 rounded-xl flex items-center justify-center mb-6 group-hover:bg-emerald-500/30 transition-colors">
+                            <FileText size={28} className="text-emerald-400" />
+                        </div>
+                        <h3 className="text-xl font-bold mb-3">AI 智慧摘要</h3>
+                        <p className="text-slate-400 leading-relaxed">
+                            自動分析會議內容，生成簡潔摘要、重點決策和待辦事項。
+                        </p>
+                    </div>
+
+                    <div className="bg-white/5 rounded-2xl p-8 border border-white/10 hover:bg-white/10 transition-colors group">
+                        <div className="w-14 h-14 bg-purple-500/20 rounded-xl flex items-center justify-center mb-6 group-hover:bg-purple-500/30 transition-colors">
+                            <Users size={28} className="text-purple-400" />
+                        </div>
+                        <h3 className="text-xl font-bold mb-3">說話者識別</h3>
+                        <p className="text-slate-400 leading-relaxed">
+                            自動區分不同說話者，清楚標記每段發言歸屬。
+                        </p>
+                    </div>
+
+                </div>
+            </section>
+
+            {/* CTA Section */}
+            <section className="container mx-auto px-6 py-20">
+                <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl p-10 md:p-16 text-center relative overflow-hidden">
+                    <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-20"></div>
+                    <div className="relative z-10">
+                        <h2 className="text-3xl md:text-4xl font-bold mb-4">
+                            準備好提升會議效率了嗎？
+                        </h2>
+                        <p className="text-indigo-200 text-lg mb-8 max-w-xl mx-auto">
+                            立即開始免費使用 MeetChi，讓 AI 成為您的會議助理。
+                        </p>
+                        <Link
+                            href="/dashboard"
+                            className="inline-flex items-center gap-2 px-8 py-4 bg-white text-indigo-600 rounded-xl font-semibold text-lg hover:bg-indigo-50 transition-colors shadow-xl"
+                        >
+                            <Globe size={20} />
+                            進入 Dashboard
+                        </Link>
                     </div>
                 </div>
+            </section>
 
-                {/* Translated Text Area (Only in Dual Mode) */}
-                {displayMode === 'dual' && (
-                    <div 
-                        ref={scrollRefTranslated}
-                        className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden border-t border-white/10 pt-4"
-                    >
-                        <div className="flex flex-wrap content-start min-h-full">
-                            {segments.map((seg) => (
-                                <span 
-                                    key={seg.id} 
-                                    className={`mr-2 transition-colors duration-500 text-[0.9em] ${seg.isPartial ? 'text-white/30 italic' : 'text-white/80'}`}
-                                >
-                                    {seg.translated || (seg.isPolished ? "" : "...")}
-                                </span>
-                            ))}
+            {/* Footer */}
+            <footer className="container mx-auto px-6 py-10 border-t border-white/10">
+                <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-2 text-slate-400">
+                        <div className="w-6 h-6 bg-indigo-500 rounded flex items-center justify-center">
+                            <span className="font-bold text-xs">M</span>
                         </div>
+                        <span>MeetChi © 2024</span>
                     </div>
-                )}
-            </div>
-            </div>
+                    <div className="flex items-center gap-6 text-slate-400 text-sm">
+                        <a href="#" className="hover:text-white transition-colors">隱私政策</a>
+                        <a href="#" className="hover:text-white transition-colors">服務條款</a>
+                        <a href="#" className="hover:text-white transition-colors">聯繫我們</a>
+                    </div>
+                </div>
+            </footer>
         </div>
-
-        {/* Settings Modal */}
-        <SettingsModal 
-            isOpen={showSettings}
-            onClose={() => setShowSettings(false)}
-            isRecording={isRecording}
-            audioSource={audioSource} setAudioSource={setAudioSource}
-            displayMode={displayMode} setDisplayMode={setDisplayMode}
-            transMode={transMode} setTransMode={setTransMode}
-            fontSize={fontSize} setFontSize={setFontSize}
-            opacity={opacity} setOpacity={setOpacity}
-            maxLines={maxLines} setMaxLines={setMaxLines}
-            initialPrompt={initialPrompt} setInitialPrompt={setInitialPrompt}
-            errorMessage={errorMessage} // Pass error message
-            isElectron={isElectron}
-        />
-    </>
-  );
+    );
 }
-

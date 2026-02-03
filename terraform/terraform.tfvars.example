@@ -1,0 +1,29 @@
+# MeetChi GCP Deployment Configuration
+# Copy this file to terraform.tfvars and fill in your values
+
+# Required: Your GCP Project ID
+project_id = "your-gcp-project-id"
+
+# Region for deployment (asia-southeast1 is closest GPU-enabled region to Taiwan)
+region = "asia-southeast1"
+
+# Database password (use a strong password)
+db_password = "your-secure-db-password"
+
+# Hugging Face token (for pyannote/whisper models)
+hf_auth_token = "hf_your_token_here"
+
+# JWT Secret Key (generate with: openssl rand -hex 32)
+secret_key = "your-jwt-secret-key"
+
+# Docker images (after pushing to GCR)
+# backend_image     = "gcr.io/your-project/meetchi-backend:latest"
+# llm_service_image = "gcr.io/your-project/meetchi-llm:latest"
+
+# GPU settings (keep defaults for L4)
+# gpu_enabled = true
+# gpu_type    = "nvidia-l4"
+
+# Scaling (adjust based on usage)
+# min_instances = 0  # Scale to zero when idle
+# max_instances = 3  # Max concurrent instances

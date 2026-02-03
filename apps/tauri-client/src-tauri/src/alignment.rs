@@ -1,5 +1,6 @@
 use serde::{Serialize, Deserialize};
 use std::cmp::max;
+use std::collections::HashSet;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Segment {
@@ -14,6 +15,7 @@ pub struct ScriptEngine {
     full_cn_text: Vec<char>, 
     segments: Vec<Segment>,
     pub current_cursor: usize,
+    emitted_segment_ids: HashSet<usize>, // Track already displayed segments to prevent duplicates
 }
 
 impl ScriptEngine {
@@ -48,13 +50,15 @@ impl ScriptEngine {
             full_cn_text,
             segments,
             current_cursor: 0,
+            emitted_segment_ids: HashSet::new(),
         }
     }
 
     /// Reset cursor to the beginning for a new recording session
     pub fn reset_cursor(&mut self) {
         self.current_cursor = 0;
-        eprintln!("[ALIGN] Cursor reset to 0 for new recording session");
+        self.emitted_segment_ids.clear();
+        eprintln!("[ALIGN] Cursor reset to 0 and emitted segments cleared for new recording session");
     }
 
     pub fn align(&mut self, hypothesis: &str) -> Option<Segment> {
@@ -103,6 +107,13 @@ impl ScriptEngine {
                  
                  let result = self.find_segment(self.current_cursor);
                  if let Some(ref seg) = result {
+                     // Check if this segment was already emitted
+                     if self.emitted_segment_ids.contains(&seg.id) {
+                         eprintln!("[ALIGN] SKIPPED: Segment ID {} already emitted ('{}')", seg.id, &seg.cn_text[..seg.cn_text.len().min(30)]);
+                         return None;
+                     }
+                     // Mark this segment as emitted
+                     self.emitted_segment_ids.insert(seg.id);
                      eprintln!("[ALIGN] SUCCESS: Matched segment ID {} ('{}')", seg.id, &seg.cn_text[..seg.cn_text.len().min(30)]);
                  } else {
                      eprintln!("[ALIGN] WARNING: Score passed but no segment found at cursor {}", self.current_cursor);

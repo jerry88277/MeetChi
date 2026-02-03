@@ -34,7 +34,17 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
     2. Update DB with new segments.
     3. Generate summary using LLM.
     """
-    logger.info(f"Starting CORE meeting processing for {meeting_id} (Template: {template_type})")
+    # Template Key Mapping: Frontend keys -> LLM service keys
+    TEMPLATE_KEY_MAP = {
+        "bant": "sales_bant",
+        "star": "hr_star",
+        "rd": "rd",
+        "general": "general"
+    }
+    # Apply mapping (fallback to original if not in map)
+    llm_template = TEMPLATE_KEY_MAP.get(template_type, template_type)
+    
+    logger.info(f"Starting CORE meeting processing for {meeting_id} (Template: {template_type} -> {llm_template})")
     
     db = SessionLocal()
     try:
@@ -68,7 +78,7 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
             try:
                 # Execute WhisperX Script using the current python interpreter
                 cmd = [sys.executable, WHISPERX_SCRIPT_PATH, audio_filename, "1"]
-                logger.info(f"Executing: {" ".join(cmd)}")
+                logger.info(f"Executing: {' '.join(cmd)}")
                 
                 # We use the current python interpreter
                 process = subprocess.run(
@@ -157,7 +167,7 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
                     f"{LLM_SERVICE_URL}/summarize",
                     json={
                         "text": transcript_text,
-                        "template_name": template_type,
+                        "template_name": llm_template,
                         "extra_instructions": extra_instructions_str
                     }
                 )

@@ -1,0 +1,19 @@
+# Dependencies
+node_modules
+npm-debug.log*
+
+# Build outputs
+.next
+out
+
+# IDE
+.vscode
+.idea
+
+# Misc
+.DS_Store
+*.pem
+.env*.local
+
+# Testing
+coverage

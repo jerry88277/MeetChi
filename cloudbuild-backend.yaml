@@ -1,0 +1,25 @@
+steps:
+  # Build Backend image with no cache
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--no-cache'
+      - '-t'
+      - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/meetchi/meetchi-backend:latest'
+      - '.'
+    dir: 'apps/backend'
+
+  # Push Backend image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/meetchi/meetchi-backend:latest'
+
+images:
+  - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/meetchi/meetchi-backend:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+
+timeout: '3600s'

@@ -1,0 +1,66 @@
+# Exclude large directories
+.git/
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+.env.local
+
+# Exclude model files (we download from HuggingFace)
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.onnx
+*.h5
+models/
+
+# Exclude audio/video files
+*.wav
+*.mp3
+*.mp4
+*.webm
+*.m4a
+*.flac
+audio/
+recordings/
+
+# Exclude build artifacts
+dist/
+build/
+*.egg-info/
+.next/
+out/
+
+# Exclude IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Exclude test data
+test_data/
+tests/fixtures/
+
+# Exclude docs
+docs/
+*.md
+!README.md
+
+# Exclude terraform state
+terraform/.terraform/
+*.tfstate*
+
+# Exclude local cache
+.cache/
+.huggingface/
+
+# Exclude FunSpeech and BreezyVoice (large)
+apps/FunSpeech/
+apps/BreezyVoice/
+
+# Exclude frontend node_modules
+apps/frontend/node_modules/
+apps/frontend/.next/

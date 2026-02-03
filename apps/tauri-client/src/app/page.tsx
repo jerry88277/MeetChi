@@ -65,6 +65,7 @@ export default function Home() {
     const [isHovered, setIsHovered] = useState(false);
     const [isClickThrough, setIsClickThrough] = useState(false);
     const [isDesktop, setIsDesktop] = useState(false);
+    const [connectionStatus, setConnectionStatus] = useState<'connected' | 'reconnecting' | 'disconnected'>('connected');
 
     useEffect(() => {
         setIsDesktop(isTauri());
@@ -391,6 +392,9 @@ export default function Home() {
         let unlistenSpeech: UnlistenFn | undefined;
         let unlistenSettings: UnlistenFn | undefined;
         let unlistenTranscript: UnlistenFn | undefined;
+        let unlistenDisconnect: UnlistenFn | undefined;
+        let unlistenReconnecting: UnlistenFn | undefined;
+        let unlistenReconnected: UnlistenFn | undefined;
 
         const initListeners = async () => {
             unlistenLock = await safeListen<boolean>('lock-state-changed', (event) => {
@@ -457,6 +461,27 @@ export default function Home() {
                     console.error("Failed to parse transcript update:", e);
                 }
             });
+
+            // Listen for backend disconnection (after max reconnect attempts failed)
+            unlistenDisconnect = await safeListen<string>('backend-disconnected', (event) => {
+                console.error("Backend disconnected:", event.payload);
+                setConnectionStatus('disconnected');
+                alert(`⚠️ 後端連線中斷: ${event.payload}\n\n請確認後端服務已啟動，然後重新開始錄音。`);
+                setIsRecording(false);
+                setIsSpeechDetected(false);
+            });
+
+            // Listen for reconnection attempts
+            unlistenReconnecting = await safeListen<string>('backend-reconnecting', (event) => {
+                console.log("Backend reconnecting:", event.payload);
+                setConnectionStatus('reconnecting');
+            });
+
+            // Listen for successful reconnection
+            unlistenReconnected = await safeListen<string>('backend-reconnected', (event) => {
+                console.log("Backend reconnected:", event.payload);
+                setConnectionStatus('connected');
+            });
         };
 
         initListeners();
@@ -466,6 +491,9 @@ export default function Home() {
             if (unlistenSpeech) unlistenSpeech();
             if (unlistenSettings) unlistenSettings();
             if (unlistenTranscript) unlistenTranscript();
+            if (unlistenDisconnect) unlistenDisconnect();
+            if (unlistenReconnecting) unlistenReconnecting();
+            if (unlistenReconnected) unlistenReconnected();
         };
     }, [fontSize, maxLines, displayMode]);
 
@@ -507,8 +535,15 @@ export default function Home() {
                         >
                             {/* Left Controls */}
                             <div className="flex items-center gap-3 pointer-events-auto">
-                                {/* VAD Indicator */}
-                                <div className={`w-2.5 h-2.5 rounded-full transition-all duration-200 ${isSpeechDetected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] scale-110' : 'bg-white/20 scale-100'}`} />
+                                {/* Connection/VAD Indicator */}
+                                <div className={`w-2.5 h-2.5 rounded-full transition-all duration-200 ${connectionStatus === 'reconnecting'
+                                        ? 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.8)] animate-pulse'
+                                        : connectionStatus === 'disconnected'
+                                            ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]'
+                                            : isSpeechDetected
+                                                ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] scale-110'
+                                                : 'bg-white/20 scale-100'
+                                    }`} title={connectionStatus === 'reconnecting' ? '重新連線中...' : connectionStatus === 'disconnected' ? '連線中斷' : isSpeechDetected ? '偵測到語音' : '等待中'} />
 
                                 {/* Record Button */}
                                 <button

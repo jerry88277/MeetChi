@@ -1,0 +1,158 @@
+# ============================================
+# Cloud Build: Download HF Models to GCS
+# Minimal config - no source upload needed
+# ============================================
+#
+# Usage:
+#   gcloud builds submit --no-source --config=cloudbuild-models.yaml \
+#     --substitutions=_HF_TOKEN=hf_xxx,_PROJECT_ID=your-project-id
+#
+# ============================================
+
+timeout: '7200s'  # 2 hours for large model downloads
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+
+substitutions:
+  _HF_TOKEN: ''
+  _PROJECT_ID: ''
+
+steps:
+  # ============================================
+  # Step 1: Download and upload WhisperX
+  # ============================================
+  - name: 'python:3.11-slim'
+    id: 'download-whisper'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install huggingface_hub google-cloud-storage --quiet
+        python << 'PYEOF'
+        from huggingface_hub import snapshot_download
+        import subprocess
+        import os
+        
+        print("Downloading whisper-large-v3...")
+        snapshot_download(
+            'Systran/faster-whisper-large-v3',
+            local_dir='/tmp/whisper-large-v3',
+            local_dir_use_symlinks=False
+        )
+        print("✓ Downloaded whisper-large-v3")
+        
+        bucket = "gs://${_PROJECT_ID}-meetchi-audio"
+        print(f"Uploading to {bucket}/models/whisper-large-v3...")
+        subprocess.run([
+            "gsutil", "-m", "cp", "-r",
+            "/tmp/whisper-large-v3",
+            f"{bucket}/models/"
+        ], check=True)
+        print("✓ Uploaded whisper-large-v3")
+        PYEOF
+
+  # ============================================
+  # Step 2: Download and upload Taiwanese ASR
+  # ============================================
+  - name: 'python:3.11-slim'
+    id: 'download-taiwanese'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install huggingface_hub --quiet
+        python << 'PYEOF'
+        from huggingface_hub import snapshot_download
+        import subprocess
+        
+        print("Downloading taiwanese-asr...")
+        snapshot_download(
+            'gacky1601/whisper-small-taiwanese-asr-v2',
+            local_dir='/tmp/taiwanese-asr',
+            local_dir_use_symlinks=False
+        )
+        print("✓ Downloaded taiwanese-asr")
+        
+        bucket = "gs://${_PROJECT_ID}-meetchi-audio"
+        print(f"Uploading to {bucket}/models/taiwanese-asr...")
+        subprocess.run([
+            "gsutil", "-m", "cp", "-r",
+            "/tmp/taiwanese-asr",
+            f"{bucket}/models/"
+        ], check=True)
+        print("✓ Uploaded taiwanese-asr")
+        PYEOF
+    waitFor: ['-']  # Run in parallel
+
+  # ============================================
+  # Step 3: Download Pyannote (requires token)
+  # ============================================
+  - name: 'python:3.11-slim'
+    id: 'download-pyannote'
+    entrypoint: 'bash'
+    env:
+      - 'HF_TOKEN=${_HF_TOKEN}'
+    args:
+      - '-c'
+      - |
+        pip install huggingface_hub --quiet
+        python << 'PYEOF'
+        from huggingface_hub import snapshot_download
+        import subprocess
+        import os
+        
+        token = os.environ.get('HF_TOKEN')
+        if not token:
+            print("⚠ Skipping pyannote: no HF_TOKEN")
+            exit(0)
+        
+        bucket = "gs://${_PROJECT_ID}-meetchi-audio"
+        
+        print("Downloading pyannote-diarization...")
+        snapshot_download(
+            'pyannote/speaker-diarization-3.1',
+            local_dir='/tmp/pyannote-diarization',
+            token=token,
+            local_dir_use_symlinks=False
+        )
+        subprocess.run([
+            "gsutil", "-m", "cp", "-r",
+            "/tmp/pyannote-diarization",
+            f"{bucket}/models/"
+        ], check=True)
+        print("✓ Uploaded pyannote-diarization")
+        
+        print("Downloading pyannote-segmentation...")
+        snapshot_download(
+            'pyannote/segmentation-3.0',
+            local_dir='/tmp/pyannote-segmentation',
+            token=token,
+            local_dir_use_symlinks=False
+        )
+        subprocess.run([
+            "gsutil", "-m", "cp", "-r",
+            "/tmp/pyannote-segmentation",
+            f"{bucket}/models/"
+        ], check=True)
+        print("✓ Uploaded pyannote-segmentation")
+        PYEOF
+    waitFor: ['-']  # Run in parallel
+
+  # ============================================
+  # Step 4: Verify
+  # ============================================
+  - name: 'gcr.io/cloud-builders/gsutil'
+    id: 'verify'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "=== Models in GCS ==="
+        gsutil ls -l gs://${_PROJECT_ID}-meetchi-audio/models/ || echo "No models yet"
+        echo "=== Done ==="
+    waitFor:
+      - 'download-whisper'
+      - 'download-taiwanese'
+      - 'download-pyannote'

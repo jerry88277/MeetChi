@@ -4,8 +4,6 @@ use ringbuf::{HeapRb, traits::{Producer, Consumer, Split, Observer}};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Emitter};
-// Remove unused imports to keep it clean
-// use anyhow::{Result, anyhow};
 use std::sync::mpsc;
 use std::error::Error;
 use webrtc_vad::{Vad, SampleRate as VadSampleRate, VadMode};
@@ -13,13 +11,19 @@ use tokio::runtime::Runtime;
 use futures_util::{StreamExt, SinkExt};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use url::Url;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const TARGET_SAMPLE_RATE: u32 = 16000;
 const VAD_WINDOW_SIZE_MS: u32 = 30;
 const VAD_SAMPLE_SIZE: usize = (TARGET_SAMPLE_RATE / 1000 * VAD_WINDOW_SIZE_MS) as usize;
 
+// Reconnection settings
+const MAX_RECONNECT_ATTEMPTS: u32 = 10;
+const RECONNECT_DELAY_MS: u64 = 2000;
+
 pub struct AudioProcessor {
     stream_active: Arc<Mutex<bool>>,
+    ws_connected: Arc<AtomicBool>,
     _audio_thread: Option<thread::JoinHandle<Result<(), Box<dyn Error + Send + Sync>>>>,
     stop_tx: Option<mpsc::Sender<()>>,
     runtime: Option<Runtime>,
@@ -29,6 +33,7 @@ impl AudioProcessor {
     pub fn new(_app_handle: &AppHandle) -> Result<Self, Box<dyn Error + Send + Sync>> {
         Ok(AudioProcessor {
             stream_active: Arc::new(Mutex::new(false)),
+            ws_connected: Arc::new(AtomicBool::new(false)),
             _audio_thread: None,
             stop_tx: None,
             runtime: None,
@@ -50,16 +55,19 @@ impl AudioProcessor {
         }
         *self.stream_active.lock().unwrap() = true;
 
-        // --- WebSocket Setup ---
+        // --- WebSocket Setup with Reconnection ---
         let rt = Runtime::new().map_err(|e: std::io::Error| e.to_string())?;
         
-        let url = Url::parse("ws://127.0.0.1:8000/ws/transcribe").map_err(|e| e.to_string())?;
+        let url_str = "ws://127.0.0.1:8000/ws/transcribe";
         
-        // Connect synchronously here to fail early
-        let (ws_stream, _) = rt.block_on(connect_async(url.to_string()))
+        // Initial connection attempt
+        let (ws_stream, _) = rt.block_on(connect_async(url_str))
             .map_err(|e| format!("Failed to connect to backend: {}", e))?;
             
-        let (mut write, mut read) = ws_stream.split(); // Split immediately
+        let (write, read) = ws_stream.split();
+        let write = Arc::new(tokio::sync::Mutex::new(write));
+        let ws_connected = self.ws_connected.clone();
+        ws_connected.store(true, Ordering::SeqCst);
             
         log::info!("WebSocket connected");
 
@@ -74,26 +82,109 @@ impl AudioProcessor {
             "initial_prompt": initial_prompt
         });
         let config_msg_str = config_msg.to_string();
-        rt.block_on(write.send(Message::Text(config_msg_str))) 
-            .map_err(|e| format!("Failed to send config to WS: {}", e))?;
+        
+        {
+            let write_lock = rt.block_on(write.lock());
+            let mut write_guard = write_lock;
+            rt.block_on(async {
+                write_guard.send(Message::Text(config_msg_str.clone())).await
+            }).map_err(|e| format!("Failed to send config to WS: {}", e))?;
+        }
         log::info!("Sent config to WebSocket with meeting_id: {}, mode: {}", meeting_id, mode);
 
+        let (audio_tx, audio_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let audio_rx = Arc::new(tokio::sync::Mutex::new(audio_rx));
 
-        let (audio_tx, mut audio_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        // Store config for reconnection
+        let config_for_reconnect = config_msg.to_string();
+        let url_for_reconnect = url_str.to_string();
 
-        // Writer Task
+        // Writer Task with reconnection support
+        let write_clone = write.clone();
+        let audio_rx_clone = audio_rx.clone();
+        let ws_connected_writer = ws_connected.clone();
+        let stream_active_writer = self.stream_active.clone();
+        let app_handle_writer = app_handle.clone();
+        let config_for_writer = config_for_reconnect.clone();
+        let url_for_writer = url_for_reconnect.clone();
+        
         rt.spawn(async move {
-            while let Some(data) = audio_rx.recv().await {
-                if let Err(e) = write.send(Message::Binary(data)).await {
-                    log::error!("WS send error: {}", e);
+            let mut reconnect_attempts = 0;
+            let mut current_write = write_clone;
+            
+            loop {
+                // Check if still active
+                if !*stream_active_writer.lock().unwrap() {
                     break;
+                }
+
+                let mut rx_guard = audio_rx_clone.lock().await;
+                
+                tokio::select! {
+                    Some(data) = rx_guard.recv() => {
+                        drop(rx_guard); // Release lock before send
+                        let mut write_guard = current_write.lock().await;
+                        if let Err(e) = write_guard.send(Message::Binary(data)).await {
+                            log::error!("WS send error: {}. Attempting reconnect...", e);
+                            ws_connected_writer.store(false, Ordering::SeqCst);
+                            let _ = app_handle_writer.emit("backend-reconnecting", format!("Reconnecting... (attempt {}/{})", reconnect_attempts + 1, MAX_RECONNECT_ATTEMPTS));
+                            
+                            // Try to reconnect
+                            drop(write_guard);
+                            
+                            while reconnect_attempts < MAX_RECONNECT_ATTEMPTS {
+                                reconnect_attempts += 1;
+                                log::info!("Reconnect attempt {}/{}", reconnect_attempts, MAX_RECONNECT_ATTEMPTS);
+                                
+                                tokio::time::sleep(tokio::time::Duration::from_millis(RECONNECT_DELAY_MS)).await;
+                                
+                                match connect_async(&url_for_writer).await {
+                                    Ok((new_ws_stream, _)) => {
+                                        let (new_write, _new_read) = new_ws_stream.split();
+                                        let new_write_arc = Arc::new(tokio::sync::Mutex::new(new_write));
+                                        
+                                        // Send config again
+                                        let mut new_write_guard = new_write_arc.lock().await;
+                                        if let Err(e) = new_write_guard.send(Message::Text(config_for_writer.clone())).await {
+                                            log::error!("Failed to send config after reconnect: {}", e);
+                                            continue;
+                                        }
+                                        drop(new_write_guard);
+                                        
+                                        current_write = new_write_arc;
+                                        ws_connected_writer.store(true, Ordering::SeqCst);
+                                        reconnect_attempts = 0;
+                                        log::info!("WebSocket reconnected successfully");
+                                        let _ = app_handle_writer.emit("backend-reconnected", "Connection restored");
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        log::error!("Reconnect failed: {}", e);
+                                        let _ = app_handle_writer.emit("backend-reconnecting", format!("Reconnecting... (attempt {}/{})", reconnect_attempts + 1, MAX_RECONNECT_ATTEMPTS));
+                                    }
+                                }
+                            }
+                            
+                            if reconnect_attempts >= MAX_RECONNECT_ATTEMPTS {
+                                log::error!("Max reconnect attempts reached. Giving up.");
+                                let _ = app_handle_writer.emit("backend-disconnected", "Failed to reconnect after multiple attempts");
+                                break;
+                            }
+                        }
+                    }
+                    else => {
+                        // Channel closed
+                        break;
+                    }
                 }
             }
         });
 
         // Reader Task
         let app_handle_clone_ws = app_handle.clone();
+        let ws_connected_reader = ws_connected.clone();
         rt.spawn(async move {
+            let mut read = read;
             while let Some(msg) = read.next().await {
                 match msg {
                     Ok(Message::Text(text)) => {
@@ -101,11 +192,14 @@ impl AudioProcessor {
                         let _ = app_handle_clone_ws.emit("transcript-update", text);
                     }
                     Ok(Message::Close(_)) => {
-                        log::info!("WS Closed");
+                        log::info!("WS Closed by server");
+                        ws_connected_reader.store(false, Ordering::SeqCst);
+                        // Don't send disconnect event here - writer will handle reconnection
                         break;
                     }
                     Err(e) => {
                         log::error!("WS Read Error: {}", e);
+                        ws_connected_reader.store(false, Ordering::SeqCst);
                         break;
                     }
                     _ => {}
