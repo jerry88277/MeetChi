@@ -57,10 +57,21 @@ terraform/.terraform/
 .cache/
 .huggingface/
 
-# Exclude FunSpeech and BreezyVoice (large)
+# ==========================================
+# Exclude ALL other apps when building backend
+# ==========================================
 apps/FunSpeech/
 apps/BreezyVoice/
+apps/tauri-client/
+apps/llm_service/
+apps/frontend/
 
-# Exclude frontend node_modules
-apps/frontend/node_modules/
-apps/frontend/.next/
+# Exclude Terraform and scripts
+terraform/
+scripts/
+
+# Exclude other top-level items
+.agent/
+.gemini/
+cloudbuild*.yaml
+docker-compose.yml

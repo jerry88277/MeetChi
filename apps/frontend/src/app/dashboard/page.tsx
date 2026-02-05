@@ -122,8 +122,8 @@ interface SidebarProps {
 
 const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen, isConnected, user }: SidebarProps) => {
     const menuItems = [
-        { id: 'dashboard', icon: FileText, label: '所有會議' },
         { id: 'record', icon: Mic, label: '開始錄音', primary: true },
+        { id: 'dashboard', icon: FileText, label: '所有會議' },
         { id: 'templates', icon: LayoutTemplate, label: '模板管理' },
         { id: 'admin', icon: Shield, label: '管理' },
         { id: 'settings', icon: Settings, label: '系統設定' },
@@ -225,6 +225,204 @@ const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen, isCon
     );
 };
 
+// --- Pre-Recording View Component (Mic Selection & Test) ---
+interface PreRecordingViewProps {
+    onConfirm: (deviceId: string) => void;
+    onCancel: () => void;
+}
+
+const PreRecordingView = ({ onConfirm, onCancel }: PreRecordingViewProps) => {
+    const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+    const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+    const [audioLevel, setAudioLevel] = useState(0);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [stream, setStream] = useState<MediaStream | null>(null);
+    const analyserRef = React.useRef<AnalyserNode | null>(null);
+    const animationRef = React.useRef<number | null>(null);
+
+    // Enumerate audio devices
+    useEffect(() => {
+        const getDevices = async () => {
+            try {
+                // Request permission first to get device labels
+                const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                tempStream.getTracks().forEach(track => track.stop());
+
+                const allDevices = await navigator.mediaDevices.enumerateDevices();
+                const audioInputs = allDevices.filter(d => d.kind === 'audioinput');
+                setDevices(audioInputs);
+                if (audioInputs.length > 0) {
+                    setSelectedDeviceId(audioInputs[0].deviceId);
+                }
+                setIsLoading(false);
+            } catch (err) {
+                setError('無法存取麥克風，請確認已授予權限');
+                setIsLoading(false);
+            }
+        };
+        getDevices();
+
+        return () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            if (animationRef.current) {
+                cancelAnimationFrame(animationRef.current);
+            }
+        };
+    }, []);
+
+    // Start audio monitoring when device changes
+    useEffect(() => {
+        if (!selectedDeviceId) return;
+
+        const startMonitoring = async () => {
+            // Stop previous stream
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            if (animationRef.current) {
+                cancelAnimationFrame(animationRef.current);
+            }
+
+            try {
+                const newStream = await navigator.mediaDevices.getUserMedia({
+                    audio: { deviceId: { exact: selectedDeviceId } }
+                });
+                setStream(newStream);
+
+                // Setup audio analyser
+                const audioContext = new AudioContext();
+                const source = audioContext.createMediaStreamSource(newStream);
+                const analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+                analyserRef.current = analyser;
+
+                // Animate audio level
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                const updateLevel = () => {
+                    analyser.getByteFrequencyData(dataArray);
+                    const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+                    setAudioLevel(Math.min(100, avg * 1.5));
+                    animationRef.current = requestAnimationFrame(updateLevel);
+                };
+                updateLevel();
+            } catch (err) {
+                setError('無法啟動麥克風');
+            }
+        };
+        startMonitoring();
+
+        return () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        };
+    }, [selectedDeviceId]);
+
+    const handleConfirm = () => {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+        }
+        if (animationRef.current) {
+            cancelAnimationFrame(animationRef.current);
+        }
+        onConfirm(selectedDeviceId);
+    };
+
+    const handleCancel = () => {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+        }
+        if (animationRef.current) {
+            cancelAnimationFrame(animationRef.current);
+        }
+        onCancel();
+    };
+
+    if (isLoading) {
+        return (
+            <div className="h-full flex flex-col items-center justify-center bg-white">
+                <Loader2 size={48} className="text-indigo-500 animate-spin mb-4" />
+                <p className="text-slate-500">正在檢測麥克風...</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="h-full flex flex-col items-center justify-center bg-white p-6">
+            <div className="max-w-md w-full">
+                {/* Header */}
+                <div className="text-center mb-8">
+                    <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Mic size={32} className="text-indigo-600" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-slate-900">準備開始錄音</h2>
+                    <p className="text-slate-500 mt-2">請選擇麥克風並測試音量</p>
+                </div>
+
+                {/* Error Message */}
+                {error && (
+                    <div className="bg-red-50 text-red-600 px-4 py-3 rounded-xl mb-6 flex items-center gap-2">
+                        <AlertCircle size={20} />
+                        <span>{error}</span>
+                    </div>
+                )}
+
+                {/* Microphone Selection */}
+                <div className="mb-6">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">選擇麥克風</label>
+                    <select
+                        value={selectedDeviceId}
+                        onChange={(e) => setSelectedDeviceId(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                        {devices.map((device) => (
+                            <option key={device.deviceId} value={device.deviceId}>
+                                {device.label || `麥克風 ${device.deviceId.slice(0, 8)}`}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                {/* Audio Level Meter */}
+                <div className="mb-8">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">音量測試</label>
+                    <div className="bg-slate-100 rounded-full h-4 overflow-hidden">
+                        <div
+                            className="h-full bg-gradient-to-r from-green-400 via-yellow-400 to-red-500 transition-all duration-75"
+                            style={{ width: `${audioLevel}%` }}
+                        />
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2 text-center">
+                        {audioLevel < 10 ? '請說話測試麥克風...' : audioLevel < 60 ? '音量正常 ✓' : '音量良好 ✓✓'}
+                    </p>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-4">
+                    <button
+                        onClick={handleCancel}
+                        className="flex-1 px-6 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors font-medium"
+                    >
+                        取消
+                    </button>
+                    <button
+                        onClick={handleConfirm}
+                        disabled={!selectedDeviceId || devices.length === 0}
+                        className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                        <Mic size={20} />
+                        開始錄音
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // --- Recording View Component ---
 interface RecordingViewProps {
     onStop: (durationSeconds: number) => void;
@@ -312,8 +510,14 @@ const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
 
     const statusLabels = {
         completed: '已完成',
-        processing: '處理中...',
-        failed: '失敗'
+        processing: 'AI 處理中',
+        failed: '處理失敗'
+    };
+
+    const statusDescriptions = {
+        completed: '',
+        processing: '正在轉錄音檔並生成摘要',
+        failed: '點擊重試'
     };
 
     return (
@@ -331,20 +535,48 @@ const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
                         <span className="flex items-center gap-1"><Clock size={14} /> {meeting.duration}</span>
                     </div>
                 </div>
-                <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${statusColors[meeting.status]}`}>
-                    {meeting.status === 'processing' && <Loader2 size={12} className="inline mr-1 animate-spin" />}
-                    {statusLabels[meeting.status]}
-                </span>
+                <div className="flex flex-col items-end">
+                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${statusColors[meeting.status]}`}>
+                        {meeting.status === 'processing' && <Loader2 size={12} className="inline mr-1 animate-spin" />}
+                        {statusLabels[meeting.status]}
+                    </span>
+                    {statusDescriptions[meeting.status] && (
+                        <span className="text-[10px] text-slate-400 mt-1">
+                            {statusDescriptions[meeting.status]}
+                        </span>
+                    )}
+                </div>
             </div>
 
             <p className="text-slate-600 text-sm line-clamp-2 leading-relaxed">
-                {meeting.summary || "等待 AI 生成摘要中..."}
+                {meeting.status === 'processing'
+                    ? '⏳ AI 正在分析會議內容，請稍候...'
+                    : meeting.status === 'failed'
+                        ? '❌ 處理失敗，請點擊查看詳情並重試'
+                        : meeting.summary || '暫無摘要'}
             </p>
 
             <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                <div className="flex -space-x-2">
-                    <div className="w-6 h-6 rounded-full bg-blue-500 border-2 border-white flex items-center justify-center text-[10px] text-white font-medium">P</div>
-                    <div className="w-6 h-6 rounded-full bg-green-500 border-2 border-white flex items-center justify-center text-[10px] text-white font-medium">J</div>
+                {/* Display transcript segment count or processing indicator */}
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                    {meeting.status === 'completed' && meeting.transcript.length > 0 && (
+                        <span className="flex items-center gap-1">
+                            <FileText size={12} />
+                            {meeting.transcript.length} 段落
+                        </span>
+                    )}
+                    {meeting.status === 'processing' && (
+                        <span className="flex items-center gap-1 text-amber-500">
+                            <Loader2 size={12} className="animate-spin" />
+                            處理中
+                        </span>
+                    )}
+                    {meeting.status === 'failed' && (
+                        <span className="flex items-center gap-1 text-red-500">
+                            <AlertCircle size={12} />
+                            需要重試
+                        </span>
+                    )}
                 </div>
                 <div className="text-indigo-600 text-sm font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     查看詳情 <ChevronRight size={16} />
@@ -459,10 +691,15 @@ const DashboardView = ({ meetings, isLoading, error, onSelectMeeting, onCreateMe
 interface DetailViewProps {
     meeting: Meeting | null;
     onBack: () => void;
+    onRegenerateSummary?: (meetingId: string) => void;
+    isRegenerating?: boolean;
 }
 
-const DetailView = ({ meeting, onBack }: DetailViewProps) => {
+const DetailView = ({ meeting, onBack, onRegenerateSummary, isRegenerating = false }: DetailViewProps) => {
     if (!meeting) return null;
+
+    const canRegenerate = meeting.status !== 'processing' && onRegenerateSummary;
+    const needsSummary = !meeting.summary || meeting.status === 'failed';
 
     return (
         <div className="h-full flex flex-col bg-white">
@@ -492,14 +729,50 @@ const DetailView = ({ meeting, onBack }: DetailViewProps) => {
                 <div className="flex-1 overflow-y-auto p-6 md:p-8 border-r border-slate-200 bg-slate-50/50">
                     <div className="max-w-3xl mx-auto space-y-8">
                         <section>
-                            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4 flex items-center gap-2">
-                                <FileText size={16} /> 會議摘要
-                            </h3>
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                                    <FileText size={16} /> 會議摘要
+                                </h3>
+                                {canRegenerate && (
+                                    <button
+                                        onClick={() => onRegenerateSummary(meeting.id)}
+                                        disabled={isRegenerating}
+                                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        {isRegenerating ? (
+                                            <>
+                                                <Loader2 size={12} className="animate-spin" />
+                                                生成中...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <RefreshCw size={12} />
+                                                {needsSummary ? '生成摘要' : '重新生成'}
+                                            </>
+                                        )}
+                                    </button>
+                                )}
+                            </div>
                             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm leading-relaxed text-slate-700">
-                                {meeting.summary ? meeting.summary : (
+                                {meeting.status === 'processing' ? (
                                     <div className="flex flex-col items-center justify-center py-8 text-slate-400">
                                         <Loader2 className="h-8 w-8 animate-spin text-indigo-500 mb-2" />
-                                        <p>AI 正在生成摘要中...</p>
+                                        <p>AI 正在處理中，請稍候...</p>
+                                        <p className="text-xs mt-1">通常需要 1-3 分鐘</p>
+                                    </div>
+                                ) : meeting.status === 'failed' ? (
+                                    <div className="flex flex-col items-center justify-center py-8 text-red-400">
+                                        <AlertCircle className="h-8 w-8 mb-2" />
+                                        <p>摘要生成失敗</p>
+                                        <p className="text-xs mt-1">請點擊「重新生成」按鈕重試</p>
+                                    </div>
+                                ) : meeting.summary ? (
+                                    meeting.summary
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center py-8 text-slate-400">
+                                        <FileText className="h-8 w-8 mb-2" />
+                                        <p>尚無摘要</p>
+                                        <p className="text-xs mt-1">點擊「生成摘要」開始</p>
                                     </div>
                                 )}
                             </div>
@@ -641,7 +914,8 @@ const SettingsView = ({ onBack, isConnected }: { onBack: () => void; isConnected
 // --- Main App Component ---
 export default function DashboardPage() {
     const { data: session } = useSession();
-    const [currentView, setCurrentView] = useState<'dashboard' | 'record' | 'detail' | 'settings' | 'templates' | 'admin'>('dashboard');
+    const [currentView, setCurrentView] = useState<'dashboard' | 'pre-record' | 'record' | 'detail' | 'settings' | 'templates' | 'admin'>('dashboard');
+    const [selectedMicDeviceId, setSelectedMicDeviceId] = useState<string>('');
     const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -650,6 +924,15 @@ export default function DashboardPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isConnected, setIsConnected] = useState(false);
+
+    // Sync session token with API client for authenticated requests
+    useEffect(() => {
+        if (session?.idToken) {
+            api.setToken(session.idToken);
+        } else {
+            api.setToken(null);
+        }
+    }, [session?.idToken]);
 
     // Fetch meetings from API
     const fetchMeetings = useCallback(async () => {
@@ -683,6 +966,11 @@ export default function DashboardPage() {
     const [isSaving, setIsSaving] = useState(false);
 
     const handleStartRecord = () => {
+        setCurrentView('pre-record');
+    };
+
+    const handleConfirmRecord = (deviceId: string) => {
+        setSelectedMicDeviceId(deviceId);
         setCurrentView('record');
     };
 
@@ -730,6 +1018,46 @@ export default function DashboardPage() {
         setCurrentView('detail');
     };
 
+    // State for regenerating summary
+    const [isRegenerating, setIsRegenerating] = useState(false);
+
+    // Handler for regenerating summary
+    const handleRegenerateSummary = useCallback(async (meetingId: string) => {
+        setIsRegenerating(true);
+        try {
+            // Call API to regenerate summary
+            const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/regenerate-summary`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(session?.idToken ? { 'Authorization': `Bearer ${session.idToken}` } : {})
+                },
+                body: JSON.stringify({ template_name: 'general' })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            // Refresh meetings list to get updated status
+            await fetchMeetings();
+
+            // Update selected meeting with new data
+            if (selectedMeeting && selectedMeeting.id === meetingId) {
+                const apiMeetings = await api.listMeetings();
+                const updatedMeeting = apiMeetings.find(m => m.id === meetingId);
+                if (updatedMeeting) {
+                    setSelectedMeeting(transformMeeting(updatedMeeting));
+                }
+            }
+        } catch (err) {
+            console.error('Failed to regenerate summary:', err);
+            setError(err instanceof Error ? err.message : '重新生成摘要失敗');
+        } finally {
+            setIsRegenerating(false);
+        }
+    }, [fetchMeetings, selectedMeeting, session?.idToken]);
+
     const handleBackToDashboard = () => {
         setSelectedMeeting(null);
         setCurrentView('dashboard');
@@ -763,7 +1091,7 @@ export default function DashboardPage() {
             )}
 
             <main className="flex-1 flex flex-col relative overflow-hidden">
-                {currentView !== 'record' && (
+                {currentView !== 'record' && currentView !== 'pre-record' && (
                     <div className="md:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between z-20">
                         <div className="flex items-center gap-2">
                             <div className="w-6 h-6 bg-indigo-500 rounded flex items-center justify-center">
@@ -789,6 +1117,13 @@ export default function DashboardPage() {
                         />
                     )}
 
+                    {currentView === 'pre-record' && (
+                        <PreRecordingView
+                            onConfirm={handleConfirmRecord}
+                            onCancel={handleBackToDashboard}
+                        />
+                    )}
+
                     {currentView === 'record' && (
                         <RecordingView
                             onStop={handleStopRecord}
@@ -801,6 +1136,8 @@ export default function DashboardPage() {
                         <DetailView
                             meeting={selectedMeeting}
                             onBack={handleBackToDashboard}
+                            onRegenerateSummary={handleRegenerateSummary}
+                            isRegenerating={isRegenerating}
                         />
                     )}
 

@@ -56,8 +56,12 @@ export const api = {
         return res.json();
     },
 
-    async generateSummary(meetingId: string, template_type: string = 'general'): Promise<{ message: string, task_id: string }> {
-        const res = await fetch(`${API_BASE_URL}/meetings/${meetingId}/generate-summary?template_type=${template_type}`, {
+    async generateSummary(meetingId: string, template_type: string = 'general', context: string = '', length: string = '', style: string = ''): Promise<{ message: string, task_id: string }> {
+        const params = new URLSearchParams({ template_type });
+        if (context) params.append('context', context);
+        if (length) params.append('length', length);
+        if (style) params.append('style', style);
+        const res = await fetch(`${API_BASE_URL}/meetings/${meetingId}/generate-summary?${params.toString()}`, {
             method: 'POST',
         });
         if (!res.ok) throw new Error('Failed to trigger summary generation');

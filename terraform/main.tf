@@ -38,7 +38,7 @@ resource "google_project_service" "apis" {
     "cloudbuild.googleapis.com",
     "containerregistry.googleapis.com",
     "artifactregistry.googleapis.com",
-    "redis.googleapis.com",
+    "cloudtasks.googleapis.com",
     "vpcaccess.googleapis.com",
   ])
   

@@ -1,0 +1,16 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/meetchi/meetchi-llm:latest', '-f', 'Dockerfile.gpu', '.']
+    dir: 'apps/llm_service'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/meetchi/meetchi-llm:latest']
+
+images:
+  - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/meetchi/meetchi-llm:latest'
+
+options:
+  machineType: 'E2_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: '3600s'

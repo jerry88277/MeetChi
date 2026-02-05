@@ -5,10 +5,7 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  devIndicators: {
-    buildActivity: false,
-    appIsrStatus: false,
-  },
+  devIndicators: false,
   reactCompiler: true,
   async rewrites() {
     return [

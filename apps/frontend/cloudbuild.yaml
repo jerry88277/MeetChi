@@ -7,16 +7,16 @@ steps:
     args:
       - 'build'
       - '--build-arg'
-      - 'NEXT_PUBLIC_API_URL=https://meetchi-backend-705495828555.asia-southeast1.run.app'
+      - 'NEXT_PUBLIC_API_URL=https://meetchi-backend-wfqjx2j42q-as.a.run.app'
       - '-t'
-      - 'asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:v6'
+      - 'asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:v7'
       - '.'
 
   # Push to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:v6'
+      - 'asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:v7'
 
   # Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -25,12 +25,13 @@ steps:
       - 'run'
       - 'deploy'
       - 'meetchi-frontend'
-      - '--image=asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:v6'
+      - '--image=asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:v7'
       - '--region=asia-southeast1'
       - '--platform=managed'
       - '--allow-unauthenticated'
 
 images:
-  - 'asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:v6'
+  - 'asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:v7'
+
 
 timeout: '1200s'

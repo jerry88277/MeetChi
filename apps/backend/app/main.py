@@ -297,6 +297,306 @@ class ScriptAligner:
         self.consecutive_failures = 0
         self.last_matched_segments = set()
 
+
+class MultiSpeakerScriptAligner(ScriptAligner):
+    """
+    Extended Script Aligner for multi-speaker scenarios.
+    
+    Features:
+    1. Speaker zone parsing (===SPEAKER:xxx===)
+    2. Zone-restricted search (prevents cross-speaker matching)
+    3. Auto-advance to next speaker at zone boundary
+    4. Manual speaker switching support
+    """
+    
+    # Auto-advance threshold (percentage of zone traversed)
+    AUTO_ADVANCE_THRESHOLD = 0.90
+    
+    def __init__(self):
+        super().__init__()
+        self.speaker_zones = []  # [(start_idx, end_idx, speaker_name, segment_range)]
+        self.current_zone_index = 0
+        self.lock_to_current_zone = True  # Prevent cross-speaker matching
+    
+    def load_script(self, script_text: str):
+        """
+        Parse script with optional ===SPEAKER:xxx=== markers.
+        Falls back to single-speaker mode if no markers found.
+        """
+        self.segments = []
+        self.full_cn_text = ""
+        self.char_to_segment = []
+        self.current_cursor = 0
+        self.consecutive_failures = 0
+        self.last_matched_segments = set()
+        self.speaker_zones = []
+        self.current_zone_index = 0
+        
+        if not script_text:
+            return
+        
+        # Check if multi-speaker format
+        if "===SPEAKER:" in script_text:
+            self._load_multi_speaker_script(script_text)
+        else:
+            # Fallback to single-speaker mode
+            super().load_script(script_text)
+            if self.segments:
+                self.speaker_zones = [(0, len(self.full_cn_text), "Default", (0, len(self.segments)))]
+    
+    def _load_multi_speaker_script(self, script_text: str):
+        """Parse multi-speaker script with ===SPEAKER:xxx=== markers."""
+        # Split by speaker markers
+        parts = re.split(r'===SPEAKER:([^=]+)===', script_text)
+        
+        # parts will be: ['', 'Speaker1', 'content1', 'Speaker2', 'content2', ...]
+        current_speaker = "Default"
+        
+        for i, part in enumerate(parts):
+            part = part.strip()
+            if not part:
+                continue
+            
+            # Odd indices are speaker names, even indices are content
+            if i % 2 == 1:
+                current_speaker = part
+            else:
+                # This is content for current_speaker
+                zone_start_idx = len(self.full_cn_text)
+                segment_start = len(self.segments)
+                
+                # Parse lines in this speaker's section
+                lines = part.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if not line or "|||" not in line:
+                        continue
+                    
+                    line_parts = line.split("|||")
+                    if len(line_parts) >= 2:
+                        source = line_parts[0].strip()
+                        target = line_parts[1].strip()
+                        
+                        # Remove numbering
+                        clean_source = re.sub(r'^[\[\(]?\d+[\]\)\.:]?\s*', '', source)
+                        normalized = self._normalize(clean_source)
+                        
+                        if not normalized:
+                            continue
+                        
+                        start_idx = len(self.full_cn_text)
+                        end_idx = start_idx + len(normalized)
+                        
+                        self.segments.append({
+                            'index': len(self.segments),
+                            'source': clean_source,
+                            'target': target,
+                            'normalized': normalized,
+                            'start_idx': start_idx,
+                            'end_idx': end_idx,
+                            'speaker': current_speaker  # Track speaker per segment
+                        })
+                        
+                        for _ in range(len(normalized)):
+                            self.char_to_segment.append(len(self.segments) - 1)
+                        
+                        self.full_cn_text += normalized
+                
+                zone_end_idx = len(self.full_cn_text)
+                segment_end = len(self.segments)
+                
+                if zone_end_idx > zone_start_idx:
+                    self.speaker_zones.append((
+                        zone_start_idx, 
+                        zone_end_idx, 
+                        current_speaker,
+                        (segment_start, segment_end)
+                    ))
+        
+        app_logger.info(f"[MultiSpeaker] Loaded {len(self.speaker_zones)} speaker zones, {len(self.segments)} total segments")
+        for i, zone in enumerate(self.speaker_zones):
+            app_logger.info(f"  Zone {i}: {zone[2]} (chars {zone[0]}-{zone[1]}, segments {zone[3][0]}-{zone[3][1]})")
+    
+    def get_current_speaker(self) -> str:
+        """Get the name of the current active speaker."""
+        if self.speaker_zones and 0 <= self.current_zone_index < len(self.speaker_zones):
+            return self.speaker_zones[self.current_zone_index][2]
+        return "Unknown"
+    
+    def get_zone_progress(self) -> float:
+        """Get progress within current zone (0.0 to 1.0)."""
+        if not self.speaker_zones or self.current_zone_index >= len(self.speaker_zones):
+            return 0.0
+        
+        zone = self.speaker_zones[self.current_zone_index]
+        zone_start, zone_end = zone[0], zone[1]
+        zone_length = zone_end - zone_start
+        
+        if zone_length == 0:
+            return 1.0
+        
+        progress = (self.current_cursor - zone_start) / zone_length
+        return max(0.0, min(1.0, progress))
+    
+    def advance_speaker(self) -> bool:
+        """Manually advance to next speaker zone. Returns True if successful."""
+        if self.current_zone_index < len(self.speaker_zones) - 1:
+            self.current_zone_index += 1
+            new_zone = self.speaker_zones[self.current_zone_index]
+            self.current_cursor = new_zone[0]
+            self.consecutive_failures = 0
+            self.last_matched_segments = set()
+            app_logger.info(f"[MultiSpeaker] Advanced to zone {self.current_zone_index}: {new_zone[2]}")
+            return True
+        return False
+    
+    def previous_speaker(self) -> bool:
+        """Go back to previous speaker zone. Returns True if successful."""
+        if self.current_zone_index > 0:
+            self.current_zone_index -= 1
+            prev_zone = self.speaker_zones[self.current_zone_index]
+            self.current_cursor = prev_zone[0]
+            self.consecutive_failures = 0
+            self.last_matched_segments = set()
+            app_logger.info(f"[MultiSpeaker] Returned to zone {self.current_zone_index}: {prev_zone[2]}")
+            return True
+        return False
+    
+    def find_match(self, transcript_text: str, threshold: float = 0.5):
+        """
+        Find match with zone-restricted search.
+        Prevents cross-speaker matching when lock_to_current_zone is True.
+        """
+        if not transcript_text or not self.has_script():
+            return None
+        
+        normalized_input = self._normalize(transcript_text)
+        if len(normalized_input) < 3:
+            return None
+        
+        # Determine search range based on zone locking
+        if self.lock_to_current_zone and self.speaker_zones:
+            if self.current_zone_index >= len(self.speaker_zones):
+                # All zones exhausted
+                return None
+            
+            zone = self.speaker_zones[self.current_zone_index]
+            zone_start, zone_end, speaker_name, _ = zone
+            
+            # Restrict search to current zone
+            if self.consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+                # Global resync within zone only
+                search_start = zone_start
+                search_end = zone_end
+                is_global_search = True
+            else:
+                # Normal windowed search within zone
+                search_start = max(zone_start, self.current_cursor - self.NORMAL_WINDOW_BACK)
+                search_end = min(zone_end, self.current_cursor + self.NORMAL_WINDOW_FORWARD)
+                is_global_search = False
+        else:
+            # No zone locking - use parent class behavior
+            return super().find_match(transcript_text, threshold)
+        
+        search_window = self.full_cn_text[search_start:search_end]
+        if not search_window:
+            # Check if we should auto-advance
+            if self.get_zone_progress() >= self.AUTO_ADVANCE_THRESHOLD:
+                if self.advance_speaker():
+                    # Retry with new zone
+                    return self.find_match(transcript_text, threshold)
+            return None
+        
+        # Run Smith-Waterman on restricted range
+        match_start, match_end, score = self.smith_waterman(normalized_input, search_window)
+        
+        global_start = search_start + match_start
+        global_end = search_start + match_end
+        
+        max_possible_score = len(normalized_input) * self.MATCH_SCORE
+        normalized_score = score / max_possible_score if max_possible_score > 0 else 0
+        
+        low_confidence = False
+        if normalized_score < threshold:
+            if score < self.MIN_MATCH_SCORE:
+                self.consecutive_failures += 1
+                return None
+            else:
+                low_confidence = True
+                self.consecutive_failures += 1
+        else:
+            self.consecutive_failures = 0
+        
+        # Find matched segments
+        matched_segment_indices = set()
+        for char_idx in range(global_start, min(global_end, len(self.char_to_segment))):
+            seg_idx = self.char_to_segment[char_idx]
+            matched_segment_indices.add(seg_idx)
+        
+        if not matched_segment_indices:
+            return None
+        
+        if low_confidence:
+            new_segments = matched_segment_indices
+        else:
+            new_segments = matched_segment_indices - self.last_matched_segments
+        
+        if not new_segments:
+            self.current_cursor = global_end
+            # Check for auto-advance
+            if self.get_zone_progress() >= self.AUTO_ADVANCE_THRESHOLD:
+                self.advance_speaker()
+            return None
+        
+        if not low_confidence:
+            self.last_matched_segments = matched_segment_indices
+            self.current_cursor = global_end
+        
+        # Get segment data
+        matched_segments = []
+        for seg_idx in sorted(new_segments):
+            if 0 <= seg_idx < len(self.segments):
+                seg = self.segments[seg_idx]
+                matched_segments.append({
+                    'index': seg_idx,
+                    'source': seg['source'],
+                    'target': seg['target'],
+                    'score': normalized_score,
+                    'low_confidence': low_confidence,
+                    'speaker': seg.get('speaker', 'Unknown')
+                })
+        
+        if not matched_segments:
+            return None
+        
+        first_match = matched_segments[0]
+        
+        # Check for auto-advance after match
+        if self.get_zone_progress() >= self.AUTO_ADVANCE_THRESHOLD:
+            self.advance_speaker()
+        
+        return {
+            'source': first_match['source'],
+            'target': first_match['target'],
+            'score': normalized_score,
+            'index': first_match['index'],
+            'speaker': first_match['speaker'],
+            'all_matches': matched_segments,
+            'is_global_resync': is_global_search,
+            'cursor_position': self.current_cursor,
+            'low_confidence': low_confidence,
+            'current_speaker': self.get_current_speaker(),
+            'zone_progress': self.get_zone_progress()
+        }
+    
+    def reset_position(self):
+        """Reset alignment state to beginning of first zone."""
+        super().reset_position()
+        self.current_zone_index = 0
+        if self.speaker_zones:
+            self.current_cursor = self.speaker_zones[0][0]
+
+
 # --- Logging Configuration ---
 LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "log")
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -351,9 +651,10 @@ LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://localhost:5000")
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-from app.celery_app import celery_app
-from app.tasks import generate_meeting_minutes # Assuming this task exists
+
+from app.tasks import generate_meeting_minutes  # Now a direct function (not Celery task)
 from app.routes import api_router  # Import routes
+
 
 app = FastAPI(
     title="MeetChi API",
@@ -534,6 +835,69 @@ def trigger_summary_generation(
         status_code=status.HTTP_200_OK
     )
 
+
+class RegenerateSummaryRequest(BaseModel):
+    """Request body for regenerating summary"""
+    template_name: str = Field("general", description="Summary template type")
+    context: str = Field("", description="Additional context for summary")
+
+
+@app.post("/api/v1/meetings/{meeting_id}/regenerate-summary")
+async def regenerate_summary(
+    meeting_id: str,
+    request: RegenerateSummaryRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Regenerate summary for an existing meeting.
+    Clears existing summary and triggers re-generation.
+    """
+    # Check if meeting exists
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    # Check if meeting has transcript content
+    if not meeting.transcript_raw and not meeting.transcript_polished:
+        # Check if there are transcript segments
+        segment_count = db.query(TranscriptSegment).filter(
+            TranscriptSegment.meeting_id == meeting_id
+        ).count()
+        if segment_count == 0:
+            raise HTTPException(
+                status_code=400, 
+                detail="Meeting has no transcript content to summarize"
+            )
+    
+    # Clear existing summary and reset status to processing
+    meeting.summary_json = None
+    meeting.status = "processing"
+    meeting.updated_at = datetime.utcnow()
+    db.commit()
+    
+    app_logger.info(f"Regenerating summary for meeting {meeting_id} with template {request.template_name}")
+    
+    # Trigger summary generation in background
+    from app.tasks import generate_summary_core
+    background_tasks.add_task(
+        generate_summary_core, 
+        meeting_id, 
+        request.template_name, 
+        request.context,
+        "medium",
+        "formal"
+    )
+    
+    return JSONResponse(
+        content={
+            "message": "Summary regeneration started",
+            "meeting_id": meeting_id,
+            "status": "processing"
+        },
+        status_code=status.HTTP_200_OK
+    )
+
 CORRECTIONS_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "corrections.json")
 
 @app.get("/api/v1/settings/corrections")
@@ -611,20 +975,28 @@ async def summarize_full_transcript(request_data: SummarizeRequestModel):
         raise HTTPException(status_code=500, detail=f"Failed to generate summary: {e}")
 
 
-# Load ASR model during startup
+# Load ASR model during startup (optional - may fail on Cloud Run CPU environment)
 @app.on_event("startup")
 async def on_startup():
     app_logger.info("Application startup event triggered.")
     Base.metadata.create_all(bind=engine)
     app_logger.info("Database tables checked/created.")
     
-    app_logger.info("Pre-loading ASR model...")
-    try:
-        await asyncio.to_thread(load_asr_model)
-        app_logger.info("ASR model pre-loaded successfully.")
-    except Exception as e:
-        app_logger.critical(f"Failed to pre-load ASR model during startup: {e}")
-        raise RuntimeError("ASR model pre-loading failed. Cannot start application.") from e
+    # ASR model pre-loading is optional - in Cloud Run CPU environment,
+    # this will fail because faster-whisper requires GPU libraries.
+    # ASR transcription should be handled by a separate GPU-enabled service.
+    enable_asr_preload = os.getenv("ENABLE_ASR_PRELOAD", "false").lower() == "true"
+    if enable_asr_preload:
+        app_logger.info("Pre-loading ASR model (ENABLE_ASR_PRELOAD=true)...")
+        try:
+            await asyncio.to_thread(load_asr_model)
+            app_logger.info("ASR model pre-loaded successfully.")
+        except Exception as e:
+            app_logger.warning(f"ASR model pre-loading failed (non-fatal): {e}")
+            app_logger.warning("ASR transcription will not be available locally. Use LLM service instead.")
+    else:
+        app_logger.info("Skipping ASR model pre-loading (ENABLE_ASR_PRELOAD not set).")
+
 
 @app.get("/")
 def read_root():
@@ -749,7 +1121,7 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
     first_audio_time = None # Track time of first audio packet
     
     operation_mode = "transcription" # Default mode
-    script_aligner = ScriptAligner() # Initialize Aligner
+    script_aligner = MultiSpeakerScriptAligner() # Initialize Multi-Speaker Aligner
 
     try:
         while True:

@@ -62,8 +62,8 @@ resource "google_cloud_run_v2_service" "backend" {
       }
       
       env {
-        name  = "REDIS_URL"
-        value = "redis://${google_redis_instance.celery.host}:6379/0"
+        name  = "CLOUD_TASKS_QUEUE"
+        value = "projects/${var.project_id}/locations/${var.region}/queues/meetchi-transcription-queue"
       }
       
       env {
@@ -113,7 +113,7 @@ resource "google_cloud_run_v2_service" "backend" {
   depends_on = [
     google_project_service.apis,
     google_sql_database_instance.main,
-    google_redis_instance.celery,
+    google_cloud_tasks_queue.transcription,
   ]
 }
 
@@ -124,23 +124,20 @@ resource "google_cloud_run_v2_service" "backend" {
 # ============================================
 
 resource "google_cloud_run_v2_service" "llm_gpu" {
-  # Note: Using standard provider for CPU version
-  # provider = google-beta  # Uncomment when GPU quota approved
+  # CPU-only for Terraform deployment, GPU enabled via gcloud CLI separately
   name     = "meetchi-llm-gpu"
   location = var.region
-  
-  # Remove BETA launch stage for CPU version
-  # launch_stage = "BETA"  # Uncomment when GPU quota approved
   
   template {
     service_account = google_service_account.cloudrun.email
     
     scaling {
       min_instance_count = 0 # Scale to zero when idle
-      max_instance_count = 3
+      max_instance_count = 1
     }
     
-    # CPU-only container (until GPU quota approved)
+    # CPU-only resources for initial deployment
+    # GPU will be added via: gcloud run services update meetchi-llm-gpu --gpu=1 --gpu-type=nvidia-l4 --no-gpu-zonal-redundancy
     containers {
       image = var.llm_service_image
       
@@ -148,14 +145,13 @@ resource "google_cloud_run_v2_service" "llm_gpu" {
         container_port = 5000
       }
       
-      # CPU-only resources (GPU version: 4 CPU, 16Gi, nvidia.com/gpu=1)
       resources {
         limits = {
           cpu    = "2"
           memory = "8Gi"
-          # "nvidia.com/gpu" = "1"  # Uncomment when GPU quota approved
         }
       }
+
       
       env {
         name = "HF_AUTH_TOKEN"

@@ -3,8 +3,9 @@
 # Models loaded from GCS at startup for faster builds
 # ============================================
 
-# Use NVIDIA CUDA base image
-FROM nvidia/cuda:12.1-runtime-ubuntu22.04
+# Use NVIDIA CUDA base image (correct tag format)
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \

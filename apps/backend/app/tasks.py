@@ -1,4 +1,6 @@
-from app.celery_app import celery_app
+# Cloud Tasks Compatible Background Tasks
+# Removed Celery dependency - now works with direct function calls or Cloud Tasks HTTP triggers
+
 import logging
 import os
 import json
@@ -27,12 +29,15 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 WHISPERX_SCRIPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "exec_whisperx_task_v1.2.py")
 TRANSCRIBE_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "transcribe", "json")
 
+
 def generate_summary_core(meeting_id: str, template_type: str = "general", context: str = "", length: str = "", style: str = ""):
     """
-    Core logic: 
+    Core logic for meeting processing:
     1. Run WhisperX script for high-quality transcription + diarization.
     2. Update DB with new segments.
     3. Generate summary using LLM.
+    
+    Can be called directly or via Cloud Tasks HTTP handler.
     """
     # Template Key Mapping: Frontend keys -> LLM service keys
     TEMPLATE_KEY_MAP = {
@@ -193,9 +198,11 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
     finally:
         db.close()
 
-@celery_app.task(bind=True)
-def generate_meeting_minutes(self, meeting_id: str, template_type: str = "general"):
+
+def generate_meeting_minutes(meeting_id: str, template_type: str = "general", context: str = "", length: str = "", style: str = ""):
     """
-    Celery wrapper task.
+    Wrapper function for backward compatibility.
+    Previously was a Celery task, now a direct function call.
+    Can be invoked via Cloud Tasks HTTP handler or directly.
     """
-    return generate_summary_core(meeting_id, template_type)
+    return generate_summary_core(meeting_id, template_type, context, length, style)

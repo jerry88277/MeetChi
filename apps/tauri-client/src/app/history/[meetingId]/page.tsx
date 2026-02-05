@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { api, Meeting, TranscriptSegment } from '@/lib/api';
@@ -15,7 +17,7 @@ interface SummaryData {
 export default function MeetingDetailPage() {
     const params = useParams();
     const meetingId = params.meetingId as string;
-    
+
     const [meeting, setMeeting] = useState<Meeting | null>(null);
     const [loading, setLoading] = useState(true);
     const [generatingSummary, setGeneratingSummary] = useState(false);
@@ -99,14 +101,14 @@ export default function MeetingDetailPage() {
                     </div>
                 </div>
                 <div className="ml-auto flex gap-2">
-                     <button className="p-2 hover:bg-white/10 rounded-full transition-colors" title="Export">
+                    <button className="p-2 hover:bg-white/10 rounded-full transition-colors" title="Export">
                         <Download className="w-5 h-5" />
-                     </button>
+                    </button>
                     {/* Settings for Summary */}
                     {!summaryData && ( // Only show settings if no summary is generated yet
-                        <button 
+                        <button
                             onClick={() => setShowSummarySettingsModal(true)}
-                            className="p-2 hover:bg-white/10 rounded-full transition-colors" 
+                            className="p-2 hover:bg-white/10 rounded-full transition-colors"
                             title="Summary Settings"
                         >
                             <SettingsIcon className="w-5 h-5" />
@@ -139,9 +141,9 @@ export default function MeetingDetailPage() {
                                         {seg.content_polished || seg.content_raw}
                                     </div>
                                     {seg.content_translated && (
-                                         <div className="text-sm text-white/50 italic">
+                                        <div className="text-sm text-white/50 italic">
                                             {seg.content_translated}
-                                         </div>
+                                        </div>
                                     )}
                                 </div>
                             </div>
@@ -183,7 +185,7 @@ export default function MeetingDetailPage() {
                                 </div>
                             )}
 
-                             {summaryData.decisions && summaryData.decisions.length > 0 && (
+                            {summaryData.decisions && summaryData.decisions.length > 0 && (
                                 <div>
                                     <h3 className="text-sm font-bold text-white/70 uppercase mb-2 flex items-center gap-2">
                                         <CheckSquare className="w-4 h-4 text-green-400" />
@@ -200,7 +202,7 @@ export default function MeetingDetailPage() {
                                 </div>
                             )}
 
-                             {summaryData.risks && summaryData.risks.length > 0 && (
+                            {summaryData.risks && summaryData.risks.length > 0 && (
                                 <div>
                                     <h3 className="text-sm font-bold text-white/70 uppercase mb-2 flex items-center gap-2">
                                         <AlertTriangle className="w-4 h-4 text-orange-400" />
@@ -227,7 +229,7 @@ export default function MeetingDetailPage() {
                             ) : (
                                 <>
                                     <p className="text-white/40 mb-4">No summary generated yet.</p>
-                                    <button 
+                                    <button
                                         onClick={() => setShowSummarySettingsModal(true)} // Open modal instead of direct generation
                                         disabled={generatingSummary}
                                         className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
@@ -242,7 +244,7 @@ export default function MeetingDetailPage() {
             </div>
 
             {/* Render Summary Settings Modal */}
-            <SummarySettingsModal 
+            <SummarySettingsModal
                 isOpen={showSummarySettingsModal}
                 onClose={() => setShowSummarySettingsModal(false)}
                 meetingId={meetingId}

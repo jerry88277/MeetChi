@@ -22,10 +22,15 @@ output "database_instance_name" {
   value       = google_sql_database_instance.main.connection_name
 }
 
-# Redis
-output "redis_host" {
-  description = "Redis host for Celery"
-  value       = google_redis_instance.celery.host
+# Cloud Tasks Queues
+output "cloud_tasks_transcription_queue" {
+  description = "Cloud Tasks queue for transcription tasks"
+  value       = google_cloud_tasks_queue.transcription.name
+}
+
+output "cloud_tasks_summarization_queue" {
+  description = "Cloud Tasks queue for summarization tasks"
+  value       = google_cloud_tasks_queue.summarization.name
 }
 
 # Storage

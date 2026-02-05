@@ -61,9 +61,17 @@ export interface ApiError {
 
 class ApiClient {
     private baseUrl: string;
+    private token: string | null = null;
 
     constructor(baseUrl: string) {
         this.baseUrl = baseUrl;
+    }
+
+    /**
+     * Set authentication token for API requests
+     */
+    setToken(token: string | null): void {
+        this.token = token;
     }
 
     /**
@@ -82,13 +90,20 @@ class ApiClient {
     ): Promise<T> {
         const url = `${this.baseUrl}${endpoint}`;
 
+        // Build headers with optional Authorization
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            ...(options.headers as Record<string, string>),
+        };
+
+        if (this.token) {
+            headers['Authorization'] = `Bearer ${this.token}`;
+        }
+
         try {
             const response = await fetch(url, {
                 ...options,
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...options.headers,
-                },
+                headers,
             });
 
             if (!response.ok) {

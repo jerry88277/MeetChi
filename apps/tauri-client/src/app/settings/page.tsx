@@ -35,6 +35,15 @@ export default function SettingsPage() {
     const [englishScript, setEnglishScript] = useState('');
     const [scriptPairCount, setScriptPairCount] = useState(0);
 
+    // Multi-Speaker State
+    const [speakerAName, setSpeakerAName] = useState('講者 A');
+    const [speakerAChineseScript, setSpeakerAChineseScript] = useState('');
+    const [speakerAEnglishScript, setSpeakerAEnglishScript] = useState('');
+    const [speakerBName, setSpeakerBName] = useState('講者 B');
+    const [speakerBChineseScript, setSpeakerBChineseScript] = useState('');
+    const [speakerBEnglishScript, setSpeakerBEnglishScript] = useState('');
+    const [multiSpeakerMode, setMultiSpeakerMode] = useState(false);
+
     // Advanced Settings State
     const [maxDuration, setMaxDuration] = useState(15.0);
     const [minSilence, setMinSilence] = useState(0.6);
@@ -62,7 +71,20 @@ export default function SettingsPage() {
 
             // Operation Mode
             setOperationMode((localStorage.getItem('operationMode') as 'transcription' | 'alignment' | 'manual') || 'transcription');
-            // Load separate scripts
+
+            // Multi-Speaker Mode
+            const savedMultiSpeakerMode = localStorage.getItem('multiSpeakerMode') === 'true';
+            setMultiSpeakerMode(savedMultiSpeakerMode);
+
+            // Load Speaker A/B Settings
+            setSpeakerAName(localStorage.getItem('speakerAName') || '講者 A');
+            setSpeakerAChineseScript(localStorage.getItem('speakerAChineseScript') || '');
+            setSpeakerAEnglishScript(localStorage.getItem('speakerAEnglishScript') || '');
+            setSpeakerBName(localStorage.getItem('speakerBName') || '講者 B');
+            setSpeakerBChineseScript(localStorage.getItem('speakerBChineseScript') || '');
+            setSpeakerBEnglishScript(localStorage.getItem('speakerBEnglishScript') || '');
+
+            // Load separate scripts (single-speaker fallback)
             const savedChinese = localStorage.getItem('chineseScript') || '';
             const savedEnglish = localStorage.getItem('englishScript') || '';
             setChineseScript(savedChinese);
@@ -71,10 +93,28 @@ export default function SettingsPage() {
             const chLines = savedChinese.split('\n').filter(l => l.trim());
             const enLines = savedEnglish.split('\n').filter(l => l.trim());
             setScriptPairCount(Math.min(chLines.length, enLines.length));
-            // Combine for backend
-            const combined = chLines.map((ch, i) => `[${i + 1}] ${ch.trim()} ||| ${enLines[i]?.trim() || ''}`).join('\n');
-            setCombinedScript(combined);
-            saveSetting('combinedScript', combined);
+
+            // Generate combined script based on mode
+            if (savedMultiSpeakerMode) {
+                // Multi-speaker format with ===SPEAKER:xxx=== markers
+                const speakerACh = (localStorage.getItem('speakerAChineseScript') || '').split('\n').filter(l => l.trim());
+                const speakerAEn = (localStorage.getItem('speakerAEnglishScript') || '').split('\n').filter(l => l.trim());
+                const speakerBCh = (localStorage.getItem('speakerBChineseScript') || '').split('\n').filter(l => l.trim());
+                const speakerBEn = (localStorage.getItem('speakerBEnglishScript') || '').split('\n').filter(l => l.trim());
+
+                let multiCombined = `===SPEAKER:${localStorage.getItem('speakerAName') || '講者 A'}===\n`;
+                multiCombined += speakerACh.map((ch, i) => `${ch.trim()} ||| ${speakerAEn[i]?.trim() || ''}`).join('\n');
+                multiCombined += `\n===SPEAKER:${localStorage.getItem('speakerBName') || '講者 B'}===\n`;
+                multiCombined += speakerBCh.map((ch, i) => `${ch.trim()} ||| ${speakerBEn[i]?.trim() || ''}`).join('\n');
+
+                setCombinedScript(multiCombined);
+                saveSetting('combinedScript', multiCombined);
+            } else {
+                // Single-speaker format
+                const combined = chLines.map((ch, i) => `[${i + 1}] ${ch.trim()} ||| ${enLines[i]?.trim() || ''}`).join('\n');
+                setCombinedScript(combined);
+                saveSetting('combinedScript', combined);
+            }
 
             // Advanced
             setMaxDuration(parseFloat(localStorage.getItem('maxDuration') || "15.0"));
@@ -111,6 +151,32 @@ export default function SettingsPage() {
         if (isTauri()) {
             await emit('setting-changed', { key, value });
         }
+    };
+
+    // Helper: Regenerate multi-speaker combined script
+    const regenerateMultiSpeakerScript = () => {
+        const speakerACh = speakerAChineseScript.split('\n').filter(l => l.trim());
+        const speakerAEn = speakerAEnglishScript.split('\n').filter(l => l.trim());
+        const speakerBCh = speakerBChineseScript.split('\n').filter(l => l.trim());
+        const speakerBEn = speakerBEnglishScript.split('\n').filter(l => l.trim());
+
+        let multiCombined = `===SPEAKER:${speakerAName}===\n`;
+        multiCombined += speakerACh.map((ch, i) => `${ch.trim()} ||| ${speakerAEn[i]?.trim() || ''}`).join('\n');
+        multiCombined += `\n===SPEAKER:${speakerBName}===\n`;
+        multiCombined += speakerBCh.map((ch, i) => `${ch.trim()} ||| ${speakerBEn[i]?.trim() || ''}`).join('\n');
+
+        setCombinedScript(multiCombined);
+        saveSetting('combinedScript', multiCombined);
+    };
+
+    // Helper: Regenerate single-speaker combined script
+    const regenerateSingleSpeakerScript = () => {
+        const chLines = chineseScript.split('\n').filter(l => l.trim());
+        const enLines = englishScript.split('\n').filter(l => l.trim());
+        setScriptPairCount(Math.min(chLines.length, enLines.length));
+        const combined = chLines.map((ch, i) => `[${i + 1}] ${ch.trim()} ||| ${enLines[i]?.trim() || ''}`).join('\n');
+        setCombinedScript(combined);
+        saveSetting('combinedScript', combined);
     };
 
     const closeSettings = async () => {
@@ -431,67 +497,213 @@ export default function SettingsPage() {
                             <h2 className="text-sm font-bold text-green-400 uppercase tracking-wider flex items-center gap-2">
                                 📝 Script Editor
                             </h2>
-                            <p className="text-[10px] text-gray-400">
-                                左側輸入中文稿，右側輸入英文稿，系統按行號自動配對
-                            </p>
-                            <div className="grid grid-cols-2 gap-2">
-                                {/* Chinese Script */}
-                                <div className="bg-black/40 rounded-lg border border-white/10 overflow-hidden">
-                                    <div className="p-2 border-b border-white/10 bg-black/20">
-                                        <span className="text-[10px] text-blue-400 font-bold">🇹🇼 中文稿</span>
-                                    </div>
-                                    <textarea
-                                        value={chineseScript}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setChineseScript(val);
-                                            saveSetting('chineseScript', val);
-                                            // Recombine
-                                            const chLines = val.split('\n').filter(l => l.trim());
-                                            const enLines = englishScript.split('\n').filter(l => l.trim());
-                                            setScriptPairCount(Math.min(chLines.length, enLines.length));
-                                            const combined = chLines.map((ch, i) => `[${i + 1}] ${ch.trim()} ||| ${enLines[i]?.trim() || ''}`).join('\n');
-                                            setCombinedScript(combined);
-                                            saveSetting('combinedScript', combined);
-                                        }}
-                                        placeholder={`各位奇美的合作夥伴，大家晚安！\n隔了一年，又能與各位貴賓一起舉杯。\n我們衷心感謝各位對奇美的支持。`}
-                                        className="w-full h-48 bg-transparent text-white text-xs p-2 resize-none focus:outline-none font-mono leading-relaxed"
-                                        spellCheck={false}
-                                    />
+
+                            {/* Multi-Speaker Toggle */}
+                            <div className="flex items-center justify-between bg-black/30 rounded-lg p-3">
+                                <div>
+                                    <span className="text-sm text-white">多講者模式</span>
+                                    <p className="text-[10px] text-gray-500">兩位講者接連致詞，各自使用獨立講稿</p>
                                 </div>
-                                {/* English Script */}
-                                <div className="bg-black/40 rounded-lg border border-white/10 overflow-hidden">
-                                    <div className="p-2 border-b border-white/10 bg-black/20">
-                                        <span className="text-[10px] text-green-400 font-bold">🇺🇸 English</span>
+                                <button
+                                    onClick={() => {
+                                        const newMode = !multiSpeakerMode;
+                                        setMultiSpeakerMode(newMode);
+                                        saveSetting('multiSpeakerMode', newMode.toString());
+                                        // Regenerate combined script on mode change
+                                        if (newMode) {
+                                            regenerateMultiSpeakerScript();
+                                        } else {
+                                            regenerateSingleSpeakerScript();
+                                        }
+                                    }}
+                                    className={`relative w-12 h-6 rounded-full transition-colors ${multiSpeakerMode ? 'bg-green-600' : 'bg-gray-600'}`}
+                                >
+                                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${multiSpeakerMode ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                                </button>
+                            </div>
+
+                            {multiSpeakerMode ? (
+                                /* Multi-Speaker Mode UI */
+                                <div className="space-y-4">
+                                    {/* Speaker A Section */}
+                                    <details className="group" open>
+                                        <summary className="list-none flex items-center justify-between cursor-pointer bg-black/30 rounded-lg p-3">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-orange-400">👤</span>
+                                                <input
+                                                    type="text"
+                                                    value={speakerAName}
+                                                    onChange={(e) => {
+                                                        setSpeakerAName(e.target.value);
+                                                        saveSetting('speakerAName', e.target.value);
+                                                        regenerateMultiSpeakerScript();
+                                                    }}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="bg-transparent text-white text-sm font-medium focus:outline-none border-b border-transparent focus:border-orange-400 w-24"
+                                                />
+                                                <span className="text-[10px] text-gray-500">
+                                                    ({speakerAChineseScript.split('\n').filter(l => l.trim()).length} 行)
+                                                </span>
+                                            </div>
+                                            <span className="text-gray-500 group-open:rotate-180 transition-transform">▼</span>
+                                        </summary>
+                                        <div className="mt-2 grid grid-cols-2 gap-2">
+                                            <div className="bg-black/40 rounded-lg border border-white/10 overflow-hidden">
+                                                <div className="p-2 border-b border-white/10 bg-black/20">
+                                                    <span className="text-[10px] text-blue-400 font-bold">🇹🇼 中文稿</span>
+                                                </div>
+                                                <textarea
+                                                    value={speakerAChineseScript}
+                                                    onChange={(e) => {
+                                                        setSpeakerAChineseScript(e.target.value);
+                                                        saveSetting('speakerAChineseScript', e.target.value);
+                                                        regenerateMultiSpeakerScript();
+                                                    }}
+                                                    placeholder="各位貴賓大家好&#10;歡迎蒞臨..."
+                                                    className="w-full h-36 bg-transparent text-white text-xs p-2 resize-none focus:outline-none font-mono leading-relaxed"
+                                                    spellCheck={false}
+                                                />
+                                            </div>
+                                            <div className="bg-black/40 rounded-lg border border-white/10 overflow-hidden">
+                                                <div className="p-2 border-b border-white/10 bg-black/20">
+                                                    <span className="text-[10px] text-green-400 font-bold">🇺🇸 English</span>
+                                                </div>
+                                                <textarea
+                                                    value={speakerAEnglishScript}
+                                                    onChange={(e) => {
+                                                        setSpeakerAEnglishScript(e.target.value);
+                                                        saveSetting('speakerAEnglishScript', e.target.value);
+                                                        regenerateMultiSpeakerScript();
+                                                    }}
+                                                    placeholder="Good evening, distinguished guests&#10;Welcome..."
+                                                    className="w-full h-36 bg-transparent text-white text-xs p-2 resize-none focus:outline-none font-mono leading-relaxed"
+                                                    spellCheck={false}
+                                                />
+                                            </div>
+                                        </div>
+                                    </details>
+
+                                    {/* Speaker B Section */}
+                                    <details className="group" open>
+                                        <summary className="list-none flex items-center justify-between cursor-pointer bg-black/30 rounded-lg p-3">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-purple-400">👤</span>
+                                                <input
+                                                    type="text"
+                                                    value={speakerBName}
+                                                    onChange={(e) => {
+                                                        setSpeakerBName(e.target.value);
+                                                        saveSetting('speakerBName', e.target.value);
+                                                        regenerateMultiSpeakerScript();
+                                                    }}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="bg-transparent text-white text-sm font-medium focus:outline-none border-b border-transparent focus:border-purple-400 w-24"
+                                                />
+                                                <span className="text-[10px] text-gray-500">
+                                                    ({speakerBChineseScript.split('\n').filter(l => l.trim()).length} 行)
+                                                </span>
+                                            </div>
+                                            <span className="text-gray-500 group-open:rotate-180 transition-transform">▼</span>
+                                        </summary>
+                                        <div className="mt-2 grid grid-cols-2 gap-2">
+                                            <div className="bg-black/40 rounded-lg border border-white/10 overflow-hidden">
+                                                <div className="p-2 border-b border-white/10 bg-black/20">
+                                                    <span className="text-[10px] text-blue-400 font-bold">🇹🇼 中文稿</span>
+                                                </div>
+                                                <textarea
+                                                    value={speakerBChineseScript}
+                                                    onChange={(e) => {
+                                                        setSpeakerBChineseScript(e.target.value);
+                                                        saveSetting('speakerBChineseScript', e.target.value);
+                                                        regenerateMultiSpeakerScript();
+                                                    }}
+                                                    placeholder="感謝董事長&#10;今天很高興..."
+                                                    className="w-full h-36 bg-transparent text-white text-xs p-2 resize-none focus:outline-none font-mono leading-relaxed"
+                                                    spellCheck={false}
+                                                />
+                                            </div>
+                                            <div className="bg-black/40 rounded-lg border border-white/10 overflow-hidden">
+                                                <div className="p-2 border-b border-white/10 bg-black/20">
+                                                    <span className="text-[10px] text-green-400 font-bold">🇺🇸 English</span>
+                                                </div>
+                                                <textarea
+                                                    value={speakerBEnglishScript}
+                                                    onChange={(e) => {
+                                                        setSpeakerBEnglishScript(e.target.value);
+                                                        saveSetting('speakerBEnglishScript', e.target.value);
+                                                        regenerateMultiSpeakerScript();
+                                                    }}
+                                                    placeholder="Thank you, Chairman&#10;I am delighted..."
+                                                    className="w-full h-36 bg-transparent text-white text-xs p-2 resize-none focus:outline-none font-mono leading-relaxed"
+                                                    spellCheck={false}
+                                                />
+                                            </div>
+                                        </div>
+                                    </details>
+
+                                    {/* Status */}
+                                    <div className="p-2 bg-black/20 rounded-lg">
+                                        <span className="text-[10px] text-gray-400">
+                                            <span className="text-green-400">✅ 多講者模式</span>
+                                            {' '}{speakerAName}: {speakerAChineseScript.split('\n').filter(l => l.trim()).length} 句
+                                            {' → '}{speakerBName}: {speakerBChineseScript.split('\n').filter(l => l.trim()).length} 句
+                                        </span>
                                     </div>
-                                    <textarea
-                                        value={englishScript}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setEnglishScript(val);
-                                            saveSetting('englishScript', val);
-                                            // Recombine
-                                            const chLines = chineseScript.split('\n').filter(l => l.trim());
-                                            const enLines = val.split('\n').filter(l => l.trim());
-                                            setScriptPairCount(Math.min(chLines.length, enLines.length));
-                                            const combined = chLines.map((ch, i) => `[${i + 1}] ${ch.trim()} ||| ${enLines[i]?.trim() || ''}`).join('\n');
-                                            setCombinedScript(combined);
-                                            saveSetting('combinedScript', combined);
-                                        }}
-                                        placeholder={`Good evening, our valued partners!\nIt's a pleasure to gather and share this moment.\nWe sincerely appreciate your support.`}
-                                        className="w-full h-48 bg-transparent text-white text-xs p-2 resize-none focus:outline-none font-mono leading-relaxed"
-                                        spellCheck={false}
-                                    />
                                 </div>
-                            </div>
-                            <div className="p-2 bg-black/20 rounded-lg flex justify-between items-center">
-                                <span className="text-[10px] text-gray-400">
-                                    {scriptPairCount > 0
-                                        ? <span className="text-green-400">✅ 已配對 {scriptPairCount} 句 (中文 {chineseScript.split('\n').filter(l => l.trim()).length} 行 / 英文 {englishScript.split('\n').filter(l => l.trim()).length} 行)</span>
-                                        : <span className="text-yellow-400">⚠️ 請輸入腳本</span>
-                                    }
-                                </span>
-                            </div>
+                            ) : (
+                                /* Single-Speaker Mode UI (Original) */
+                                <div className="space-y-4">
+                                    <p className="text-[10px] text-gray-400">
+                                        左側輸入中文稿，右側輸入英文稿，系統按行號自動配對
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {/* Chinese Script */}
+                                        <div className="bg-black/40 rounded-lg border border-white/10 overflow-hidden">
+                                            <div className="p-2 border-b border-white/10 bg-black/20">
+                                                <span className="text-[10px] text-blue-400 font-bold">🇹🇼 中文稿</span>
+                                            </div>
+                                            <textarea
+                                                value={chineseScript}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    setChineseScript(val);
+                                                    saveSetting('chineseScript', val);
+                                                    regenerateSingleSpeakerScript();
+                                                }}
+                                                placeholder={`各位奇美的合作夥伴，大家晚安！\n隔了一年，又能與各位貴賓一起舉杯。\n我們衷心感謝各位對奇美的支持。`}
+                                                className="w-full h-48 bg-transparent text-white text-xs p-2 resize-none focus:outline-none font-mono leading-relaxed"
+                                                spellCheck={false}
+                                            />
+                                        </div>
+                                        {/* English Script */}
+                                        <div className="bg-black/40 rounded-lg border border-white/10 overflow-hidden">
+                                            <div className="p-2 border-b border-white/10 bg-black/20">
+                                                <span className="text-[10px] text-green-400 font-bold">🇺🇸 English</span>
+                                            </div>
+                                            <textarea
+                                                value={englishScript}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    setEnglishScript(val);
+                                                    saveSetting('englishScript', val);
+                                                    regenerateSingleSpeakerScript();
+                                                }}
+                                                placeholder={`Good evening, our valued partners!\nIt's a pleasure to gather and share this moment.\nWe sincerely appreciate your support.`}
+                                                className="w-full h-48 bg-transparent text-white text-xs p-2 resize-none focus:outline-none font-mono leading-relaxed"
+                                                spellCheck={false}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="p-2 bg-black/20 rounded-lg flex justify-between items-center">
+                                        <span className="text-[10px] text-gray-400">
+                                            {scriptPairCount > 0
+                                                ? <span className="text-green-400">✅ 已配對 {scriptPairCount} 句 (中文 {chineseScript.split('\n').filter(l => l.trim()).length} 行 / 英文 {englishScript.split('\n').filter(l => l.trim()).length} 行)</span>
+                                                : <span className="text-yellow-400">⚠️ 請輸入腳本</span>
+                                            }
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
                         </section>
                     )}
 

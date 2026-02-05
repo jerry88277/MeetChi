@@ -61,16 +61,45 @@ resource "google_sql_user" "app_user" {
 }
 
 # ============================================
-# Cloud Memorystore Redis (for Celery)
+# Cloud Tasks Queue (replaces Celery + Redis)
 # ============================================
 
-resource "google_redis_instance" "celery" {
-  name           = "meetchi-redis"
-  tier           = "BASIC"
-  memory_size_gb = 1
-  region         = var.region
+resource "google_cloud_tasks_queue" "transcription" {
+  name     = "meetchi-transcription-queue"
+  location = var.region
+  
+  rate_limits {
+    max_dispatches_per_second = 10
+    max_concurrent_dispatches = 5
+  }
+  
+  retry_config {
+    max_attempts       = 5
+    max_retry_duration = "3600s"
+    min_backoff        = "10s"
+    max_backoff        = "300s"
+    max_doublings      = 4
+  }
+  
+  depends_on = [google_project_service.apis]
+}
 
-  redis_version = "REDIS_7_0"
+resource "google_cloud_tasks_queue" "summarization" {
+  name     = "meetchi-summarization-queue"
+  location = var.region
+  
+  rate_limits {
+    max_dispatches_per_second = 5
+    max_concurrent_dispatches = 3
+  }
+  
+  retry_config {
+    max_attempts       = 3
+    max_retry_duration = "1800s"
+    min_backoff        = "30s"
+    max_backoff        = "600s"
+    max_doublings      = 3
+  }
   
   depends_on = [google_project_service.apis]
 }

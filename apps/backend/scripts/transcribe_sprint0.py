@@ -1,12 +1,31 @@
 import os
 import sys
 import logging
-import torch
-from faster_whisper import WhisperModel # Import faster_whisper
-import numpy as np
-import ffmpeg # For audio processing utilities if needed for file input
-import string # For string manipulation in Hallucination Filter
+import string  # For string manipulation in Hallucination Filter
 import json
+
+# Lazy imports - GPU dependencies loaded only when needed
+# This allows Cloud Run CPU environment to import this module without crashing
+torch = None
+WhisperModel = None
+np = None
+ffmpeg = None
+
+def _ensure_gpu_deps():
+    """Lazily load GPU dependencies (torch, faster_whisper, numpy, ffmpeg)."""
+    global torch, WhisperModel, np, ffmpeg
+    if torch is None:
+        import torch as _torch
+        torch = _torch
+    if WhisperModel is None:
+        from faster_whisper import WhisperModel as _WhisperModel
+        WhisperModel = _WhisperModel
+    if np is None:
+        import numpy as _np
+        np = _np
+    if ffmpeg is None:
+        import ffmpeg as _ffmpeg
+        ffmpeg = _ffmpeg
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -14,14 +33,20 @@ logger = logging.getLogger(__name__)
 
 # Global model variable to cache the loaded model
 MODEL = None
-MODEL_NAME = "SoybeanMilk/faster-whisper-Breeze-ASR-25" # Switch to Breeze-ASR-25 (CTranslate2)
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+MODEL_NAME = "SoybeanMilk/faster-whisper-Breeze-ASR-25"  # Switch to Breeze-ASR-25 (CTranslate2)
+DEVICE = None  # Set lazily when GPU deps are loaded
+
 
 def load_asr_model():
     """
     Loads the ASR model using faster-whisper.
     """
-    global MODEL
+    global MODEL, DEVICE
+    _ensure_gpu_deps()  # Load GPU dependencies
+    
+    if DEVICE is None:
+        DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+    
     if MODEL is None:
         logger.info(f"Loading faster-whisper model: {MODEL_NAME} on {DEVICE}...")
         try:
@@ -33,6 +58,7 @@ def load_asr_model():
             logger.error(f"Failed to load faster-whisper model: {e}")
             raise e
     return MODEL
+
 
 def correct_keywords(text):
     """
