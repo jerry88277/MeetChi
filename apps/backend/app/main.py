@@ -493,15 +493,24 @@ class MultiSpeakerScriptAligner(ScriptAligner):
             return True
         return False
     
-    def find_match(self, transcript_text: str, threshold: float = 0.5):
+    def find_match(self, transcript_text: str, threshold: float = 0.5, alignment_mode: bool = False):
         """
         Find match with zone-restricted search.
         Prevents cross-speaker matching when lock_to_current_zone is True.
+        
+        Args:
+            transcript_text: The ASR transcript to match
+            threshold: Base matching threshold (default 0.5)
+            alignment_mode: If True, use a more relaxed threshold (0.30) for slow speech
         """
         if not transcript_text or not self.has_script():
             return None
         
         normalized_input = self._normalize(transcript_text)
+        
+        # Use lower threshold in alignment mode to handle slow speech fragments
+        effective_threshold = 0.30 if alignment_mode else threshold
+        
         if len(normalized_input) < 3:
             return None
         
@@ -548,7 +557,7 @@ class MultiSpeakerScriptAligner(ScriptAligner):
         normalized_score = score / max_possible_score if max_possible_score > 0 else 0
         
         low_confidence = False
-        if normalized_score < threshold:
+        if normalized_score < effective_threshold:
             if score < self.MIN_MATCH_SCORE:
                 self.consecutive_failures += 1
                 return None
