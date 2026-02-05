@@ -342,12 +342,15 @@ class MultiSpeakerScriptAligner(ScriptAligner):
     
     # Auto-advance threshold (percentage of zone traversed)
     AUTO_ADVANCE_THRESHOLD = 0.90
+    # Number of final segments that must be matched before auto-advance
+    MIN_FINAL_SEGMENTS_FOR_ADVANCE = 2
     
     def __init__(self):
         super().__init__()
         self.speaker_zones = []  # [(start_idx, end_idx, speaker_name, segment_range)]
         self.current_zone_index = 0
         self.lock_to_current_zone = True  # Prevent cross-speaker matching
+        self.zone_final_segments_matched = set()  # Track which final segments have been matched
     
     def load_script(self, script_text: str):
         """
@@ -477,6 +480,7 @@ class MultiSpeakerScriptAligner(ScriptAligner):
             self.current_cursor = new_zone[0]
             self.consecutive_failures = 0
             self.last_matched_segments = set()
+            self.zone_final_segments_matched.clear()  # Reset final segment tracking
             app_logger.info(f"[MultiSpeaker] Advanced to zone {self.current_zone_index}: {new_zone[2]}")
             return True
         return False
@@ -489,6 +493,7 @@ class MultiSpeakerScriptAligner(ScriptAligner):
             self.current_cursor = prev_zone[0]
             self.consecutive_failures = 0
             self.last_matched_segments = set()
+            self.zone_final_segments_matched.clear()  # Reset final segment tracking
             app_logger.info(f"[MultiSpeaker] Returned to zone {self.current_zone_index}: {prev_zone[2]}")
             return True
         return False
@@ -611,9 +616,28 @@ class MultiSpeakerScriptAligner(ScriptAligner):
         
         first_match = matched_segments[0]
         
-        # Check for auto-advance after match
-        if self.get_zone_progress() >= self.AUTO_ADVANCE_THRESHOLD:
-            self.advance_speaker()
+        # Smart auto-advance: check if we matched any of the zone's final segments
+        if self.speaker_zones and self.current_zone_index < len(self.speaker_zones):
+            zone = self.speaker_zones[self.current_zone_index]
+            zone_seg_start, zone_seg_end = zone[3]  # segment_range tuple (start, end)
+            zone_segment_count = zone_seg_end - zone_seg_start
+            
+            # Determine the final N segments of this zone
+            final_segment_count = min(self.MIN_FINAL_SEGMENTS_FOR_ADVANCE, zone_segment_count)
+            final_segment_indices = set(range(zone_seg_end - final_segment_count, zone_seg_end))
+            
+            # Track which final segments we've matched
+            for seg in matched_segments:
+                if seg['index'] in final_segment_indices:
+                    self.zone_final_segments_matched.add(seg['index'])
+            
+            # Only auto-advance if cursor progress >= threshold AND we've matched enough final segments
+            matched_final_count = len(self.zone_final_segments_matched & final_segment_indices)
+            if (self.get_zone_progress() >= self.AUTO_ADVANCE_THRESHOLD and 
+                matched_final_count >= final_segment_count):
+                app_logger.info(f"[MultiSpeaker] Auto-advance triggered: matched {matched_final_count}/{final_segment_count} final segments")
+                self.zone_final_segments_matched.clear()  # Reset for next zone
+                self.advance_speaker()
         
         return {
             'source': first_match['source'],
