@@ -92,3 +92,10 @@ variable "secret_key" {
   type        = string
   sensitive   = true
 }
+
+variable "gemini_api_key" {
+  description = "Google Gemini API Key for LLM summarization"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
