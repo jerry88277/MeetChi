@@ -43,10 +43,10 @@ class ScriptAligner:
     GAP_SCORE = -2
     
     # Alignment parameters
-    NORMAL_WINDOW_BACK = 20      # Characters to search backward
-    NORMAL_WINDOW_FORWARD = 400  # Characters to search forward (increased for longer jumps)
-    MAX_CONSECUTIVE_FAILURES = 5  # Trigger global resync after this many failures
-    MIN_MATCH_SCORE = 10         # Minimum score to consider a valid match
+    NORMAL_WINDOW_BACK = 20       # Characters to search backward
+    NORMAL_WINDOW_FORWARD = 600   # Characters to search forward (increased for slow speech)
+    MAX_CONSECUTIVE_FAILURES = 3  # Trigger global resync after this many failures (reduced for faster recovery)
+    MIN_MATCH_SCORE = 6           # Minimum score to consider a valid match (lowered for short fragments)
     
     def __init__(self):
         self.segments = []            # List of {source, target, start_idx, end_idx}
@@ -116,6 +116,23 @@ class ScriptAligner:
     def has_script(self):
         return len(self.segments) > 0 and len(self.full_cn_text) > 0
     
+    # Common homophones/similar characters in Chinese for tolerance matching
+    HOMOPHONES = {
+        '諸': {'祝', '竹', '朱'}, '祝': {'諸', '竹', '朱'},
+        '夜': {'一', '億'}, '一': {'夜'},
+        '走得': {'走了'}, '走了': {'走得'},
+        '的': {'得', '地'}, '得': {'的', '地'}, '地': {'的', '得'},
+        '事': {'是', '式'}, '是': {'事', '式'},
+        '晚': {'碗', '萬'}, '萬': {'晚'},
+    }
+    
+    def _is_homophone(self, char1: str, char2: str) -> bool:
+        """Check if two characters are homophones (similar sounds)"""
+        if char1 == char2:
+            return True
+        homophones1 = self.HOMOPHONES.get(char1, set())
+        return char2 in homophones1
+    
     def smith_waterman(self, query: str, target: str):
         """
         Smith-Waterman local alignment algorithm.
@@ -135,9 +152,15 @@ class ScriptAligner:
         # Fill matrix
         for i in range(1, m + 1):
             for j in range(1, n + 1):
-                # Match/Mismatch
-                if query[i-1] == target[j-1]:
+                q_char = query[i-1]
+                t_char = target[j-1]
+                
+                # Match/Mismatch with homophone tolerance
+                if q_char == t_char:
                     diag = H[i-1][j-1] + self.MATCH_SCORE
+                elif self._is_homophone(q_char, t_char):
+                    # Partial match for homophones (75% of match score)
+                    diag = H[i-1][j-1] + int(self.MATCH_SCORE * 0.75)
                 else:
                     diag = H[i-1][j-1] + self.MISMATCH_SCORE
                 
@@ -170,9 +193,14 @@ class ScriptAligner:
         
         return (best_start, best_end, best_score)
     
-    def find_match(self, transcript_text: str, threshold: float = 0.5):
+    def find_match(self, transcript_text: str, threshold: float = 0.5, alignment_mode: bool = False):
         """
         Find best matching segment(s) using Smith-Waterman algorithm.
+        
+        Args:
+            transcript_text: The ASR transcript to match
+            threshold: Base matching threshold (default 0.5)
+            alignment_mode: If True, use a more relaxed threshold (0.30) for slow speech
         
         Returns: dict with matched segments, or None if no match
         When score is below threshold but above MIN_MATCH_SCORE, returns with low_confidence=True
@@ -181,6 +209,9 @@ class ScriptAligner:
             return None
         
         normalized_input = self._normalize(transcript_text)
+        
+        # Use lower threshold in alignment mode to handle slow speech fragments
+        effective_threshold = 0.30 if alignment_mode else threshold
         
         if len(normalized_input) < 3:
             return None
@@ -215,7 +246,7 @@ class ScriptAligner:
         
         # Determine confidence level
         low_confidence = False
-        if normalized_score < threshold:
+        if normalized_score < effective_threshold:
             if score < self.MIN_MATCH_SCORE:
                 # Score too low, truly no match
                 self.consecutive_failures += 1
@@ -1268,7 +1299,7 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
                             app_logger.info(f"[DEBUG] Attempting alignment for transcript: '{corrected_text}'")
                             app_logger.info(f"[DEBUG] Current cursor position: {script_aligner.current_cursor} / {len(script_aligner.full_cn_text)}")
                             
-                            match_result = script_aligner.find_match(corrected_text, threshold=0.4)
+                            match_result = script_aligner.find_match(corrected_text, threshold=0.4, alignment_mode=True)
                             if match_result:
                                 # Log match details
                                 is_global = match_result.get('is_global_resync', False)
