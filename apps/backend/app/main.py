@@ -342,8 +342,8 @@ class MultiSpeakerScriptAligner(ScriptAligner):
     
     # Auto-advance threshold (percentage of zone traversed)
     AUTO_ADVANCE_THRESHOLD = 0.90
-    # Number of final segments that must be matched before auto-advance
-    MIN_FINAL_SEGMENTS_FOR_ADVANCE = 2
+    # Characters of next zone to include in search for cross-zone detection
+    NEXT_ZONE_LOOKAHEAD = 100
     
     def __init__(self):
         super().__init__()
@@ -528,16 +528,30 @@ class MultiSpeakerScriptAligner(ScriptAligner):
             zone = self.speaker_zones[self.current_zone_index]
             zone_start, zone_end, speaker_name, _ = zone
             
-            # Restrict search to current zone
+            # Restrict search to current zone (+ next zone lookahead for cross-zone detection)
+            next_zone_start = None
+            if self.current_zone_index < len(self.speaker_zones) - 1:
+                next_zone = self.speaker_zones[self.current_zone_index + 1]
+                next_zone_start = next_zone[0]
+            
             if self.consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
                 # Global resync within zone only
                 search_start = zone_start
                 search_end = zone_end
                 is_global_search = True
             else:
-                # Normal windowed search within zone
+                # Normal windowed search within zone + next zone lookahead
                 search_start = max(zone_start, self.current_cursor - self.NORMAL_WINDOW_BACK)
-                search_end = min(zone_end, self.current_cursor + self.NORMAL_WINDOW_FORWARD)
+                base_search_end = min(zone_end, self.current_cursor + self.NORMAL_WINDOW_FORWARD)
+                
+                # Extend search to include next zone's first segment area
+                if next_zone_start is not None:
+                    search_end = min(
+                        next_zone_start + self.NEXT_ZONE_LOOKAHEAD,
+                        len(self.full_cn_text)
+                    )
+                else:
+                    search_end = base_search_end
                 is_global_search = False
         else:
             # No zone locking - use parent class behavior
@@ -560,6 +574,17 @@ class MultiSpeakerScriptAligner(ScriptAligner):
         
         max_possible_score = len(normalized_input) * self.MATCH_SCORE
         normalized_score = score / max_possible_score if max_possible_score > 0 else 0
+        
+        # Cross-zone detection: if match falls in next zone's range, auto-advance
+        if (next_zone_start is not None and 
+            global_start >= next_zone_start and 
+            normalized_score >= effective_threshold):
+            app_logger.info(f"[MultiSpeaker] Cross-zone match detected at position {global_start} (next zone starts at {next_zone_start})")
+            app_logger.info(f"[MultiSpeaker] User started reading next speaker's script -> auto-advance")
+            self.zone_final_segments_matched.clear()
+            self.advance_speaker()
+            # Re-run match in new zone context
+            return self.find_match(transcript_text, threshold, alignment_mode)
         
         low_confidence = False
         if normalized_score < effective_threshold:
@@ -616,28 +641,14 @@ class MultiSpeakerScriptAligner(ScriptAligner):
         
         first_match = matched_segments[0]
         
-        # Smart auto-advance: check if we matched any of the zone's final segments
-        if self.speaker_zones and self.current_zone_index < len(self.speaker_zones):
-            zone = self.speaker_zones[self.current_zone_index]
-            zone_seg_start, zone_seg_end = zone[3]  # segment_range tuple (start, end)
-            zone_segment_count = zone_seg_end - zone_seg_start
-            
-            # Determine the final N segments of this zone
-            final_segment_count = min(self.MIN_FINAL_SEGMENTS_FOR_ADVANCE, zone_segment_count)
-            final_segment_indices = set(range(zone_seg_end - final_segment_count, zone_seg_end))
-            
-            # Track which final segments we've matched
-            for seg in matched_segments:
-                if seg['index'] in final_segment_indices:
-                    self.zone_final_segments_matched.add(seg['index'])
-            
-            # Only auto-advance if cursor progress >= threshold AND we've matched enough final segments
-            matched_final_count = len(self.zone_final_segments_matched & final_segment_indices)
-            if (self.get_zone_progress() >= self.AUTO_ADVANCE_THRESHOLD and 
-                matched_final_count >= final_segment_count):
-                app_logger.info(f"[MultiSpeaker] Auto-advance triggered: matched {matched_final_count}/{final_segment_count} final segments")
-                self.zone_final_segments_matched.clear()  # Reset for next zone
-                self.advance_speaker()
+        # Fallback auto-advance: if cursor reaches 95% of zone without cross-zone trigger
+        # This handles edge cases where user finishes zone but doesn't immediately start next
+        if (self.speaker_zones and 
+            self.current_zone_index < len(self.speaker_zones) and
+            self.get_zone_progress() >= 0.95):
+            app_logger.info(f"[MultiSpeaker] Fallback auto-advance: zone progress >= 95%")
+            self.zone_final_segments_matched.clear()
+            self.advance_speaker()
         
         return {
             'source': first_match['source'],
