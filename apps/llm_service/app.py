@@ -4,6 +4,7 @@ from transformers import AutoModel, AutoTokenizer, GenerationConfig
 # from mtkresearch.llm.prompt import MRPromptV3 # Removed
 from prompt_engine import MRPromptV3 # New local import
 from pydantic import BaseModel # Import BaseModel
+from typing import List, Optional
 import logging
 import threading
 import re # Import re for language validation
@@ -26,6 +27,91 @@ MODEL_NAME = "MediaTek-Research/Llama-Breeze2-3B-Instruct"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MOCK_LLM = os.getenv("MOCK_LLM", "false").lower() == "true"
 print(f"MOCK_LLM:{MOCK_LLM}")
+
+# --- Gemini API Configuration ---
+USE_GEMINI = os.getenv("USE_GEMINI", "true").lower() == "true"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite-preview-06-17")
+print(f"USE_GEMINI:{USE_GEMINI}, GEMINI_MODEL:{GEMINI_MODEL}")
+
+# Initialize Gemini client if available
+gemini_client = None
+if USE_GEMINI and GEMINI_API_KEY:
+    try:
+        from google import genai
+        from google.genai import types
+        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        logger.info(f"Gemini client initialized with model: {GEMINI_MODEL}")
+    except ImportError:
+        logger.warning("google-genai not installed, falling back to local model")
+        USE_GEMINI = False
+    except Exception as e:
+        logger.error(f"Failed to initialize Gemini client: {e}")
+        USE_GEMINI = False
+
+# --- Pydantic Schemas for Structured Output ---
+class GeneralSummary(BaseModel):
+    summary: str
+    action_items: List[str]
+    decisions: List[str]
+    risks: List[str]
+
+class BANTInfo(BaseModel):
+    Budget: str
+    Authority: str
+    Need: str
+    Timeline: str
+
+class SalesBANTSummary(BaseModel):
+    summary: str
+    BANT: BANTInfo
+    next_steps: List[str]
+
+class STARStory(BaseModel):
+    Situation: str
+    Task: str
+    Action: str
+    Result: str
+
+class HRSTARSummary(BaseModel):
+    candidate_summary: str
+    STAR_stories: List[STARStory]
+    key_strengths: List[str]
+
+class TechnicalDecision(BaseModel):
+    topic: str
+    decision: str
+    rationale: str
+
+class Challenge(BaseModel):
+    issue: str
+    proposed_solution: str
+    owner: str
+
+class Risk(BaseModel):
+    risk: str
+    impact: str
+    mitigation: str
+
+class ActionItem(BaseModel):
+    task: str
+    assignee: str
+    due: str
+
+class RDSummary(BaseModel):
+    summary: str
+    technical_decisions: List[TechnicalDecision]
+    challenges: List[Challenge]
+    risks: List[Risk]
+    action_items: List[ActionItem]
+
+# Template to Schema mapping
+TEMPLATE_SCHEMAS = {
+    "general": GeneralSummary,
+    "sales_bant": SalesBANTSummary,
+    "hr_star": HRSTARSummary,
+    "rd": RDSummary,
+}
 
 # Global model and tokenizer
 model = None
@@ -268,9 +354,10 @@ def summarize_meeting():
     
     raw_transcript = data['text']
     template_name = data.get('template_name', 'general')
-    extra_instructions = data.get('extra_instructions', '') # <-- New parameter
+    extra_instructions = data.get('extra_instructions', '')
 
-    if MOCK_LLM or model is None:
+    # --- MOCK MODE ---
+    if MOCK_LLM:
         logger.info(f"[MOCK] Summarizing with template: {template_name}")
         return jsonify({
             "summary": f"[Mock Summary for {template_name}] {raw_transcript[:100]}...",
@@ -279,59 +366,128 @@ def summarize_meeting():
             "risks": []
         })
 
-    # --- Sanitization of input text ---
+    # --- Sanitization ---
     sanitized_text = unicodedata.normalize('NFKC', raw_transcript)
     sanitized_text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', sanitized_text)
     sanitized_text = re.sub(r'\n+', '\n', sanitized_text).strip()
 
-    # --- Prompt Engineering for Structured Output ---
-    system_prompt = (
-        "你是一個專業的會議助手，負責從會議逐字稿中提取關鍵資訊。\n"
-        "請根據提供的會議逐字稿，提取出會議摘要、待辦事項、決策和風險。\n"
-        "務必以 JSON 格式輸出，且只輸出 JSON 物件，不要有任何額外文字或解釋。\n"
-        "確保每個列表項目都是字串。\n"
-        "範例 JSON 格式:\n"
-        "```json\n"
-        "{{\n"
-        "  \"summary\": \"[會議摘要]\",\n"
-        "  \"action_items\": [\n"
-        "    \"[待辦事項1]\",\n"
-        "    \"[待辦事項2]\"\n"
-        "  ],\n"
-        "  \"decisions\": [\n"
-        "    \"[決策1]\"\n"
-        "  ],\n"
-        "  \"risks\": [\n"
-        "    \"[風險1]\"\n"
-        "  ]\n"
-        "}}\n"
-        "```\n"
-    )
-
-    user_prompt_content = f"請從以下會議逐字稿中提取關鍵資訊：\n\n{sanitized_text}"
+    # Get template
+    template = get_template(template_name)
     
+    # Build prompt
+    user_prompt = f"{template.user_prompt_suffix}\n\n{sanitized_text}"
     if extra_instructions:
-        user_prompt_content = f"【特別指令】：\n{extra_instructions}\n\n{user_prompt_content}"
+        user_prompt = f"【特別指令】：\n{extra_instructions}\n\n{user_prompt}"
 
-    # Construct conversation for MRPromptV3
-    conversations = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt_content}
-    ]
+    # --- GEMINI API PATH ---
+    if USE_GEMINI and gemini_client:
+        try:
+            from google.genai import types
+            
+            schema_class = TEMPLATE_SCHEMAS.get(template_name, GeneralSummary)
+            
+            logger.info(f"[Gemini] Summarizing with template: {template_name}, model: {GEMINI_MODEL}")
+            
+            response = gemini_client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=[
+                    types.Content(
+                        role="user",
+                        parts=[types.Part(text=f"{template.system_prompt}\n\n{user_prompt}")]
+                    )
+                ],
+                config=types.GenerateContentConfig(
+                    response_mime_type='application/json',
+                    response_schema=schema_class,
+                    temperature=0.2,
+                    max_output_tokens=4096
+                )
+            )
+            
+            result_text = response.text
+            logger.info(f"[Gemini] Raw response: {result_text[:500]}...")
+            
+            # Parse JSON response
+            try:
+                result_json = json.loads(result_text)
+                
+                # Normalize output for general template compatibility
+                if template_name == "general":
+                    return jsonify(result_json)
+                elif template_name == "sales_bant":
+                    return jsonify({
+                        "summary": result_json.get("summary", ""),
+                        "action_items": result_json.get("next_steps", []),
+                        "decisions": [],
+                        "risks": [],
+                        "BANT": result_json.get("BANT", {}),
+                        "next_steps": result_json.get("next_steps", [])
+                    })
+                elif template_name == "hr_star":
+                    return jsonify({
+                        "summary": result_json.get("candidate_summary", ""),
+                        "action_items": [],
+                        "decisions": [],
+                        "risks": [],
+                        "candidate_summary": result_json.get("candidate_summary", ""),
+                        "STAR_stories": result_json.get("STAR_stories", []),
+                        "key_strengths": result_json.get("key_strengths", [])
+                    })
+                elif template_name == "rd":
+                    return jsonify({
+                        "summary": result_json.get("summary", ""),
+                        "action_items": [item.get("task", "") for item in result_json.get("action_items", [])],
+                        "decisions": [d.get("decision", "") for d in result_json.get("technical_decisions", [])],
+                        "risks": [r.get("risk", "") for r in result_json.get("risks", [])],
+                        "technical_decisions": result_json.get("technical_decisions", []),
+                        "challenges": result_json.get("challenges", [])
+                    })
+                else:
+                    return jsonify(result_json)
+                    
+            except json.JSONDecodeError as e:
+                logger.error(f"[Gemini] Failed to parse JSON: {e}. Raw: {result_text}")
+                return jsonify({
+                    "summary": result_text,
+                    "action_items": [],
+                    "decisions": [],
+                    "risks": [],
+                    "error": "JSON parsing failed"
+                })
+                
+        except Exception as e:
+            logger.error(f"[Gemini] Error: {e}", exc_info=True)
+            # Fall through to local model
+            logger.info("[Gemini] Falling back to local model...")
+
+    # --- LOCAL MODEL FALLBACK ---
+    if model is None:
+        logger.warning("No model available (Gemini failed, local model not loaded)")
+        return jsonify({
+            "summary": "模型未就緒，無法生成摘要。",
+            "action_items": [],
+            "decisions": [],
+            "risks": [],
+            "error": "No model available"
+        }), 503
 
     try:
         with lock:
-            prompt, _ = prompt_engine.get_prompt(conversations) # pixel_values not needed
+            conversations = [
+                {"role": "system", "content": template.system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
             
+            prompt, _ = prompt_engine.get_prompt(conversations)
             inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
             
             generation_config_summarize = GenerationConfig(
-              max_new_tokens=2048, # Allow longer output for summaries
-              do_sample=True,
-              temperature=0.2, # Slightly higher temperature for creativity, but keep it low for JSON stability
-              top_p=0.9,
-              repetition_penalty=1.1,
-              eos_token_id=128009
+                max_new_tokens=2048,
+                do_sample=True,
+                temperature=0.2,
+                top_p=0.9,
+                repetition_penalty=1.1,
+                eos_token_id=128009
             )
 
             output_tensors = model.generate(
@@ -346,23 +502,22 @@ def summarize_meeting():
             parsed_response = prompt_engine.parse_generated_str(output_str)
             content = parsed_response.get("content", "")
 
-            # --- JSON Extraction ---
+            # JSON Extraction
             json_match = re.search(r'\{.*\}', content, re.DOTALL)
             extracted_json = {}
             if json_match:
                 try:
                     extracted_json = json.loads(json_match.group(0))
                 except json.JSONDecodeError as e:
-                    logger.warning(f"Failed to parse JSON from LLM summary: {e}. Raw content: {content}")
+                    logger.warning(f"Failed to parse JSON from LLM summary: {e}")
             else:
-                logger.warning(f"No JSON block found in LLM summary output. Raw content: {content}")
+                logger.warning(f"No JSON block found in LLM summary output")
 
             return jsonify({
                 "summary": extracted_json.get("summary", "無法生成摘要。"),
                 "action_items": extracted_json.get("action_items", []),
                 "decisions": extracted_json.get("decisions", []),
-                "risks": extracted_json.get("risks", []),
-                "raw_json_output": content # For debugging
+                "risks": extracted_json.get("risks", [])
             })
 
     except Exception as e:
