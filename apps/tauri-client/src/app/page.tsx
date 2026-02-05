@@ -537,12 +537,12 @@ export default function Home() {
                             <div className="flex items-center gap-3 pointer-events-auto">
                                 {/* Connection/VAD Indicator */}
                                 <div className={`w-2.5 h-2.5 rounded-full transition-all duration-200 ${connectionStatus === 'reconnecting'
-                                        ? 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.8)] animate-pulse'
-                                        : connectionStatus === 'disconnected'
-                                            ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]'
-                                            : isSpeechDetected
-                                                ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] scale-110'
-                                                : 'bg-white/20 scale-100'
+                                    ? 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.8)] animate-pulse'
+                                    : connectionStatus === 'disconnected'
+                                        ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]'
+                                        : isSpeechDetected
+                                            ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] scale-110'
+                                            : 'bg-white/20 scale-100'
                                     }`} title={connectionStatus === 'reconnecting' ? '重新連線中...' : connectionStatus === 'disconnected' ? '連線中斷' : isSpeechDetected ? '偵測到語音' : '等待中'} />
 
                                 {/* Record Button */}
@@ -641,9 +641,7 @@ export default function Home() {
                                 ref={scrollRefOriginal}
                                 className="overflow-y-auto [&::-webkit-scrollbar]:hidden scroll-smooth"
                                 style={{
-                                    height: `${fontSize * 1.6 * linesPerArea}px`,
-                                    maskImage: 'linear-gradient(to bottom, transparent 0%, black 25%, black 100%)',
-                                    WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 25%, black 100%)'
+                                    height: `${fontSize * 1.6 * linesPerArea}px`
                                 }}
                             >
                                 <div className="flex flex-wrap content-end min-h-full pb-2">
@@ -666,9 +664,7 @@ export default function Home() {
                                 className="overflow-y-auto [&::-webkit-scrollbar]:hidden border-t border-white/10 pt-4 scroll-smooth"
                                 style={{
                                     height: `${(fontSize * 0.9) * 1.6 * linesPerArea}px`,
-                                    fontSize: '0.9em',
-                                    maskImage: 'linear-gradient(to bottom, transparent 0%, black 25%, black 100%)',
-                                    WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 25%, black 100%)'
+                                    fontSize: '0.9em'
                                 }}
                             >
                                 <div className="flex flex-wrap content-start min-h-full">

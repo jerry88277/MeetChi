@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { LogicalSize } from '@tauri-apps/api/dpi';
 import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
 import { Save, Mic, Type, Monitor, Globe, SlidersHorizontal, X, Plus, Trash2, Cpu } from 'lucide-react';
@@ -55,6 +56,10 @@ export default function SettingsPage() {
     const [corrections, setCorrections] = useState<Record<string, string>>({});
     const [newWrong, setNewWrong] = useState('');
     const [newCorrect, setNewCorrect] = useState('');
+
+    // Resize State
+    const isResizingRef = useRef(false);
+    const startResizeState = useRef<{ w: number, h: number, x: number, y: number, factor: number } | null>(null);
 
     // Load settings on mount
     useEffect(() => {
@@ -186,6 +191,54 @@ export default function SettingsPage() {
             window.close(); // For popups
         }
     };
+
+    // --- Resize Logic ---
+    const onResizeStart = async (e: React.MouseEvent) => {
+        if (!isTauri()) return;
+        e.stopPropagation();
+        try {
+            const appWindow = getCurrentWindow();
+            const factor = await appWindow.scaleFactor();
+            const size = await appWindow.innerSize();
+            startResizeState.current = {
+                w: size.width,
+                h: size.height,
+                x: e.screenX,
+                y: e.screenY,
+                factor: factor
+            };
+            isResizingRef.current = true;
+        } catch (err) {
+            console.error("Failed to init resize:", err);
+        }
+    };
+
+    useEffect(() => {
+        if (!isTauri()) return;
+        const handleMouseMove = async (e: MouseEvent) => {
+            if (!isResizingRef.current || !startResizeState.current) return;
+            const state = startResizeState.current;
+            const startLogicalW = state.w / state.factor;
+            const startLogicalH = state.h / state.factor;
+            const deltaX = e.screenX - state.x;
+            const deltaY = e.screenY - state.y;
+            const newWidth = startLogicalW + deltaX;
+            const newHeight = startLogicalH + deltaY;
+            if (newWidth > 400 && newHeight > 300) {
+                await getCurrentWindow().setSize(new LogicalSize(newWidth, newHeight));
+            }
+        };
+        const handleMouseUp = () => {
+            isResizingRef.current = false;
+            startResizeState.current = null;
+        };
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, []);
 
     const handleAddCorrection = async () => {
         if (!newWrong || !newCorrect) return;
@@ -783,6 +836,16 @@ export default function SettingsPage() {
                         </div>
                     </section>
                 </div>
+
+                {/* Resize Handle */}
+                {isTauri() && (
+                    <div
+                        className="absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize z-50 flex items-end justify-end p-1"
+                        onMouseDown={onResizeStart}
+                    >
+                        <div className="w-3 h-3 border-r-2 border-b-2 border-white/30 rounded-br-sm hover:border-white/60 transition-colors" />
+                    </div>
+                )}
             </div>
         </div>
     );
