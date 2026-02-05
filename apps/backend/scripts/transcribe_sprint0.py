@@ -107,7 +107,7 @@ def correct_keywords(text):
     return text
 
 
-def get_transcription(audio_input, language="zh", initial_prompt=None):
+def get_transcription(audio_input, language="zh", initial_prompt=None, skip_hallucination_filter=False):
     """
     Transcribes the given audio input using faster-whisper.
     
@@ -115,6 +115,7 @@ def get_transcription(audio_input, language="zh", initial_prompt=None):
         audio_input: Path to an audio file (str) or numpy array (audio chunk).
         language: Language code (e.g., 'zh', 'en'). Defaults to 'zh'.
         initial_prompt: Text context from previous segments to guide the model.
+        skip_hallucination_filter: If True, skip hallucination filtering (for alignment mode).
     
     Returns:
         str: The transcribed text.
@@ -193,40 +194,40 @@ def get_transcription(audio_input, language="zh", initial_prompt=None):
         # --- End Keyword Corrections ---
         
         # --- Hallucination Filter (Relaxed) ---
-        HALLUCINATIONS_SUBSTRING = [
-            "字幕", "字幕提供", "字幕来源", "提供字幕", "本字幕", "自動產生",
-            "MBC", "TVBS", "Amara", "subtitles", "Copyright", "©", 
-            "MING PAO", "Ming Pao", "請不吝點贊訂閱", "歡迎訂閱",
-            "多謝您的觀看", "感謝您的觀看"
-        ]
-        
-        # Exact match blacklist (Filter ONLY if the text equals these, ignoring punctuation)
-        # This prevents deleting sentences like "謝謝大家的參與"
-        HALLUCINATIONS_EXACT = [
-            "謝謝你", "謝謝", "谢谢", "谢谢你", 
-            "Thank you", "Thanks", "You're welcome",
-            "Go", "go", "Yeah", "Right", "Okay",
-            "大家好", "Hello", "hello",
-            "嗯", "啊", "哦", "喔", "哎", "呀"
-        ]
-        
-        cleaned_text = transcript_text.strip()
-        
-        # 1. Substring match (Spam/Copyright)
-        if any(h.lower() in cleaned_text.lower() for h in HALLUCINATIONS_SUBSTRING):
-            logger.warning(f"Filtered hallucination (substring): {cleaned_text}")
-            return ""
+        # Skip in alignment mode - the script already provides context
+        if not skip_hallucination_filter:
+            HALLUCINATIONS_SUBSTRING = [
+                "字幕", "字幕提供", "字幕来源", "提供字幕", "本字幕", "自動產生",
+                "MBC", "TVBS", "Amara", "subtitles", "Copyright", "©", 
+                "MING PAO", "Ming Pao", "請不吝點贊訂閱", "歡迎訂閱",
+                "多謝您的觀看", "感謝您的觀看"
+            ]
+            
+            # Exact match blacklist (Filter ONLY if the text equals these, ignoring punctuation)
+            # This prevents deleting sentences like "謝謝大家的參與"
+            HALLUCINATIONS_EXACT = [
+                "謝謝你", "謝謝", "谢谢", "谢谢你", 
+                "Thank you", "Thanks", "You're welcome",
+                "Go", "go", "Yeah", "Right", "Okay",
+                "大家好", "Hello", "hello",
+                "嗯", "啊", "哦", "喔", "哎", "呀"
+            ]
+            
+            cleaned_text = transcript_text.strip()
+            
+            # 1. Substring match (Spam/Copyright)
+            if any(h.lower() in cleaned_text.lower() for h in HALLUCINATIONS_SUBSTRING):
+                logger.warning(f"Filtered hallucination (substring): {cleaned_text}")
+                return ""
 
-        # 2. Exact match (Interjections)
-        # Remove punctuation for check
-        
-        # Need to import string first
-        import string
-        text_no_punct = cleaned_text.translate(str.maketrans('', '', string.punctuation + "，。？！、"))
-        
-        if text_no_punct.strip() in HALLUCINATIONS_EXACT:
-             logger.warning(f"Filtered hallucination (exact): {cleaned_text}")
-             return ""
+            # 2. Exact match (Interjections)
+            # Remove punctuation for check
+            import string
+            text_no_punct = cleaned_text.translate(str.maketrans('', '', string.punctuation + "，。？！、"))
+            
+            if text_no_punct.strip() in HALLUCINATIONS_EXACT:
+                 logger.warning(f"Filtered hallucination (exact): {cleaned_text}")
+                 return ""
             
         return transcript_text
 

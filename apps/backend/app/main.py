@@ -44,7 +44,7 @@ class ScriptAligner:
     
     # Alignment parameters
     NORMAL_WINDOW_BACK = 20      # Characters to search backward
-    NORMAL_WINDOW_FORWARD = 200  # Characters to search forward
+    NORMAL_WINDOW_FORWARD = 400  # Characters to search forward (increased for longer jumps)
     MAX_CONSECUTIVE_FAILURES = 5  # Trigger global resync after this many failures
     MIN_MATCH_SCORE = 10         # Minimum score to consider a valid match
     
@@ -1202,7 +1202,7 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
                     if snapshot_np.size > 16000:
                         # Use previous_context as initial_prompt for ASR consistency
                         combined_prompt = f"{custom_initial_prompt} {previous_context}".strip()
-                        partial_text = await asyncio.to_thread(get_transcription, snapshot_np, source_lang, combined_prompt)
+                        partial_text = await asyncio.to_thread(get_transcription, snapshot_np, source_lang, combined_prompt, skip_hallucination_filter=(operation_mode == "alignment"))
                         # Filter extremely short partials
                         if partial_text and len(partial_text.strip()) > 1:
                             await websocket.send_json({
@@ -1236,7 +1236,7 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
                         # Add a timeout for ASR transcription to prevent service hang
                         # Longer timeout (e.g., 10s) to accommodate potentially slow ASR or longer segments
                         transcript_text = await asyncio.wait_for(
-                            asyncio.to_thread(get_transcription, audio_for_transcription, source_lang, combined_prompt),
+                            asyncio.to_thread(get_transcription, audio_for_transcription, source_lang, combined_prompt, skip_hallucination_filter=(operation_mode == "alignment")),
                             timeout=20.0 
                         )
                         app_logger.info(f"ASR Output: '{transcript_text}'") # Log ASR output for debugging
