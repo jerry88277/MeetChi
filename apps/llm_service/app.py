@@ -156,10 +156,18 @@ with app.app_context():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    if model is not None or MOCK_LLM or model is None: # Accept None (degraded) as healthy-ish for now
-        return jsonify({"status": "ready", "device": DEVICE, "mock_mode": MOCK_LLM or model is None}), 200
+    gemini_enabled = USE_GEMINI and gemini_client is not None
+    if model is not None or MOCK_LLM or gemini_enabled or model is None:
+        return jsonify({
+            "status": "ready",
+            "device": DEVICE,
+            "mock_mode": MOCK_LLM or (model is None and not gemini_enabled),
+            "gemini_enabled": gemini_enabled,
+            "gemini_model": GEMINI_MODEL if gemini_enabled else None
+        }), 200
     else:
         return jsonify({"status": "loading"}), 503
+
 
 @app.route('/polish', methods=['POST'])
 def polish_text():
