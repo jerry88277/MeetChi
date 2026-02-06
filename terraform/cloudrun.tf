@@ -133,11 +133,10 @@ resource "google_cloud_run_v2_service" "llm_gpu" {
 
     scaling {
       min_instance_count = 0 # Scale to zero when idle
-      max_instance_count = 1
+      max_instance_count = 2 # Allow some concurrency
     }
 
-    # CPU-only resources for initial deployment
-    # GPU will be added via: gcloud run services update meetchi-llm-gpu --gpu=1 --gpu-type=nvidia-l4 --no-gpu-zonal-redundancy
+    # Lightweight CPU-only resources (Gemini API mode)
     containers {
       image = var.llm_service_image
 
@@ -147,38 +146,12 @@ resource "google_cloud_run_v2_service" "llm_gpu" {
 
       resources {
         limits = {
-          cpu    = "2"
-          memory = "8Gi"
+          cpu    = "1"
+          memory = "512Mi"
         }
       }
 
-
-      env {
-        name = "HF_AUTH_TOKEN"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.hf_token.secret_id
-            version = "latest"
-          }
-        }
-      }
-
-      env {
-        name  = "CUDA_VISIBLE_DEVICES"
-        value = "0"
-      }
-
-      env {
-        name  = "MODEL_NAME"
-        value = "MediaTek-Research/Breeze-7B-Instruct-v1_0"
-      }
-
-      env {
-        name  = "GCS_MODELS_PATH"
-        value = "gs://${var.project_id}-meetchi-audio/models"
-      }
-
-      # Gemini API Configuration
+      # Gemini API Configuration (only env vars needed)
       env {
         name  = "USE_GEMINI"
         value = "true"
@@ -199,26 +172,27 @@ resource "google_cloud_run_v2_service" "llm_gpu" {
         value = "gemini-2.5-flash-lite-preview-06-17"
       }
 
-      # Longer startup for model loading
+      # Fast startup for lightweight container
       startup_probe {
         http_get {
           path = "/health"
         }
-        initial_delay_seconds = 60
-        period_seconds        = 30
-        timeout_seconds       = 10
-        failure_threshold     = 10
+        initial_delay_seconds = 5
+        period_seconds        = 5
+        timeout_seconds       = 5
+        failure_threshold     = 3
       }
     }
 
-    # Cold start timeout (model loading can take time)
-    timeout = "900s"
+    # Short timeout (no model loading needed)
+    timeout = "300s"
   }
 
   traffic {
     percent = 100
     type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
   }
+
 
   depends_on = [google_project_service.apis]
 }

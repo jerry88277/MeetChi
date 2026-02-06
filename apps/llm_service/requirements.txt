@@ -1,38 +1,16 @@
-# MeetChi LLM Service - Core Dependencies
-# Using flexible version constraints for compatibility
+# MeetChi LLM Service - Gemini API Only
+# Lightweight dependencies (~100MB total)
 
 # Flask web server
 flask>=2.0.0,<4.0.0
 werkzeug>=2.0.0,<4.0.0
 python-dotenv>=1.0.0
 
-# PyTorch - installed separately in Dockerfile for CUDA support
-# torch>=2.0.0
-# torchaudio>=2.0.0
-
-# Transformers & LLM
-transformers>=4.35.0,<5.0.0
-accelerate>=0.25.0
-bitsandbytes>=0.41.0
-safetensors>=0.4.0
-
-# MediaTek Research (Breeze model)
-mtkresearch>=0.3.0
-
-# Hugging Face Hub
-huggingface-hub>=0.20.0
-
-# Utilities
-numpy>=1.24.0,<2.0.0
-scipy>=1.10.0
-networkx>=3.0,<4.0
-pyyaml>=6.0.0
-tqdm>=4.65.0
-requests>=2.28.0
-pillow>=9.0.0
-einops>=0.6.0
-psutil>=5.9.0
-pydantic>=2.0.0,<3.0.0
-
 # Google Gemini API
 google-genai>=1.0.0
+
+# Structured output & validation
+pydantic>=2.0.0,<3.0.0
+
+# Utilities
+requests>=2.28.0
