@@ -398,18 +398,13 @@ def summarize_meeting():
             
             response = gemini_client.models.generate_content(
                 model=GEMINI_MODEL,
-                contents=[
-                    types.Content(
-                        role="user",
-                        parts=[types.Part(text=f"{template.system_prompt}\n\n{user_prompt}")]
-                    )
-                ],
-                config=types.GenerateContentConfig(
-                    response_mime_type='application/json',
-                    response_schema=schema_class,
-                    temperature=0.2,
-                    max_output_tokens=4096
-                )
+                contents=f"{template.system_prompt}\n\n{user_prompt}",
+                config={
+                    "response_mime_type": "application/json",
+                    "response_json_schema": schema_class.model_json_schema(),
+                    "temperature": 0.2,
+                    "max_output_tokens": 4096
+                }
             )
             
             result_text = response.text
