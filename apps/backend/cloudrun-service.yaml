@@ -1,0 +1,71 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: meetchi-backend
+  labels:
+    deploy-version: v3-gcsfuse
+  annotations:
+    run.googleapis.com/launch-stage: BETA
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/startup-cpu-boost: "true"
+        run.googleapis.com/gpu-zonal-redundancy-disabled: "true"
+        autoscaling.knative.dev/maxScale: "1"
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 600
+      serviceAccountName: meetchi-cloudrun@project-51769b5e-7f0f-4a2f-80c.iam.gserviceaccount.com
+      containers:
+        - image: asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-backend-gpu:v1
+          ports:
+            - name: http1
+              containerPort: 8000
+          resources:
+            limits:
+              cpu: "8"
+              memory: 32Gi
+              nvidia.com/gpu: "1"
+          env:
+            - name: DATABASE_URL
+              value: "sqlite:////mnt/gcs/db/meetchi.db"
+            - name: GCS_BUCKET
+              value: "project-51769b5e-7f0f-4a2f-80c-meetchi-audio"
+            - name: PYTHONPATH
+              value: "/app"
+            - name: USE_LOCAL_ASR
+              value: "true"
+            - name: GEMINI_MODEL
+              value: "gemini-2.5-flash-lite"
+            - name: DEPLOY_VERSION
+              value: "v3-gcsfuse"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 12
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 30
+            failureThreshold: 3
+          volumeMounts:
+            - name: gcs-data
+              mountPath: /mnt/gcs
+      volumes:
+        - name: gcs-data
+          csi:
+            driver: gcsfuse.run.googleapis.com
+            volumeAttributes:
+              bucketName: project-51769b5e-7f0f-4a2f-80c-meetchi-audio
+      nodeSelector:
+        run.googleapis.com/accelerator: nvidia-l4
+  traffic:
+    - percent: 100
+      latestRevision: true

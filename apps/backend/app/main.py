@@ -25,6 +25,8 @@ from typing import List, Optional
 import wave 
 import difflib # Import difflib for fuzzy matching
 import re
+import tempfile
+from google.cloud import storage as gcs_storage
 
 class ScriptAligner:
     """
@@ -723,8 +725,23 @@ except ImportError as e:
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sql_app.db")
 LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://localhost:5000")
-engine = create_engine(DATABASE_URL)
+
+# SQLite needs check_same_thread=False for FastAPI async
+connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
+    connect_args["check_same_thread"] = False
+
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Auto-create tables for SQLite (no migration needed)
+from app.models import Base
+# Ensure DB directory exists (for GCS FUSE mount paths like /mnt/gcs/db/)
+if DATABASE_URL.startswith("sqlite"):
+    db_file_path = DATABASE_URL.replace("sqlite:///", "")
+    if db_file_path.startswith("/"):
+        os.makedirs(os.path.dirname(db_file_path), exist_ok=True)
+Base.metadata.create_all(bind=engine)
 
 
 from app.tasks import generate_meeting_minutes  # Now a direct function (not Celery task)
@@ -1154,10 +1171,10 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
     await websocket.accept()
     app_logger.info(f"WebSocket client {websocket.client.host}:{websocket.client.port} connected for transcription.")
 
-    # --- Audio Recording Setup ---
-    AUDIO_SAVE_DIR = os.path.join(os.path.dirname(__file__), "..", "transcribe", "audio")
-    os.makedirs(AUDIO_SAVE_DIR, exist_ok=True) # Ensure dir exists
-    audio_file_path = os.path.join(AUDIO_SAVE_DIR, f"{uuid.uuid4()}.wav")
+    # --- Audio Recording Setup (GCS Upload) ---
+    GCS_BUCKET_NAME = os.getenv("GCS_BUCKET", "")
+    audio_filename = f"{uuid.uuid4()}.wav"
+    audio_file_path = os.path.join(tempfile.gettempdir(), audio_filename)
     wav_file = None 
     
     # Store meeting_id received from frontend for associating audio
@@ -1198,15 +1215,35 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
     operation_mode = "transcription" # Default mode
     script_aligner = MultiSpeakerScriptAligner() # Initialize Multi-Speaker Aligner
 
+    # --- WebSocket Heartbeat (prevents Cloud Run proxy idle timeout ~60s) ---
+    WS_PING_INTERVAL = 25  # Send ping every 25s of no activity
+
     try:
         while True:
-            # Receive message (can be text or bytes)
-            message = await websocket.receive()
+            # Receive message with heartbeat timeout
+            try:
+                message = await asyncio.wait_for(
+                    websocket.receive(),
+                    timeout=WS_PING_INTERVAL
+                )
+            except asyncio.TimeoutError:
+                # No data received within interval — send ping to keep connection alive
+                try:
+                    await websocket.send_json({"type": "ping"})
+                except Exception:
+                    break  # WebSocket closed
+                continue
             
             # 1. Handle Configuration Messages (Text)
             if "text" in message:
                 try:
                     config = json.loads(message["text"])
+                    # Handle ping/pong heartbeat
+                    if config.get("type") == "pong":
+                        continue  # Heartbeat response, skip processing
+                    if config.get("type") == "ping":
+                        await websocket.send_json({"type": "pong"})
+                        continue
                     if config.get("type") == "config":
                         source_lang = config.get("source_lang", source_lang)
                         target_lang = config.get("target_lang", target_lang)
@@ -1431,10 +1468,31 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
             wav_file.close()
             app_logger.info(f"Closed WAV file: {audio_file_path}")
             
+            # Upload to GCS
+            gcs_url = ""
+            if GCS_BUCKET_NAME:
+                try:
+                    client = gcs_storage.Client()
+                    bucket = client.bucket(GCS_BUCKET_NAME)
+                    blob = bucket.blob(f"audio/{audio_filename}")
+                    blob.upload_from_filename(audio_file_path)
+                    gcs_url = f"gs://{GCS_BUCKET_NAME}/audio/{audio_filename}"
+                    app_logger.info(f"Uploaded audio to GCS: {gcs_url}")
+                except Exception as e:
+                    app_logger.error(f"Failed to upload audio to GCS: {e}")
+                    gcs_url = audio_file_path  # Fallback to local path
+                finally:
+                    # Clean up temp file
+                    if os.path.exists(audio_file_path):
+                        os.remove(audio_file_path)
+            else:
+                app_logger.warning("GCS_BUCKET not set, audio saved locally only")
+                gcs_url = audio_file_path
+            
             # Update Meeting's audio_url
             if current_meeting_id:
                 meeting_to_update = db.query(Meeting).filter(Meeting.id == current_meeting_id).first()
                 if meeting_to_update:
-                    meeting_to_update.audio_url = audio_file_path
+                    meeting_to_update.audio_url = gcs_url
                     db.commit()
-                    app_logger.info(f"Updated meeting {current_meeting_id} with audio_url: {audio_file_path}")
+                    app_logger.info(f"Updated meeting {current_meeting_id} with audio_url: {gcs_url}")

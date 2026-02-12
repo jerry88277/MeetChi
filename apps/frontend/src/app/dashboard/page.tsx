@@ -1,19 +1,16 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import {
     Mic,
-    Square,
     Upload,
     Search,
     Clock,
     Calendar,
     ChevronRight,
-    Play,
     FileText,
     CheckCircle2,
-    MoreVertical,
     Settings,
     Menu,
     X,
@@ -24,7 +21,12 @@ import {
     WifiOff,
     LogOut,
     Shield,
-    LayoutTemplate
+    LayoutTemplate,
+    Trash2,
+    Download,
+    ChevronDown,
+    Square,
+    Volume2
 } from 'lucide-react';
 import { api, API_BASE_URL, Meeting as ApiMeeting, MeetingSummary } from '@/lib/api';
 
@@ -46,6 +48,7 @@ interface Meeting {
     id: string;
     title: string;
     date: string;
+    createdAt: string;
     duration: string;
     status: "completed" | "processing" | "failed";
     summary: string;
@@ -90,6 +93,7 @@ function transformMeeting(apiMeeting: ApiMeeting): Meeting {
         id: apiMeeting.id,
         title: apiMeeting.title,
         date: new Date(apiMeeting.created_at).toISOString().split('T')[0],
+        createdAt: apiMeeting.created_at,
         duration: durationStr,
         status: apiMeeting.status === "completed" ? "completed"
             : apiMeeting.status === "failed" ? "failed"
@@ -104,6 +108,66 @@ function formatSeconds(seconds: number): string {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+// --- Export Utilities ---
+function downloadFile(content: string, filename: string, mimeType: string) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function exportAsTxt(meeting: Meeting) {
+    let content = `${meeting.title}\n${'='.repeat(meeting.title.length)}\n`;
+    content += `日期: ${meeting.date}  時長: ${meeting.duration}\n\n`;
+    if (meeting.summary) {
+        content += `【摘要】\n${meeting.summary}\n\n`;
+    }
+    if (meeting.actionItems.length > 0) {
+        content += `【待辦事項】\n`;
+        meeting.actionItems.forEach(item => {
+            content += `- ${item.text} (${item.assignee}, Due: ${item.due})\n`;
+        });
+        content += '\n';
+    }
+    if (meeting.transcript.length > 0) {
+        content += `【逐字稿】\n`;
+        meeting.transcript.forEach(line => {
+            content += `[${line.time}] ${line.speaker}: ${line.text}\n`;
+        });
+    }
+    downloadFile(content, `${meeting.title}.txt`, 'text/plain;charset=utf-8');
+}
+
+function exportAsSrt(meeting: Meeting) {
+    if (meeting.transcript.length === 0) return;
+    let content = '';
+    meeting.transcript.forEach((line, idx) => {
+        const startTime = line.time.replace(/^(\d+):(\d+)$/, '00:$1:$2,000');
+        content += `${idx + 1}\n`;
+        content += `${startTime} --> ${startTime}\n`;
+        content += `${line.speaker}: ${line.text}\n\n`;
+    });
+    downloadFile(content, `${meeting.title}.srt`, 'text/srt;charset=utf-8');
+}
+
+function exportAsJson(meeting: Meeting) {
+    const data = {
+        title: meeting.title,
+        date: meeting.date,
+        duration: meeting.duration,
+        status: meeting.status,
+        summary: meeting.summary,
+        actionItems: meeting.actionItems,
+        transcript: meeting.transcript
+    };
+    downloadFile(JSON.stringify(data, null, 2), `${meeting.title}.json`, 'application/json;charset=utf-8');
 }
 
 // --- Sidebar Component ---
@@ -225,271 +289,405 @@ const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen, isCon
     );
 };
 
-// --- Pre-Recording View Component (Mic Selection & Test) ---
-interface PreRecordingViewProps {
-    onConfirm: (deviceId: string) => void;
-    onCancel: () => void;
+// --- Recording View Component ---
+// 🎤 Real-time WebSocket recording + transcription
+interface TranscriptEntry {
+    id: string;
+    type: 'partial' | 'raw' | 'polished';
+    content: string;
+    translated?: string;
 }
 
-const PreRecordingView = ({ onConfirm, onCancel }: PreRecordingViewProps) => {
-    const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-    const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
-    const [audioLevel, setAudioLevel] = useState(0);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [stream, setStream] = useState<MediaStream | null>(null);
-    const analyserRef = React.useRef<AnalyserNode | null>(null);
-    const animationRef = React.useRef<number | null>(null);
+interface RecordingViewProps {
+    meetingId: string | null;
+    meetingTitle: string;
+    onBack: () => void;
+    onFinish: (meetingId: string) => void;
+}
 
-    // Enumerate audio devices
+const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: RecordingViewProps) => {
+    const [isRecording, setIsRecording] = useState(false);
+    const [isPreparing, setIsPreparing] = useState(false);
+    const [recordingTime, setRecordingTime] = useState(0);
+    const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
+    const [volumeLevel, setVolumeLevel] = useState(0);
+    const [wsStatus, setWsStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
+    const [backendReady, setBackendReady] = useState(false);
+
+    const wsRef = useRef<WebSocket | null>(null);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const processorRef = useRef<ScriptProcessorNode | null>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const transcriptEndRef = useRef<HTMLDivElement>(null);
+
+    // P0-C: Preheat — trigger Cloud Run cold start on component mount
     useEffect(() => {
-        const getDevices = async () => {
+        const preheat = async () => {
             try {
-                // Request permission first to get device labels
-                const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                tempStream.getTracks().forEach(track => track.stop());
-
-                const allDevices = await navigator.mediaDevices.enumerateDevices();
-                const audioInputs = allDevices.filter(d => d.kind === 'audioinput');
-                setDevices(audioInputs);
-                if (audioInputs.length > 0) {
-                    setSelectedDeviceId(audioInputs[0].deviceId);
-                }
-                setIsLoading(false);
-            } catch (err) {
-                setError('無法存取麥克風，請確認已授予權限');
-                setIsLoading(false);
+                await fetch(`${api.getBaseUrl()}/health`);
+                setBackendReady(true);
+            } catch {
+                // Silent fail — cold start will happen on WS connect
             }
         };
-        getDevices();
+        preheat();
+    }, []);
 
+    // Auto-scroll transcript
+    useEffect(() => {
+        transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [transcriptEntries]);
+
+    // Format recording time
+    const formatTime = (seconds: number) => {
+        const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+        const s = (seconds % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+    };
+
+    // Downsample audio from source rate to 16kHz
+    const downsampleBuffer = (buffer: Float32Array, inputSampleRate: number, outputSampleRate: number): Int16Array => {
+        if (inputSampleRate === outputSampleRate) {
+            const result = new Int16Array(buffer.length);
+            for (let i = 0; i < buffer.length; i++) {
+                const s = Math.max(-1, Math.min(1, buffer[i]));
+                result[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+            return result;
+        }
+        const ratio = inputSampleRate / outputSampleRate;
+        const newLength = Math.round(buffer.length / ratio);
+        const result = new Int16Array(newLength);
+        for (let i = 0; i < newLength; i++) {
+            const index = Math.round(i * ratio);
+            const s = Math.max(-1, Math.min(1, buffer[index]));
+            result[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        return result;
+    };
+
+    const startRecording = async () => {
+        if (!meetingId) {
+            setErrorMsg('無法建立會議，請重試');
+            return;
+        }
+
+        setIsPreparing(true);
+        setErrorMsg(null);
+
+        try {
+            // 1. Get microphone
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    sampleRate: { ideal: 16000 },
+                    channelCount: 1,
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                }
+            });
+            streamRef.current = stream;
+
+            // 2. Setup AudioContext
+            const audioContext = new AudioContext({ sampleRate: 16000 });
+            audioContextRef.current = audioContext;
+            const source = audioContext.createMediaStreamSource(stream);
+
+            // 3. Setup ScriptProcessor for PCM extraction
+            const processor = audioContext.createScriptProcessor(4096, 1, 1);
+            processorRef.current = processor;
+
+            // 4. Connect WebSocket
+            const wsUrl = `${api.getWebSocketUrl()}/ws/transcribe`;
+            const ws = new WebSocket(wsUrl);
+            wsRef.current = ws;
+            setWsStatus('connecting');
+
+            ws.onopen = () => {
+                setWsStatus('connected');
+                // Send config
+                ws.send(JSON.stringify({
+                    type: 'config',
+                    meeting_id: meetingId,
+                    source_lang: 'zh',
+                    target_lang: 'en',
+                    mode: 'transcription',
+                    initial_prompt: '',
+                }));
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    // P0-B: Handle heartbeat ping/pong
+                    if (msg.type === 'ping') {
+                        ws.send(JSON.stringify({ type: 'pong' }));
+                        return;
+                    }
+                    if (msg.type === 'pong') {
+                        return; // Heartbeat response, ignore
+                    }
+                    setTranscriptEntries(prev => {
+                        const newEntries = [...prev];
+                        if (msg.type === 'partial') {
+                            // Update or add partial
+                            const idx = newEntries.findIndex(e => e.id === msg.id && e.type === 'partial');
+                            if (idx >= 0) {
+                                newEntries[idx] = { ...newEntries[idx], content: msg.content };
+                            } else {
+                                newEntries.push({ id: msg.id, type: 'partial', content: msg.content });
+                            }
+                        } else if (msg.type === 'raw') {
+                            // Remove partial, add raw
+                            const filtered = newEntries.filter(e => !(e.id === msg.id && e.type === 'partial'));
+                            if (msg.content) {
+                                filtered.push({ id: msg.id, type: 'raw', content: msg.content });
+                            }
+                            return filtered;
+                        } else if (msg.type === 'polished') {
+                            // Replace raw with polished
+                            const idx = newEntries.findIndex(e => e.id === msg.id && (e.type === 'raw' || e.type === 'polished'));
+                            if (idx >= 0) {
+                                newEntries[idx] = { id: msg.id, type: 'polished', content: msg.content, translated: msg.translated };
+                            } else {
+                                newEntries.push({ id: msg.id, type: 'polished', content: msg.content, translated: msg.translated });
+                            }
+                        }
+                        return newEntries;
+                    });
+                } catch (e) {
+                    console.error('Failed to parse WS message:', e);
+                }
+            };
+
+            ws.onerror = () => {
+                setWsStatus('error');
+                setErrorMsg('WebSocket 連線錯誤');
+            };
+
+            ws.onclose = () => {
+                setWsStatus('disconnected');
+            };
+
+            // 5. Process audio chunks
+            // P1: Volume calculation is decoupled from WebSocket readiness
+            processor.onaudioprocess = (e) => {
+                const inputData = e.inputBuffer.getChannelData(0);
+                // Volume meter — always calculate, regardless of WS state
+                let sum = 0;
+                for (let i = 0; i < inputData.length; i++) {
+                    sum += inputData[i] * inputData[i];
+                }
+                setVolumeLevel(Math.sqrt(sum / inputData.length));
+
+                // Send PCM to WebSocket — only when connected
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    const pcmData = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
+                    wsRef.current.send(pcmData.buffer);
+                }
+            };
+
+            source.connect(processor);
+            processor.connect(audioContext.destination);
+
+            // 6. Start timer — immediately (don't wait for WS)
+            setRecordingTime(0);
+            timerRef.current = setInterval(() => {
+                setRecordingTime(t => t + 1);
+            }, 1000);
+
+            // P1: Set recording state immediately after audio setup (before WS connect)
+            setIsRecording(true);
+            setIsPreparing(false);
+
+            // P0-B: Frontend-initiated heartbeat ping (every 25s)
+            pingIntervalRef.current = setInterval(() => {
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    wsRef.current.send(JSON.stringify({ type: 'ping' }));
+                }
+            }, 25000);
+
+        } catch (err) {
+            setIsPreparing(false);
+            if (err instanceof DOMException && err.name === 'NotAllowedError') {
+                setErrorMsg('請允許麥克風權限後再試');
+            } else {
+                setErrorMsg(`錄音啟動失敗: ${err instanceof Error ? err.message : '未知錯誤'}`);
+            }
+        }
+    };
+
+    const stopRecording = async () => {
+        // Stop heartbeat ping
+        if (pingIntervalRef.current) {
+            clearInterval(pingIntervalRef.current);
+            pingIntervalRef.current = null;
+        }
+
+        // Stop timer
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+
+        // Stop audio processing
+        if (processorRef.current) {
+            processorRef.current.disconnect();
+            processorRef.current = null;
+        }
+        if (audioContextRef.current) {
+            await audioContextRef.current.close();
+            audioContextRef.current = null;
+        }
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(t => t.stop());
+            streamRef.current = null;
+        }
+
+        // Close WebSocket (triggers backend WAV save)
+        if (wsRef.current) {
+            wsRef.current.close();
+            wsRef.current = null;
+        }
+
+        setIsRecording(false);
+        setVolumeLevel(0);
+
+        // Trigger summary generation & navigate to detail
+        if (meetingId) {
+            try {
+                await api.regenerateSummary(meetingId, 'general');
+            } catch (e) {
+                console.error('Failed to trigger summary:', e);
+            }
+            onFinish(meetingId);
+        }
+    };
+
+    // Cleanup on unmount
+    useEffect(() => {
         return () => {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
-            if (animationRef.current) {
-                cancelAnimationFrame(animationRef.current);
-            }
+            if (timerRef.current) clearInterval(timerRef.current);
+            if (processorRef.current) processorRef.current.disconnect();
+            if (audioContextRef.current) audioContextRef.current.close();
+            if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+            if (wsRef.current) wsRef.current.close();
         };
     }, []);
 
-    // Start audio monitoring when device changes
-    useEffect(() => {
-        if (!selectedDeviceId) return;
-
-        const startMonitoring = async () => {
-            // Stop previous stream
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
-            if (animationRef.current) {
-                cancelAnimationFrame(animationRef.current);
-            }
-
-            try {
-                const newStream = await navigator.mediaDevices.getUserMedia({
-                    audio: { deviceId: { exact: selectedDeviceId } }
-                });
-                setStream(newStream);
-
-                // Setup audio analyser
-                const audioContext = new AudioContext();
-                const source = audioContext.createMediaStreamSource(newStream);
-                const analyser = audioContext.createAnalyser();
-                analyser.fftSize = 256;
-                source.connect(analyser);
-                analyserRef.current = analyser;
-
-                // Animate audio level
-                const dataArray = new Uint8Array(analyser.frequencyBinCount);
-                const updateLevel = () => {
-                    analyser.getByteFrequencyData(dataArray);
-                    const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-                    setAudioLevel(Math.min(100, avg * 1.5));
-                    animationRef.current = requestAnimationFrame(updateLevel);
-                };
-                updateLevel();
-            } catch (err) {
-                setError('無法啟動麥克風');
-            }
-        };
-        startMonitoring();
-
-        return () => {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
-        };
-    }, [selectedDeviceId]);
-
-    const handleConfirm = () => {
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-        }
-        if (animationRef.current) {
-            cancelAnimationFrame(animationRef.current);
-        }
-        onConfirm(selectedDeviceId);
-    };
-
-    const handleCancel = () => {
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-        }
-        if (animationRef.current) {
-            cancelAnimationFrame(animationRef.current);
-        }
-        onCancel();
-    };
-
-    if (isLoading) {
-        return (
-            <div className="h-full flex flex-col items-center justify-center bg-white">
-                <Loader2 size={48} className="text-indigo-500 animate-spin mb-4" />
-                <p className="text-slate-500">正在檢測麥克風...</p>
-            </div>
-        );
-    }
+    // Finalized entries only (raw or polished)
+    const finalizedEntries = transcriptEntries.filter(e => e.type !== 'partial');
+    const currentPartial = transcriptEntries.find(e => e.type === 'partial');
 
     return (
-        <div className="h-full flex flex-col items-center justify-center bg-white p-6">
-            <div className="max-w-md w-full">
-                {/* Header */}
-                <div className="text-center mb-8">
-                    <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Mic size={32} className="text-indigo-600" />
+        <div className="h-full flex flex-col bg-white">
+            {/* Header */}
+            <div className="border-b border-slate-200 px-6 py-4 flex items-center gap-4 bg-white sticky top-0 z-10">
+                <button onClick={() => { if (isRecording) { stopRecording(); } else { onBack(); } }}
+                    className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors">
+                    <ChevronRight size={24} className="rotate-180" />
+                </button>
+                <div className="flex-1">
+                    <h2 className="text-xl font-bold text-slate-900">{meetingTitle}</h2>
+                    <div className="flex items-center gap-3 text-sm text-slate-500">
+                        {isRecording && (
+                            <>
+                                <span className="flex items-center gap-1.5">
+                                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                                    錄音中
+                                </span>
+                                <span className="w-1 h-1 rounded-full bg-slate-300" />
+                                <span className="font-mono">{formatTime(recordingTime)}</span>
+                            </>
+                        )}
+                        {wsStatus === 'connecting' && <span className="text-amber-500">連線中...</span>}
+                        {wsStatus === 'error' && <span className="text-red-500">連線錯誤</span>}
                     </div>
-                    <h2 className="text-2xl font-bold text-slate-900">準備開始錄音</h2>
-                    <p className="text-slate-500 mt-2">請選擇麥克風並測試音量</p>
                 </div>
+            </div>
 
-                {/* Error Message */}
-                {error && (
-                    <div className="bg-red-50 text-red-600 px-4 py-3 rounded-xl mb-6 flex items-center gap-2">
-                        <AlertCircle size={20} />
-                        <span>{error}</span>
+            {/* Transcript Area */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-3">
+                {!isRecording && transcriptEntries.length === 0 && (
+                    <div className="flex flex-col items-center justify-center h-full text-center">
+                        <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mb-6">
+                            <Mic size={40} className="text-indigo-400" />
+                        </div>
+                        <h3 className="text-lg font-semibold text-slate-700 mb-2">準備開始錄音</h3>
+                        <p className="text-slate-500 max-w-sm">點擊下方按鈕開始錄音，系統將即時轉錄你的語音。</p>
                     </div>
                 )}
 
-                {/* Microphone Selection */}
-                <div className="mb-6">
-                    <label className="block text-sm font-medium text-slate-700 mb-2">選擇麥克風</label>
-                    <select
-                        value={selectedDeviceId}
-                        onChange={(e) => setSelectedDeviceId(e.target.value)}
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                        {devices.map((device) => (
-                            <option key={device.deviceId} value={device.deviceId}>
-                                {device.label || `麥克風 ${device.deviceId.slice(0, 8)}`}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-
-                {/* Audio Level Meter */}
-                <div className="mb-8">
-                    <label className="block text-sm font-medium text-slate-700 mb-2">音量測試</label>
-                    <div className="bg-slate-100 rounded-full h-4 overflow-hidden">
-                        <div
-                            className="h-full bg-gradient-to-r from-green-400 via-yellow-400 to-red-500 transition-all duration-75"
-                            style={{ width: `${audioLevel}%` }}
-                        />
+                {errorMsg && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
+                        <AlertCircle className="text-red-500 flex-shrink-0" size={20} />
+                        <p className="text-red-800">{errorMsg}</p>
                     </div>
-                    <p className="text-xs text-slate-500 mt-2 text-center">
-                        {audioLevel < 10 ? '請說話測試麥克風...' : audioLevel < 60 ? '音量正常 ✓' : '音量良好 ✓✓'}
-                    </p>
-                </div>
+                )}
 
-                {/* Action Buttons */}
-                <div className="flex gap-4">
-                    <button
-                        onClick={handleCancel}
-                        className="flex-1 px-6 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors font-medium"
-                    >
-                        取消
-                    </button>
-                    <button
-                        onClick={handleConfirm}
-                        disabled={!selectedDeviceId || devices.length === 0}
-                        className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                        <Mic size={20} />
-                        開始錄音
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// --- Recording View Component ---
-interface RecordingViewProps {
-    onStop: (durationSeconds: number) => void;
-    onCancel: () => void;
-    isSaving?: boolean;
-}
-
-const RecordingView = ({ onStop, onCancel, isSaving = false }: RecordingViewProps) => {
-    const [duration, setDuration] = useState(0);
-    const [waves, setWaves] = useState(Array(20).fill(10));
-
-    useEffect(() => {
-        const timer = setInterval(() => setDuration(d => d + 1), 1000);
-        const animator = setInterval(() => {
-            setWaves(Array(20).fill(0).map(() => Math.floor(Math.random() * 40) + 10));
-        }, 100);
-        return () => {
-            clearInterval(timer);
-            clearInterval(animator);
-        };
-    }, []);
-
-    const handleStop = () => {
-        onStop(duration);
-    };
-
-    return (
-        <div className="h-full flex flex-col items-center justify-center bg-white p-6">
-            <div className="text-center mb-12">
-                <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium mb-4 ${isSaving ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600 animate-pulse'}`}>
-                    <div className={`w-2 h-2 rounded-full ${isSaving ? 'bg-amber-600' : 'bg-red-600'}`}></div>
-                    {isSaving ? '儲存中...' : '正在錄音'}
-                </div>
-                <h2 className="text-6xl font-mono font-bold text-slate-900 tracking-tighter tabular-nums">
-                    {formatSeconds(duration)}
-                </h2>
-                <p className="text-slate-500 mt-2">
-                    {isSaving ? '正在儲存會議記錄...' : 'AI 正在即時聆聽會議內容...'}
-                </p>
-            </div>
-
-            <div className="flex items-center justify-center gap-1 h-16 mb-16">
-                {waves.map((h, i) => (
-                    <div
-                        key={i}
-                        className={`w-2 rounded-full transition-all duration-100 ease-in-out ${isSaving ? 'bg-amber-500' : 'bg-indigo-500'}`}
-                        style={{ height: `${h}%`, opacity: Math.max(0.3, h / 50) }}
-                    />
+                {finalizedEntries.map(entry => (
+                    <div key={entry.id} className="bg-slate-50 rounded-xl p-4">
+                        <p className="text-slate-900 leading-relaxed">{entry.content}</p>
+                        {entry.translated && (
+                            <p className="text-slate-500 text-sm mt-1 italic">{entry.translated}</p>
+                        )}
+                    </div>
                 ))}
+
+                {currentPartial && (
+                    <div className="bg-indigo-50/50 rounded-xl p-4 border border-indigo-100">
+                        <p className="text-indigo-700/70 leading-relaxed">{currentPartial.content}</p>
+                    </div>
+                )}
+
+                <div ref={transcriptEndRef} />
             </div>
 
-            <div className="flex items-center gap-6">
-                <button
-                    onClick={onCancel}
-                    className="p-4 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors disabled:opacity-50"
-                    title="取消錄音"
-                    disabled={isSaving}
-                >
-                    <X size={24} />
-                </button>
-                <button
-                    onClick={handleStop}
-                    className="p-8 rounded-full bg-red-500 text-white shadow-xl shadow-red-500/30 hover:bg-red-600 hover:scale-105 transition-all disabled:opacity-50 disabled:hover:scale-100"
-                    disabled={isSaving}
-                >
-                    {isSaving ? <Loader2 size={32} className="animate-spin" /> : <Square size={32} fill="currentColor" />}
-                </button>
+            {/* Control Bar */}
+            <div className="border-t border-slate-200 bg-white px-6 py-5">
+                <div className="flex items-center justify-center gap-6">
+                    {/* Volume Indicator */}
+                    <div className="flex items-center gap-2 w-24">
+                        <Volume2 size={18} className="text-slate-400" />
+                        <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-green-400 rounded-full transition-all duration-100"
+                                style={{ width: `${Math.min(100, volumeLevel * 500)}%` }}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Record / Stop Button */}
+                    {!isRecording ? (
+                        <button
+                            onClick={startRecording}
+                            disabled={isPreparing}
+                            className="w-16 h-16 bg-red-500 hover:bg-red-600 disabled:bg-red-300 rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-200 group"
+                        >
+                            {isPreparing ? (
+                                <Loader2 size={28} className="text-white animate-spin" />
+                            ) : (
+                                <Mic size={28} className="text-white group-hover:scale-110 transition-transform" />
+                            )}
+                        </button>
+                    ) : (
+                        <button
+                            onClick={stopRecording}
+                            className="w-16 h-16 bg-slate-700 hover:bg-slate-800 rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-200 group"
+                        >
+                            <Square size={24} className="text-white fill-white group-hover:scale-110 transition-transform" />
+                        </button>
+                    )}
+
+                    {/* Timer display */}
+                    <div className="w-24 text-center">
+                        {isRecording && (
+                            <span className="font-mono text-lg text-slate-700">{formatTime(recordingTime)}</span>
+                        )}
+                    </div>
+                </div>
             </div>
         </div>
     );
@@ -591,12 +789,13 @@ interface DashboardViewProps {
     meetings: Meeting[];
     isLoading: boolean;
     error: string | null;
+    successMessage: string | null;
     onSelectMeeting: (meeting: Meeting) => void;
     onCreateMeeting: () => void;
     onRefresh: () => void;
 }
 
-const DashboardView = ({ meetings, isLoading, error, onSelectMeeting, onCreateMeeting, onRefresh }: DashboardViewProps) => {
+const DashboardView = ({ meetings, isLoading, error, successMessage, onSelectMeeting, onCreateMeeting, onRefresh }: DashboardViewProps) => {
     const [searchQuery, setSearchQuery] = useState('');
 
     const filteredMeetings = meetings.filter(m =>
@@ -635,6 +834,14 @@ const DashboardView = ({ meetings, isLoading, error, onSelectMeeting, onCreateMe
                     </div>
                 </div>
             )}
+
+            {/* Success Banner */}
+            <div className={`transition-all duration-500 ease-in-out overflow-hidden ${successMessage ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'}`}>
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3 mb-0">
+                    <CheckCircle2 className="text-green-500 flex-shrink-0" size={20} />
+                    <p className="font-medium text-green-800">{successMessage}</p>
+                </div>
+            </div>
 
             {/* Search Bar */}
             <div className="relative">
@@ -693,9 +900,11 @@ interface DetailViewProps {
     onBack: () => void;
     onRegenerateSummary?: (meetingId: string) => void;
     isRegenerating?: boolean;
+    onDelete?: (meetingId: string) => void;
+    isDeleting?: boolean;
 }
 
-const DetailView = ({ meeting, onBack, onRegenerateSummary, isRegenerating = false }: DetailViewProps) => {
+const DetailView = ({ meeting, onBack, onRegenerateSummary, isRegenerating = false, onDelete, isDeleting = false }: DetailViewProps) => {
     if (!meeting) return null;
 
     const canRegenerate = meeting.status !== 'processing' && onRegenerateSummary;
@@ -715,14 +924,39 @@ const DetailView = ({ meeting, onBack, onRegenerateSummary, isRegenerating = fal
                         <span>{meeting.duration}</span>
                     </div>
                 </div>
-                <div className="flex gap-2">
-                    <button className="p-2 text-indigo-600 bg-indigo-50 rounded-full hover:bg-indigo-100">
-                        <Play size={20} fill="currentColor" />
+                {/* Export dropdown */}
+                <div className="relative group">
+                    <button
+                        className="flex items-center gap-1 px-3 py-2 text-sm text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                        title="匯出"
+                    >
+                        <Download size={18} />
+                        <span className="hidden sm:inline">匯出</span>
+                        <ChevronDown size={14} />
                     </button>
-                    <button className="p-2 text-slate-400 hover:text-slate-600">
-                        <MoreVertical size={20} />
-                    </button>
+                    <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-slate-200 rounded-xl shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-20">
+                        <button onClick={() => exportAsTxt(meeting)} className="w-full px-4 py-2.5 text-sm text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-t-xl transition-colors">
+                            📄 TXT 純文字
+                        </button>
+                        <button onClick={() => exportAsSrt(meeting)} disabled={meeting.transcript.length === 0} className="w-full px-4 py-2.5 text-sm text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                            🎬 SRT 字幕
+                        </button>
+                        <button onClick={() => exportAsJson(meeting)} className="w-full px-4 py-2.5 text-sm text-left text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-b-xl transition-colors">
+                            📋 JSON 結構化
+                        </button>
+                    </div>
                 </div>
+                {/* Delete button */}
+                {onDelete && (
+                    <button
+                        onClick={() => onDelete(meeting.id)}
+                        disabled={isDeleting}
+                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors disabled:opacity-50"
+                        title="刪除會議"
+                    >
+                        {isDeleting ? <Loader2 size={20} className="animate-spin" /> : <Trash2 size={20} />}
+                    </button>
+                )}
             </div>
 
             <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
@@ -886,24 +1120,31 @@ const SettingsView = ({ onBack, isConnected }: { onBack: () => void; isConnected
                 <div className="bg-white rounded-xl border border-slate-200 p-6">
                     <h3 className="font-bold text-slate-900 mb-4">語音辨識設定</h3>
                     <div className="space-y-4">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between opacity-60">
                             <div>
                                 <p className="font-medium text-slate-800">自動標點符號</p>
                                 <p className="text-sm text-slate-500">AI 自動添加逗號、句號</p>
                             </div>
-                            <div className="w-12 h-6 bg-indigo-600 rounded-full relative cursor-pointer">
-                                <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow"></div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-400">預設開啟</span>
+                                <div className="w-12 h-6 bg-slate-300 rounded-full relative cursor-not-allowed" title="此設定尚未開放調整">
+                                    <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow"></div>
+                                </div>
                             </div>
                         </div>
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between opacity-60">
                             <div>
                                 <p className="font-medium text-slate-800">說話者分離</p>
                                 <p className="text-sm text-slate-500">自動識別不同說話者</p>
                             </div>
-                            <div className="w-12 h-6 bg-indigo-600 rounded-full relative cursor-pointer">
-                                <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow"></div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-400">預設開啟</span>
+                                <div className="w-12 h-6 bg-slate-300 rounded-full relative cursor-not-allowed" title="此設定尚未開放調整">
+                                    <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow"></div>
+                                </div>
                             </div>
                         </div>
+                        <p className="text-xs text-slate-400 italic mt-2">※ 設定調整功能開發中，目前使用後端預設值</p>
                     </div>
                 </div>
             </div>
@@ -914,7 +1155,7 @@ const SettingsView = ({ onBack, isConnected }: { onBack: () => void; isConnected
 // --- Main App Component ---
 export default function DashboardPage() {
     const { data: session } = useSession();
-    const [currentView, setCurrentView] = useState<'dashboard' | 'pre-record' | 'record' | 'detail' | 'settings' | 'templates' | 'admin'>('dashboard');
+    const [currentView, setCurrentView] = useState<'dashboard' | 'record' | 'detail' | 'settings' | 'templates' | 'admin'>('dashboard');
     const [selectedMicDeviceId, setSelectedMicDeviceId] = useState<string>('');
     const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -946,7 +1187,8 @@ export default function DashboardPage() {
 
             // Fetch meetings
             const apiMeetings = await api.listMeetings();
-            const transformedMeetings = apiMeetings.map(transformMeeting);
+            const transformedMeetings = apiMeetings.map(transformMeeting)
+                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
             setMeetings(transformedMeetings);
         } catch (err) {
             setIsConnected(false);
@@ -963,53 +1205,19 @@ export default function DashboardPage() {
     }, [fetchMeetings]);
 
     // Recording state
-    const [isSaving, setIsSaving] = useState(false);
+    const [recordingMeetingId, setRecordingMeetingId] = useState<string | null>(null);
+    const [recordingTitle, setRecordingTitle] = useState('新會議');
 
-    const handleStartRecord = () => {
-        setCurrentView('pre-record');
-    };
-
-    const handleConfirmRecord = (deviceId: string) => {
-        setSelectedMicDeviceId(deviceId);
-        setCurrentView('record');
-    };
-
-    const handleStopRecord = async (durationSeconds: number) => {
-        setIsSaving(true);
+    const handleStartRecord = async () => {
         try {
-            // Generate meeting title with timestamp
-            const now = new Date();
-            const dateStr = now.toLocaleDateString('zh-TW', {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit'
-            });
-            const timeStr = now.toLocaleTimeString('zh-TW', {
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-            const title = `會議記錄 - ${dateStr} ${timeStr}`;
-
-            // Create meeting via API
-            const newMeeting = await api.createMeeting({
-                title,
-                language: 'zh-TW',
-                template_name: 'general'
-            });
-
-            // Refresh meetings list
-            await fetchMeetings();
-
-            // Navigate to the new meeting detail
-            const transformedMeeting = transformMeeting(newMeeting);
-            setSelectedMeeting(transformedMeeting);
-            setCurrentView('detail');
+            const title = prompt('請輸入會議標題：', `會議 ${new Date().toLocaleDateString('zh-TW')}`) || `會議 ${new Date().toLocaleDateString('zh-TW')}`;
+            setRecordingTitle(title);
+            const meeting = await api.createMeeting({ title });
+            setRecordingMeetingId(meeting.id);
+            setCurrentView('record');
         } catch (err) {
-            console.error('Failed to save meeting:', err);
-            setError(err instanceof Error ? err.message : '儲存會議失敗');
-            setCurrentView('dashboard');
-        } finally {
-            setIsSaving(false);
+            console.error('Failed to create meeting:', err);
+            setError(err instanceof Error ? err.message : '建立會議失敗');
         }
     };
 
@@ -1025,19 +1233,7 @@ export default function DashboardPage() {
     const handleRegenerateSummary = useCallback(async (meetingId: string) => {
         setIsRegenerating(true);
         try {
-            // Call API to regenerate summary
-            const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/regenerate-summary`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(session?.idToken ? { 'Authorization': `Bearer ${session.idToken}` } : {})
-                },
-                body: JSON.stringify({ template_name: 'general' })
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
+            await api.regenerateSummary(meetingId, 'general');
 
             // Refresh meetings list to get updated status
             await fetchMeetings();
@@ -1056,12 +1252,32 @@ export default function DashboardPage() {
         } finally {
             setIsRegenerating(false);
         }
-    }, [fetchMeetings, selectedMeeting, session?.idToken]);
+    }, [fetchMeetings, selectedMeeting]);
 
     const handleBackToDashboard = () => {
         setSelectedMeeting(null);
         setCurrentView('dashboard');
     };
+
+    // Delete meeting handler
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [successMessage, setSuccessMessage] = useState<string | null>(null);
+    const handleDeleteMeeting = useCallback(async (meetingId: string) => {
+        if (!confirm('確定要刪除這個會議記錄嗎？此操作無法復原。')) return;
+        setIsDeleting(true);
+        try {
+            await api.deleteMeeting(meetingId);
+            await fetchMeetings();
+            handleBackToDashboard();
+            setSuccessMessage('會議已成功刪除');
+            setTimeout(() => setSuccessMessage(null), 5000);
+        } catch (err) {
+            console.error('Failed to delete meeting:', err);
+            setError(err instanceof Error ? err.message : '刪除會議失敗');
+        } finally {
+            setIsDeleting(false);
+        }
+    }, [fetchMeetings]);
 
     const handleTabChange = (tab: string) => {
         if (tab === 'record') {
@@ -1091,7 +1307,7 @@ export default function DashboardPage() {
             )}
 
             <main className="flex-1 flex flex-col relative overflow-hidden">
-                {currentView !== 'record' && currentView !== 'pre-record' && (
+                {currentView !== 'record' && (
                     <div className="md:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between z-20">
                         <div className="flex items-center gap-2">
                             <div className="w-6 h-6 bg-indigo-500 rounded flex items-center justify-center">
@@ -1111,24 +1327,28 @@ export default function DashboardPage() {
                             meetings={meetings}
                             isLoading={isLoading}
                             error={error}
+                            successMessage={successMessage}
                             onSelectMeeting={handleViewDetail}
                             onCreateMeeting={handleStartRecord}
                             onRefresh={fetchMeetings}
                         />
                     )}
 
-                    {currentView === 'pre-record' && (
-                        <PreRecordingView
-                            onConfirm={handleConfirmRecord}
-                            onCancel={handleBackToDashboard}
-                        />
-                    )}
-
                     {currentView === 'record' && (
                         <RecordingView
-                            onStop={handleStopRecord}
-                            onCancel={handleBackToDashboard}
-                            isSaving={isSaving}
+                            meetingId={recordingMeetingId}
+                            meetingTitle={recordingTitle}
+                            onBack={handleBackToDashboard}
+                            onFinish={async (mid) => {
+                                await fetchMeetings();
+                                const freshMeetings = await api.listMeetings();
+                                const target = freshMeetings.find(m => m.id === mid);
+                                if (target) {
+                                    handleViewDetail(transformMeeting(target));
+                                } else {
+                                    handleBackToDashboard();
+                                }
+                            }}
                         />
                     )}
 
@@ -1138,6 +1358,8 @@ export default function DashboardPage() {
                             onBack={handleBackToDashboard}
                             onRegenerateSummary={handleRegenerateSummary}
                             isRegenerating={isRegenerating}
+                            onDelete={handleDeleteMeeting}
+                            isDeleting={isDeleting}
                         />
                     )}
 
@@ -1152,98 +1374,46 @@ export default function DashboardPage() {
                         <div className="p-6 md:p-8 max-w-5xl mx-auto overflow-auto">
                             <div className="mb-8">
                                 <h1 className="text-2xl font-bold text-slate-900 mb-2">模板管理</h1>
-                                <p className="text-slate-500">選擇適合會議類型的摘要模板</p>
+                                <p className="text-slate-500">選擇適合會議類型的摘要模板（生成摘要時可指定）</p>
                             </div>
 
-                            {/* Template Cards */}
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 flex items-start gap-3">
+                                <AlertCircle className="text-amber-500 flex-shrink-0 mt-0.5" size={20} />
+                                <div>
+                                    <p className="font-medium text-amber-800">模板管理功能開發中</p>
+                                    <p className="text-sm text-amber-600 mt-1">以下是後端已支援的模板。自訂模板 CRUD 功能尚未開放。</p>
+                                </div>
+                            </div>
+
+                            {/* Template Cards - read-only display of backend-supported templates */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {/* General Template */}
-                                <div className="bg-white rounded-xl border border-slate-200 p-6 hover:shadow-lg hover:border-indigo-300 transition-all cursor-pointer group">
-                                    <div className="flex items-start gap-4">
-                                        <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
-                                            <FileText size={24} />
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <h3 className="font-semibold text-slate-900">一般會議</h3>
-                                                <span className="px-2 py-0.5 text-xs bg-indigo-100 text-indigo-600 rounded-full">預設</span>
+                                {[
+                                    { name: 'general', label: '一般會議', desc: '通用模板，含摘要、待辦、決議', color: 'indigo', icon: FileText, tags: ['摘要', '待辦事項', '決議'] },
+                                    { name: 'sales_bant', label: '業務會議 (BANT)', desc: 'Budget / Authority / Need / Timeline', color: 'amber', icon: Clock, tags: ['預算', '決策者', '需求', '時程'] },
+                                    { name: 'hr_star', label: '面試評估 (STAR)', desc: 'Situation / Task / Action / Result', color: 'emerald', icon: CheckCircle2, tags: ['情境', '任務', '行動', '結果'] },
+                                    { name: 'rd', label: '研發會議', desc: '技術決策與進度追蹤', color: 'purple', icon: Mic, tags: ['技術決策', '進度', '風險'] },
+                                ].map(tpl => (
+                                    <div key={tpl.name} className="bg-white rounded-xl border border-slate-200 p-6 transition-all">
+                                        <div className="flex items-start gap-4">
+                                            <div className={`w-12 h-12 bg-${tpl.color}-100 rounded-xl flex items-center justify-center text-${tpl.color}-600`}>
+                                                <tpl.icon size={24} />
                                             </div>
-                                            <p className="text-sm text-slate-500 mb-3">適用於大多數會議場景的通用模板</p>
-                                            <div className="flex flex-wrap gap-2">
-                                                <span className="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded">摘要</span>
-                                                <span className="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded">待辦事項</span>
-                                                <span className="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded">決議</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Standup Template */}
-                                <div className="bg-white rounded-xl border border-slate-200 p-6 hover:shadow-lg hover:border-amber-300 transition-all cursor-pointer group">
-                                    <div className="flex items-start gap-4">
-                                        <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-colors">
-                                            <Clock size={24} />
-                                        </div>
-                                        <div className="flex-1">
-                                            <h3 className="font-semibold text-slate-900 mb-1">站立會議</h3>
-                                            <p className="text-sm text-slate-500 mb-3">每日站立會議、進度更新專用</p>
-                                            <div className="flex flex-wrap gap-2">
-                                                <span className="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded">進度更新</span>
-                                                <span className="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded">阻礙</span>
-                                                <span className="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded">下一步</span>
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <h3 className="font-semibold text-slate-900">{tpl.label}</h3>
+                                                    {tpl.name === 'general' && <span className="px-2 py-0.5 text-xs bg-indigo-100 text-indigo-600 rounded-full">預設</span>}
+                                                </div>
+                                                <p className="text-sm text-slate-500 mb-3">{tpl.desc}</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {tpl.tags.map(tag => (
+                                                        <span key={tag} className="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded">{tag}</span>
+                                                    ))}
+                                                </div>
+                                                <p className="text-xs text-slate-400 mt-3 font-mono">template_name: "{tpl.name}"</p>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-
-                                {/* 1:1 Template */}
-                                <div className="bg-white rounded-xl border border-slate-200 p-6 hover:shadow-lg hover:border-emerald-300 transition-all cursor-pointer group">
-                                    <div className="flex items-start gap-4">
-                                        <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
-                                            <CheckCircle2 size={24} />
-                                        </div>
-                                        <div className="flex-1">
-                                            <h3 className="font-semibold text-slate-900 mb-1">一對一會議</h3>
-                                            <p className="text-sm text-slate-500 mb-3">主管與團隊成員的定期溝通</p>
-                                            <div className="flex flex-wrap gap-2">
-                                                <span className="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded">回顧</span>
-                                                <span className="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded">目標</span>
-                                                <span className="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded">反饋</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Interview Template */}
-                                <div className="bg-white rounded-xl border border-slate-200 p-6 hover:shadow-lg hover:border-purple-300 transition-all cursor-pointer group">
-                                    <div className="flex items-start gap-4">
-                                        <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center text-purple-600 group-hover:bg-purple-500 group-hover:text-white transition-colors">
-                                            <Mic size={24} />
-                                        </div>
-                                        <div className="flex-1">
-                                            <h3 className="font-semibold text-slate-900 mb-1">面試紀錄</h3>
-                                            <p className="text-sm text-slate-500 mb-3">求職面試、候選人評估</p>
-                                            <div className="flex flex-wrap gap-2">
-                                                <span className="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded">技能評估</span>
-                                                <span className="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded">優缺點</span>
-                                                <span className="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded">建議</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Coming Soon */}
-                            <div className="mt-8 p-6 bg-gradient-to-r from-slate-50 to-slate-100 rounded-xl border border-dashed border-slate-300">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-sm">
-                                        <LayoutTemplate size={20} className="text-slate-400" />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-medium text-slate-700">自訂模板</h3>
-                                        <p className="text-sm text-slate-500">即將推出：建立專屬於您團隊的會議摘要模板</p>
-                                    </div>
-                                </div>
+                                ))}
                             </div>
                         </div>
                     )}
@@ -1284,7 +1454,7 @@ export default function DashboardPage() {
                                 </div>
                             </div>
 
-                            {/* Stats Grid */}
+                            {/* Stats Grid — real data from API */}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                                 <div className="bg-white rounded-xl border border-slate-200 p-5">
                                     <div className="flex items-center gap-3">
@@ -1300,11 +1470,11 @@ export default function DashboardPage() {
                                 <div className="bg-white rounded-xl border border-slate-200 p-5">
                                     <div className="flex items-center gap-3">
                                         <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600">
-                                            <LayoutTemplate size={20} />
+                                            <CheckCircle2 size={20} />
                                         </div>
                                         <div>
-                                            <p className="text-2xl font-bold text-slate-900">4</p>
-                                            <p className="text-sm text-slate-500">可用模板</p>
+                                            <p className="text-2xl font-bold text-slate-900">{meetings.filter(m => m.status === 'completed').length}</p>
+                                            <p className="text-sm text-slate-500">已完成摘要</p>
                                         </div>
                                     </div>
                                 </div>
