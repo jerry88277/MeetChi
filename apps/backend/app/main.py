@@ -681,8 +681,9 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 if logger.hasHandlers():
     logger.handlers.clear()
+# Cloud Run captures stderr — use stderr + flush for structured logging visibility
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler = logging.StreamHandler(sys.stderr)
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 log_filename = os.path.join(LOG_DIR, "backend.log")
@@ -1218,22 +1219,30 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
     # --- WebSocket Heartbeat (prevents Cloud Run proxy idle timeout ~60s) ---
     WS_PING_INTERVAL = 25  # Send ping every 25s of no activity
 
-    try:
-        while True:
-            # Receive message with heartbeat timeout
-            try:
-                message = await asyncio.wait_for(
-                    websocket.receive(),
-                    timeout=WS_PING_INTERVAL
-                )
-            except asyncio.TimeoutError:
-                # No data received within interval — send ping to keep connection alive
+    # Background heartbeat task — keeps connection alive without corrupting receive()
+    async def _heartbeat_ping(ws: WebSocket, interval: int = 25):
+        """Send periodic pings to prevent Cloud Run proxy idle timeout."""
+        try:
+            while True:
+                await asyncio.sleep(interval)
                 try:
-                    await websocket.send_json({"type": "ping"})
+                    await ws.send_json({"type": "ping"})
                 except Exception:
                     break  # WebSocket closed
-                continue
+        except asyncio.CancelledError:
+            pass  # Task cancelled on disconnect — expected
+
+    heartbeat_task = asyncio.create_task(_heartbeat_ping(websocket, WS_PING_INTERVAL))
+
+    try:
+        while True:
+            # Receive message — direct call, no wait_for wrapping
+            message = await websocket.receive()
             
+            # Check for WebSocket disconnect message
+            if message.get("type") == "websocket.disconnect":
+                app_logger.info("Received WebSocket disconnect frame.")
+                break
             # 1. Handle Configuration Messages (Text)
             if "text" in message:
                 try:
@@ -1464,6 +1473,8 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
     except Exception as e:
         app_logger.error(f"WebSocket error: {e}", exc_info=True)
     finally:
+        # Cancel heartbeat task
+        heartbeat_task.cancel()
         if wav_file:
             wav_file.close()
             app_logger.info(f"Closed WAV file: {audio_file_path}")
