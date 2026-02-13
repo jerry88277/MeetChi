@@ -36,8 +36,7 @@ pytest.ini
 .git/
 .gitignore
 
-# Docker (keep Dockerfile.gpu for Cloud Build)
-Dockerfile
+# Docker
 docker-compose*.yml
 
 # Docs
