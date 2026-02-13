@@ -94,32 +94,33 @@ async def search_meetings(
     db: Session = Depends(get_db)
 ):
     """
-    Full text search across meetings using PostgreSQL FTS.
-    Searches title, transcript, and summary content.
+    Search across meetings using LIKE (SQLite-compatible).
+    Searches title, transcript_raw, and summary_json content.
     """
-    # Normalize query for tsquery
-    search_query = ' & '.join(q.split())
+    like_pattern = f"%{q}%"
     
-    # PostgreSQL Full Text Search query
     results = db.execute(text("""
         SELECT 
             m.id,
             m.title,
-            ts_headline('simple', COALESCE(m.transcript_raw, ''), plainto_tsquery('simple', :query),
-                'MaxWords=30, MinWords=15, MaxFragments=2') as snippet,
-            ts_rank_cd(m.search_vector, plainto_tsquery('simple', :query)) as rank,
+            SUBSTR(COALESCE(m.transcript_raw, ''), 1, 200) as snippet,
+            1.0 as rank,
             m.created_at
         FROM meetings m
-        WHERE m.search_vector @@ plainto_tsquery('simple', :query)
-        ORDER BY rank DESC
+        WHERE m.title LIKE :pattern
+           OR m.transcript_raw LIKE :pattern
+           OR m.summary_json LIKE :pattern
+        ORDER BY m.created_at DESC
         LIMIT :limit OFFSET :offset
-    """), {"query": q, "limit": limit, "offset": offset}).fetchall()
+    """), {"pattern": like_pattern, "limit": limit, "offset": offset}).fetchall()
     
     # Get total count
     total = db.execute(text("""
         SELECT COUNT(*) FROM meetings 
-        WHERE search_vector @@ plainto_tsquery('simple', :query)
-    """), {"query": q}).scalar()
+        WHERE title LIKE :pattern
+           OR transcript_raw LIKE :pattern
+           OR summary_json LIKE :pattern
+    """), {"pattern": like_pattern}).scalar()
     
     return SearchResponse(
         query=q,
@@ -144,10 +145,12 @@ async def search_segments(
     db: Session = Depends(get_db)
 ):
     """
-    Search within transcript segments.
+    Search within transcript segments using LIKE (SQLite-compatible).
     Optionally filter by meeting_id.
     """
-    query = text("""
+    like_pattern = f"%{q}%"
+    
+    query_str = """
         SELECT 
             ts.id,
             ts.meeting_id,
@@ -155,19 +158,19 @@ async def search_segments(
             ts.end_time,
             ts.speaker,
             ts.content_raw,
-            ts_rank_cd(ts.search_vector, plainto_tsquery('simple', :query)) as rank
+            1.0 as rank
         FROM transcript_segments ts
-        WHERE ts.search_vector @@ plainto_tsquery('simple', :query)
-        """ + ("AND ts.meeting_id = :meeting_id" if meeting_id else "") + """
-        ORDER BY rank DESC
-        LIMIT :limit
-    """)
+        WHERE ts.content_raw LIKE :pattern
+    """
+    if meeting_id:
+        query_str += " AND ts.meeting_id = :meeting_id"
+    query_str += " ORDER BY ts.start_time ASC LIMIT :limit"
     
-    params = {"query": q, "limit": limit}
+    params = {"pattern": like_pattern, "limit": limit}
     if meeting_id:
         params["meeting_id"] = meeting_id
     
-    results = db.execute(query, params).fetchall()
+    results = db.execute(text(query_str), params).fetchall()
     
     return {
         "query": q,

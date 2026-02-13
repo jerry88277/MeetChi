@@ -8,11 +8,7 @@ resource "google_service_account" "cloudrun" {
 }
 
 # Grant necessary permissions
-resource "google_project_iam_member" "cloudrun_sql" {
-  project = var.project_id
-  role    = "roles/cloudsql.client"
-  member  = "serviceAccount:${google_service_account.cloudrun.email}"
-}
+# Cloud SQL IAM — REMOVED (migrated to SQLite on GCS FUSE)
 
 resource "google_project_iam_member" "cloudrun_storage" {
   project = var.project_id
@@ -23,6 +19,13 @@ resource "google_project_iam_member" "cloudrun_storage" {
 resource "google_project_iam_member" "cloudrun_secrets" {
   project = var.project_id
   role    = "roles/secretmanager.secretAccessor"
+  member  = "serviceAccount:${google_service_account.cloudrun.email}"
+}
+
+# Gemini API via ADC (Application Default Credentials)
+resource "google_project_iam_member" "cloudrun_aiplatform" {
+  project = var.project_id
+  role    = "roles/aiplatform.user"
   member  = "serviceAccount:${google_service_account.cloudrun.email}"
 }
 
@@ -58,7 +61,7 @@ resource "google_cloud_run_v2_service" "backend" {
 
       env {
         name  = "DATABASE_URL"
-        value = "postgresql://${var.db_user}:${var.db_password}@${google_sql_database_instance.main.public_ip_address}:5432/${var.db_name}"
+        value = "sqlite:////mnt/gcs/db/meetchi.db"
       }
 
       env {
@@ -102,6 +105,20 @@ resource "google_cloud_run_v2_service" "backend" {
         period_seconds    = 30
         failure_threshold = 3
       }
+      # GCS FUSE volume mount for SQLite persistence
+      volume_mounts {
+        name       = "gcs-data"
+        mount_path = "/mnt/gcs"
+      }
+    }
+
+    # GCS FUSE volume (same bucket as audio)
+    volumes {
+      name = "gcs-data"
+      gcs {
+        bucket    = google_storage_bucket.audio.name
+        read_only = false
+      }
     }
   }
 
@@ -112,7 +129,6 @@ resource "google_cloud_run_v2_service" "backend" {
 
   depends_on = [
     google_project_service.apis,
-    google_sql_database_instance.main,
     google_cloud_tasks_queue.transcription,
   ]
 }
@@ -147,40 +163,37 @@ resource "google_cloud_run_v2_service" "llm_gpu" {
       resources {
         limits = {
           cpu    = "1"
-          memory = "512Mi"
+          memory = "1Gi"
         }
       }
 
-      # Gemini API Configuration (only env vars needed)
+      # Gemini API Configuration
+      # Authentication: ADC via Cloud Run Service Account (no API key needed)
+      # Vertex AI backend with us-central1 (model availability)
       env {
         name  = "USE_GEMINI"
         value = "true"
       }
 
       env {
-        name = "GEMINI_API_KEY"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.gemini_api_key.secret_id
-            version = "latest"
-          }
-        }
+        name  = "GEMINI_MODEL"
+        value = "gemini-2.5-flash-lite"
       }
 
       env {
-        name  = "GEMINI_MODEL"
-        value = "gemini-2.5-flash-lite-preview-06-17"
+        name  = "GCP_LOCATION"
+        value = "us-central1"
       }
 
-      # Fast startup for lightweight container
+      # Startup probe with generous timing for Python cold start
       startup_probe {
         http_get {
           path = "/health"
         }
-        initial_delay_seconds = 5
-        period_seconds        = 5
+        initial_delay_seconds = 15
+        period_seconds        = 10
         timeout_seconds       = 5
-        failure_threshold     = 3
+        failure_threshold     = 5
       }
     }
 

@@ -6,10 +6,10 @@
   
 
 
-  "as_dir_path": "D:/AIAworkshop/TranscriptHub_MVP/apps/backend/upload",       
-  "aslc_dir_path": "D:/AIAworkshop/TranscriptHub_MVP/apps/backend/uploadlc",    
-  "tr_dir_path": "D:/AIAworkshop/TranscriptHub_MVP/apps/backend/transcribe",    
-  "log_path": "D:/AIAworkshop/TranscriptHub_MVP/apps/backend/log",              
+  "as_dir_path": "D:/Side_project/MeetChi/apps/backend/upload",       
+  "aslc_dir_path": "D:/Side_project/MeetChi/apps/backend/uploadlc",    
+  "tr_dir_path": "D:/Side_project/MeetChi/apps/backend/transcribe",    
+  "log_path": "D:/Side_project/MeetChi/apps/backend/log",              
 
 
   "batch_size": 4,              

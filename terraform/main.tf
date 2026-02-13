@@ -40,6 +40,7 @@ resource "google_project_service" "apis" {
     "artifactregistry.googleapis.com",
     "cloudtasks.googleapis.com",
     "vpcaccess.googleapis.com",
+    "aiplatform.googleapis.com",
   ])
 
   service            = each.value

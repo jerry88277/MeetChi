@@ -404,19 +404,9 @@ const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: RecordingV
             const ws = new WebSocket(wsUrl);
             wsRef.current = ws;
             setWsStatus('connecting');
+            console.log(`[MeetChi] WS connecting to: ${wsUrl}`);
 
-            ws.onopen = () => {
-                setWsStatus('connected');
-                // Send config
-                ws.send(JSON.stringify({
-                    type: 'config',
-                    meeting_id: meetingId,
-                    source_lang: 'zh',
-                    target_lang: 'en',
-                    mode: 'transcription',
-                    initial_prompt: '',
-                }));
-            };
+            // ws.onopen is set below (after pendingChunks buffer setup)
 
             ws.onmessage = (event) => {
                 try {
@@ -462,17 +452,44 @@ const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: RecordingV
                 }
             };
 
-            ws.onerror = () => {
+            ws.onerror = (ev) => {
                 setWsStatus('error');
                 setErrorMsg('WebSocket 連線錯誤');
+                console.error(`[MeetChi] WS ERROR. Sent: ${chunksSent}, Buffered: ${chunksBuffered}`, ev);
             };
 
-            ws.onclose = () => {
+            ws.onclose = (ev) => {
                 setWsStatus('disconnected');
+                console.log(`[MeetChi] WS CLOSED. Code: ${ev.code}, Reason: ${ev.reason || 'none'}, Sent: ${chunksSent}, Buffered: ${chunksBuffered}`);
             };
 
             // 5. Process audio chunks
             // P1: Volume calculation is decoupled from WebSocket readiness
+            // P2: Pre-connection buffer — queue chunks while WS is connecting
+            const pendingChunks: ArrayBufferLike[] = [];
+            let chunksSent = 0;
+            let chunksBuffered = 0;
+
+            ws.onopen = () => {
+                setWsStatus('connected');
+                console.log(`[MeetChi] WS OPEN. Flushing ${pendingChunks.length} buffered chunks.`);
+                // Flush buffered audio chunks
+                for (const chunk of pendingChunks) {
+                    ws.send(chunk);
+                    chunksSent++;
+                }
+                pendingChunks.length = 0; // Clear buffer
+                // Send config after flush
+                ws.send(JSON.stringify({
+                    type: 'config',
+                    meeting_id: meetingId,
+                    source_lang: 'zh',
+                    target_lang: 'en',
+                    mode: 'transcription',
+                    initial_prompt: '',
+                }));
+            };
+
             processor.onaudioprocess = (e) => {
                 const inputData = e.inputBuffer.getChannelData(0);
                 // Volume meter — always calculate, regardless of WS state
@@ -482,11 +499,18 @@ const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: RecordingV
                 }
                 setVolumeLevel(Math.sqrt(sum / inputData.length));
 
-                // Send PCM to WebSocket — only when connected
+                const pcmData = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
+
+                // Send PCM to WebSocket — buffer if not yet connected
                 if (wsRef.current?.readyState === WebSocket.OPEN) {
-                    const pcmData = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
                     wsRef.current.send(pcmData.buffer);
+                    chunksSent++;
+                } else if (wsRef.current?.readyState === WebSocket.CONNECTING) {
+                    // Buffer chunks while WS is connecting (cold start, SSL handshake)
+                    pendingChunks.push(pcmData.buffer.slice(0)); // Clone to prevent buffer reuse
+                    chunksBuffered++;
                 }
+                // If CLOSING or CLOSED, drop silently (recording is ending)
             };
 
             source.connect(processor);

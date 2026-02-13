@@ -20,8 +20,10 @@ export default function SettingsPage() {
         { id: 'default', name: 'Default Microphone' },
         { id: 'system', name: 'System Audio (Loopback)' }
     ]);
+    const [isMounted, setIsMounted] = useState(false);
     const [transMode, setTransMode] = useState('zh_to_en');
     const [fontSize, setFontSize] = useState(24);
+    const [fontWeight, setFontWeight] = useState(400);
     const [opacity, setOpacity] = useState(0.6);
     const [maxLines, setMaxLines] = useState(3);
     const [displayMode, setDisplayMode] = useState<'original' | 'translated' | 'bilingual'>('bilingual');
@@ -66,6 +68,7 @@ export default function SettingsPage() {
         if (typeof window !== 'undefined') {
             setInitialPrompt(localStorage.getItem('initialPrompt') || "");
             setFontSize(parseInt(localStorage.getItem('fontSize') || "24"));
+            setFontWeight(parseInt(localStorage.getItem('fontWeight') || "400"));
             setOpacity(parseFloat(localStorage.getItem('opacity') || "0.6"));
             setMaxLines(parseInt(localStorage.getItem('maxLines') || "3"));
             setDisplayMode((localStorage.getItem('displayMode') as 'original' | 'translated' | 'bilingual') || 'bilingual');
@@ -147,6 +150,9 @@ export default function SettingsPage() {
             } else {
                 console.log("[Web Mode] Loaded mock audio devices");
             }
+
+            // Mark as mounted to enable client-only features
+            setIsMounted(true);
         }
     }, []);
 
@@ -773,7 +779,7 @@ export default function SettingsPage() {
                                     <span className="text-xs text-gray-500">{fontSize}px</span>
                                 </div>
                                 <input
-                                    type="range" min="16" max="48" step="2"
+                                    type="range" min="16" max="72" step="2"
                                     value={fontSize}
                                     onChange={(e) => {
                                         const val = parseInt(e.target.value);
@@ -782,6 +788,28 @@ export default function SettingsPage() {
                                     }}
                                     className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
                                 />
+                            </div>
+
+                            <div>
+                                <div className="flex justify-between mb-1">
+                                    <label className="text-sm text-gray-400">Font Weight</label>
+                                    <span className="text-xs text-gray-500">{fontWeight}</span>
+                                </div>
+                                <input
+                                    type="range" min="100" max="900" step="100"
+                                    value={fontWeight}
+                                    onChange={(e) => {
+                                        const val = parseInt(e.target.value);
+                                        setFontWeight(val);
+                                        saveSetting('fontWeight', val.toString());
+                                    }}
+                                    className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                />
+                                <div className="flex justify-between text-[10px] text-gray-600 mt-1">
+                                    <span>Thin</span>
+                                    <span>Normal</span>
+                                    <span>Bold</span>
+                                </div>
                             </div>
 
                             <div>
@@ -804,7 +832,7 @@ export default function SettingsPage() {
                             <div>
                                 <label className="block text-sm text-gray-400 mb-1">Max Lines</label>
                                 <input
-                                    type="number" min="1" max="20"
+                                    type="number" min="1" max="50"
                                     value={maxLines}
                                     onChange={(e) => {
                                         const val = parseInt(e.target.value);
@@ -837,8 +865,8 @@ export default function SettingsPage() {
                     </section>
                 </div>
 
-                {/* Resize Handle */}
-                {isTauri() && (
+                {/* Resize Handle - only render after mount to prevent hydration mismatch */}
+                {isMounted && isTauri() && (
                     <div
                         className="absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize z-50 flex items-end justify-end p-1"
                         onMouseDown={onResizeStart}

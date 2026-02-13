@@ -1,0 +1,20 @@
+# ============================================
+# MeetChi Backend - GPU Requirements
+# Extends CPU requirements with GPU/ASR deps
+# ============================================
+
+-r requirements.txt
+
+# PyTorch (GPU)
+torch>=2.1.0
+torchaudio>=2.1.0
+
+# ASR Engine (CTranslate2-based Whisper)
+faster-whisper>=1.0.0
+
+# Audio/Numeric
+numpy>=1.24.0
+ffmpeg-python>=0.2.0
+
+# Cloud Storage (for audio upload)
+google-cloud-storage>=2.14.0

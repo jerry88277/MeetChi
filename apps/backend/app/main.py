@@ -1215,6 +1215,7 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
     
     operation_mode = "transcription" # Default mode
     script_aligner = MultiSpeakerScriptAligner() # Initialize Multi-Speaker Aligner
+    wav_chunks_received = 0  # Diagnostic counter for audio chunks
 
     # --- WebSocket Heartbeat (prevents Cloud Run proxy idle timeout ~60s) ---
     WS_PING_INTERVAL = 25  # Send ping every 25s of no activity
@@ -1299,6 +1300,7 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
                     wav_file.setframerate(RATE)
                     app_logger.info(f"Opened WAV file for writing: {audio_file_path}")
                 wav_file.writeframes(data) # Write raw bytes
+                wav_chunks_received += 1
                 # --- End Audio File Writing ---
 
             else:
@@ -1323,14 +1325,22 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
                     if snapshot_np.size > 16000:
                         # Use previous_context as initial_prompt for ASR consistency
                         combined_prompt = f"{custom_initial_prompt} {previous_context}".strip()
-                        partial_text = await asyncio.to_thread(get_transcription, snapshot_np, source_lang, combined_prompt, skip_hallucination_filter=(operation_mode == "alignment"))
-                        # Filter extremely short partials
-                        if partial_text and len(partial_text.strip()) > 1:
-                            await websocket.send_json({
-                                "type": "partial",
-                                "id": current_segment_id,
-                                "content": partial_text
-                            })
+                        try:
+                            partial_text = await asyncio.wait_for(
+                                asyncio.to_thread(get_transcription, snapshot_np, source_lang, combined_prompt, skip_hallucination_filter=(operation_mode == "alignment")),
+                                timeout=10.0
+                            )
+                            # Filter extremely short partials
+                            if partial_text and len(partial_text.strip()) > 1:
+                                await websocket.send_json({
+                                    "type": "partial",
+                                    "id": current_segment_id,
+                                    "content": partial_text
+                                })
+                        except asyncio.TimeoutError:
+                            app_logger.warning(f"Partial transcription timed out for [{current_segment_id}]. Skipping.")
+                        except Exception as e:
+                            app_logger.warning(f"Partial transcription failed for [{current_segment_id}]: {e}")
                         last_partial_time = now
 
             # --- Final Transcription (Split Event) ---
@@ -1477,7 +1487,7 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
         heartbeat_task.cancel()
         if wav_file:
             wav_file.close()
-            app_logger.info(f"Closed WAV file: {audio_file_path}")
+            app_logger.info(f"Closed WAV file: {audio_file_path} ({wav_chunks_received} chunks received)")
             
             # Upload to GCS
             gcs_url = ""

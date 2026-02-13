@@ -1,25 +1,45 @@
+# Python
 .venv/
 venv/
 __pycache__/
-*.pyc
-*.pyo
-.git/
-*.md
-.env
-.env.*
-models/
-*.bin
-*.safetensors
-*.pt
-*.pth
-*.h5
-*.onnx
-.cache/
-test_data/
-tests/
+*.py[cod]
+*.egg-info/
+*.egg
+.eggs/
+
+# Local data
+transcribe/
+upload/
+uploadlc/
+audio_files/
+log/
+logs/
+*.log
 *.wav
 *.mp3
-*.mp4
-*.webm
-recordings/
-audio_files/
+*.flac
+
+# Environment
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Tests
+tests/
+pytest.ini
+
+# Git
+.git/
+.gitignore
+
+# Docker (keep Dockerfile.gpu for Cloud Build)
+Dockerfile
+docker-compose*.yml
+
+# Docs
+*.md
+LICENSE

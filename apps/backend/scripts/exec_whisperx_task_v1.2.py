@@ -115,7 +115,7 @@ load_dotenv()
 try:
     as_filename = sys.argv[1]
     diarize_toggle = sys.argv[2]
-    hf_token = os.getenv("HF_TOKEN")
+    hf_token = os.getenv("HF_AUTH_TOKEN")
 except IndexError as e:
     logger.critical("Not enough command line arguments provided.", exc_info=True)
     logging.shutdown()

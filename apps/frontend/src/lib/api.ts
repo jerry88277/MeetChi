@@ -82,6 +82,13 @@ class ApiClient {
     }
 
     /**
+     * Get WebSocket URL (converts http(s) to ws(s))
+     */
+    getWebSocketUrl(): string {
+        return this.baseUrl.replace(/^http/, 'ws');
+    }
+
+    /**
      * Generic fetch wrapper with error handling
      */
     private async fetch<T>(
@@ -111,7 +118,17 @@ class ApiClient {
                 throw new Error(errorData.detail || `HTTP ${response.status}`);
             }
 
-            return response.json();
+            // Handle void responses (204 No Content or empty body)
+            if (response.status === 204 || response.headers.get('content-length') === '0') {
+                return undefined as T;
+            }
+
+            // Try to parse JSON, fallback to undefined for empty bodies
+            const text = await response.text();
+            if (!text) {
+                return undefined as T;
+            }
+            return JSON.parse(text) as T;
         } catch (error) {
             if (error instanceof TypeError && error.message === 'Failed to fetch') {
                 throw new Error('無法連接到後端服務。請確認服務已啟動。');
@@ -177,6 +194,28 @@ class ApiClient {
         });
         return this.fetch(`/api/v1/meetings/${meetingId}/generate-summary?${params}`, {
             method: 'POST',
+        });
+    }
+
+    /**
+     * Delete a meeting by ID
+     */
+    async deleteMeeting(meetingId: string): Promise<void> {
+        await this.fetch(`/api/v1/meetings/${meetingId}`, {
+            method: 'DELETE',
+        });
+    }
+
+    /**
+     * Regenerate summary for a meeting (triggers background task)
+     */
+    async regenerateSummary(
+        meetingId: string,
+        templateName = 'general'
+    ): Promise<{ message: string }> {
+        return this.fetch(`/api/v1/meetings/${meetingId}/generate-summary`, {
+            method: 'POST',
+            body: JSON.stringify({ template_name: templateName }),
         });
     }
 

@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Enum, Float, Boolean, Table, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import TSVECTOR
+# TSVECTOR removed — SQLite compatible
 from datetime import datetime
 import enum
 import uuid # Import uuid for UUID type
@@ -84,8 +84,8 @@ class Meeting(Base):
     transcript_polished = Column(Text, nullable=True)
     summary_json = Column(Text, nullable=True) # Structured summary in JSON format
     
-    # PostgreSQL Full Text Search vector (auto-updated via trigger)
-    search_vector = Column(TSVECTOR, nullable=True)
+    # Full Text Search removed (PostgreSQL-only TSVECTOR)
+    # Can be reimplemented with SQLite FTS5 if needed
 
     # Relationships
     folder = relationship("Folder", back_populates="meetings")
@@ -94,8 +94,7 @@ class Meeting(Base):
     transcript_segments = relationship("TranscriptSegment", back_populates="meeting", order_by="TranscriptSegment.order") # Add relationship
     task_statuses = relationship("TaskStatus", back_populates="meeting")
 
-# GIN Index for Full Text Search (PostgreSQL specific)
-Index('idx_meeting_search_vector', Meeting.search_vector, postgresql_using='gin')
+# GIN Index removed (PostgreSQL-only)
 
 
 class TranscriptSegment(Base):
@@ -112,13 +111,11 @@ class TranscriptSegment(Base):
     content_translated = Column(Text, nullable=True)
     is_final = Column(Boolean, default=False) # Whether this segment is a final transcription
     
-    # FTS for segment-level search
-    search_vector = Column(TSVECTOR, nullable=True)
+    # FTS removed (PostgreSQL-only TSVECTOR)
 
     meeting = relationship("Meeting", back_populates="transcript_segments") # Add back_populates
 
-# GIN Index for segment search
-Index('idx_segment_search_vector', TranscriptSegment.search_vector, postgresql_using='gin')
+# GIN Index removed (PostgreSQL-only)
 
 
 class Artifact(Base):

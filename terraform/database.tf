@@ -1,64 +1,7 @@
 # ============================================
-# Cloud SQL PostgreSQL Instance
+# Cloud SQL — REMOVED (migrated to SQLite on GCS FUSE)
+# Instance meetchi-db was deleted on 2026-02-11
 # ============================================
-
-resource "google_sql_database_instance" "main" {
-  name             = var.db_instance_name
-  database_version = "POSTGRES_15"
-  region           = var.region
-
-  settings {
-    tier = "db-g1-small" # Start small, scale as needed
-
-    # High availability for production
-    availability_type = "ZONAL" # Change to REGIONAL for HA
-
-    disk_size = 20
-    disk_type = "PD_SSD"
-
-    backup_configuration {
-      enabled                        = true
-      start_time                     = "03:00"
-      point_in_time_recovery_enabled = true
-      backup_retention_settings {
-        retained_backups = 7
-      }
-    }
-
-    ip_configuration {
-      ipv4_enabled    = true
-      private_network = null # Add VPC for private access
-
-      # Allow Cloud Run to connect
-      authorized_networks {
-        name  = "allow-all" # Restrict in production
-        value = "0.0.0.0/0"
-      }
-    }
-
-    database_flags {
-      name  = "max_connections"
-      value = "100"
-    }
-  }
-
-  deletion_protection = true
-
-  depends_on = [google_project_service.apis]
-}
-
-# Database
-resource "google_sql_database" "meetchi" {
-  name     = var.db_name
-  instance = google_sql_database_instance.main.name
-}
-
-# Database User
-resource "google_sql_user" "app_user" {
-  name     = var.db_user
-  instance = google_sql_database_instance.main.name
-  password = var.db_password
-}
 
 # ============================================
 # Cloud Tasks Queue (replaces Celery + Redis)
@@ -135,20 +78,7 @@ resource "google_storage_bucket" "audio" {
 # Secret Manager
 # ============================================
 
-resource "google_secret_manager_secret" "db_password" {
-  secret_id = "meetchi-db-password"
-
-  replication {
-    auto {}
-  }
-
-  depends_on = [google_project_service.apis]
-}
-
-resource "google_secret_manager_secret_version" "db_password" {
-  secret      = google_secret_manager_secret.db_password.id
-  secret_data = var.db_password
-}
+# db_password secret — REMOVED (Cloud SQL deleted)
 
 resource "google_secret_manager_secret" "hf_token" {
   secret_id = "meetchi-hf-token"

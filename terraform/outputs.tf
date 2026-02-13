@@ -10,17 +10,7 @@ output "llm_service_url" {
   value       = google_cloud_run_v2_service.llm_gpu.uri
 }
 
-# Cloud SQL Connection
-output "database_connection" {
-  description = "Cloud SQL connection string"
-  value       = "postgresql://${var.db_user}:****@${google_sql_database_instance.main.public_ip_address}:5432/${var.db_name}"
-  sensitive   = false
-}
-
-output "database_instance_name" {
-  description = "Cloud SQL instance connection name"
-  value       = google_sql_database_instance.main.connection_name
-}
+# Cloud SQL outputs — REMOVED (migrated to SQLite on GCS FUSE)
 
 # Cloud Tasks Queues
 output "cloud_tasks_transcription_queue" {

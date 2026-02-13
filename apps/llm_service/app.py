@@ -23,16 +23,46 @@ USE_GEMINI = os.getenv("USE_GEMINI", "true").lower() == "true"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite-preview-06-17")
 MOCK_LLM = os.getenv("MOCK_LLM", "false").lower() == "true"
+GCP_PROJECT = os.getenv("GCP_PROJECT", "")
+GCP_LOCATION = os.getenv("GCP_LOCATION", "asia-southeast1")
 
 print(f"USE_GEMINI:{USE_GEMINI}, GEMINI_MODEL:{GEMINI_MODEL}, MOCK_LLM:{MOCK_LLM}")
 
 # Initialize Gemini client
+# Priority: API Key (local dev) > ADC via Vertex AI (Cloud Run Service Account)
 gemini_client = None
-if USE_GEMINI and GEMINI_API_KEY:
+if USE_GEMINI:
     try:
         from google import genai
-        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-        logger.info(f"Gemini client initialized with model: {GEMINI_MODEL}")
+        if GEMINI_API_KEY:
+            # Local development: use API key from .env
+            gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+            logger.info(f"Gemini client initialized with API Key, model: {GEMINI_MODEL}")
+        else:
+            # GCP Cloud Run: use ADC via Vertex AI backend
+            # Auto-detect project from metadata server if not set
+            project = GCP_PROJECT
+            if not project:
+                try:
+                    import requests as _req
+                    resp = _req.get(
+                        "http://metadata.google.internal/computeMetadata/v1/project/project-id",
+                        headers={"Metadata-Flavor": "Google"}, timeout=2
+                    )
+                    project = resp.text
+                    logger.info(f"Auto-detected GCP project: {project}")
+                except Exception:
+                    logger.warning("Could not auto-detect GCP project from metadata server")
+
+            if project:
+                gemini_client = genai.Client(
+                    vertexai=True,
+                    project=project,
+                    location=GCP_LOCATION
+                )
+                logger.info(f"Gemini client initialized with ADC (Vertex AI), project={project}, location={GCP_LOCATION}, model: {GEMINI_MODEL}")
+            else:
+                logger.error("No GEMINI_API_KEY and no GCP_PROJECT — cannot initialize Gemini client")
     except ImportError:
         logger.error("google-genai not installed!")
     except Exception as e:
@@ -135,12 +165,14 @@ def get_template(template_name: str) -> SummaryTemplate:
 @app.route('/health', methods=['GET'])
 def health_check():
     gemini_available = gemini_client is not None
+    auth_mode = "api_key" if GEMINI_API_KEY else "adc"
     return jsonify({
         "status": "ready",
         "gemini_enabled": gemini_available,
         "gemini_model": GEMINI_MODEL if gemini_available else None,
+        "auth_mode": auth_mode if gemini_available else None,
         "mock_mode": MOCK_LLM,
-        "version": "2.0.0-gemini-only"
+        "version": "2.1.0-adc"
     }), 200
 
 # --- Polish Endpoint (Gemini-based) ---

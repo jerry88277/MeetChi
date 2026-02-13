@@ -58,6 +58,7 @@ export default function Home() {
     // --- Settings State ---
     const [displayMode, setDisplayMode] = useState<DisplayMode>('bilingual');
     const [fontSize, setFontSize] = useState(24);
+    const [fontWeight, setFontWeight] = useState(400);
     const [opacity, setOpacity] = useState(0.6);
     const [maxLines, setMaxLines] = useState(3); // Default 3
 
@@ -374,9 +375,11 @@ export default function Home() {
     useEffect(() => {
         if (typeof window !== 'undefined') {
             const storedFontSize = parseInt(localStorage.getItem('fontSize') || "24");
+            const storedFontWeight = parseInt(localStorage.getItem('fontWeight') || "400");
             const storedMaxLines = parseInt(localStorage.getItem('maxLines') || "3");
 
             setFontSize(storedFontSize);
+            setFontWeight(storedFontWeight);
             setMaxLines(storedMaxLines);
 
             // Auto-resize on startup
@@ -417,6 +420,7 @@ export default function Home() {
                         setFontSize(newSize);
                         updateWindowHeight(newSize, maxLines, displayMode);
                         break;
+                    case 'fontWeight': setFontWeight(parseInt(value)); break;
                     case 'opacity': setOpacity(parseFloat(value)); break;
                     case 'maxLines':
                         const newLines = parseInt(value);
@@ -631,6 +635,7 @@ export default function Home() {
                         className={`flex-1 flex flex-col p-6 gap-4 select-none ${!isClickThrough ? 'mt-14' : ''}`}
                         style={{
                             fontSize: `${fontSize}px`,
+                            fontWeight: fontWeight,
                             lineHeight: '1.6',
                             textShadow: '0 2px 4px rgba(0,0,0,0.8)'
                         }}
@@ -645,14 +650,27 @@ export default function Home() {
                                 }}
                             >
                                 <div className="flex flex-wrap content-end min-h-full pb-2">
-                                    {segments.map((seg) => (
-                                        <span
-                                            key={seg.id}
-                                            className={`mr-2 transition-colors duration-500 ${seg.isPartial ? 'text-white/60 italic' : (seg.isPolished ? 'text-blue-300' : 'text-white')}`}
-                                        >
-                                            {seg.content}
-                                        </span>
-                                    ))}
+                                    {/* Scrolling mode - show all segments, highlight latest with green */}
+                                    {segments.map((seg, index) => {
+                                        const isLatest = index === segments.length - 1;
+                                        return (
+                                            <span
+                                                key={seg.id}
+                                                className={`mr-2 transition-colors duration-500 ${seg.isPartial ? 'italic opacity-60' : ''}`}
+                                                style={{
+                                                    color: seg.isPartial
+                                                        ? 'rgba(255,255,255,0.6)'
+                                                        : isLatest
+                                                            ? '#499544'  // Highlight latest with green
+                                                            : seg.isPolished
+                                                                ? '#93c5fd'  // blue-300 for polished
+                                                                : 'rgba(255,255,255,0.7)'  // Dimmed for older segments
+                                                }}
+                                            >
+                                                {seg.content}
+                                            </span>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}
@@ -668,14 +686,25 @@ export default function Home() {
                                 }}
                             >
                                 <div className="flex flex-wrap content-start min-h-full">
-                                    {segments.map((seg) => (
-                                        <span
-                                            key={seg.id}
-                                            className={`mr-2 transition-colors duration-500 ${seg.isPartial ? 'text-white/50 italic' : 'text-white/90'}`}
-                                        >
-                                            {seg.translated || "..."}
-                                        </span>
-                                    ))}
+                                    {/* Scrolling mode - show all segments, highlight latest with green */}
+                                    {segments.map((seg, index) => {
+                                        const isLatest = index === segments.length - 1;
+                                        return (
+                                            <span
+                                                key={seg.id}
+                                                className={`mr-2 transition-colors duration-500 ${seg.isPartial ? 'italic opacity-50' : ''}`}
+                                                style={{
+                                                    color: seg.isPartial
+                                                        ? 'rgba(255,255,255,0.5)'
+                                                        : isLatest
+                                                            ? '#499544'  // Highlight latest with green
+                                                            : 'rgba(255,255,255,0.6)'  // Dimmed for older segments
+                                                }}
+                                            >
+                                                {seg.translated || "..."}
+                                            </span>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}

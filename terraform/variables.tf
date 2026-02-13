@@ -16,30 +16,7 @@ variable "zone" {
   default     = "asia-southeast1-b"
 }
 
-# Database Configuration
-variable "db_instance_name" {
-  description = "Cloud SQL instance name"
-  type        = string
-  default     = "meetchi-db"
-}
-
-variable "db_name" {
-  description = "Database name"
-  type        = string
-  default     = "MeetChi"
-}
-
-variable "db_user" {
-  description = "Database username"
-  type        = string
-  default     = "meetchi_app"
-}
-
-variable "db_password" {
-  description = "Database password (use Secret Manager in production)"
-  type        = string
-  sensitive   = true
-}
+# Database Configuration — REMOVED (migrated to SQLite on GCS FUSE)
 
 # Cloud Run Configuration
 variable "backend_image" {
