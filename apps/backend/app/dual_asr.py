@@ -10,7 +10,7 @@ import asyncio
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
-import httpx
+from app.llm_utils import get_gemini_client, GEMINI_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -79,9 +79,9 @@ class ModelRegistry:
                 "model_path": "MediaTek-Research/Breeze-7B-Instruct-v1_0"
             },
             "gemini-flash": {
-                "name": "Gemini 1.5 Flash",
+                "name": "Gemini 2.5 Flash",
                 "provider": "gcp",
-                "model_id": "gemini-1.5-flash"
+                "model_id": GEMINI_MODEL
             }
         }
         
@@ -113,9 +113,8 @@ class DualASREngine:
     Runs both models and uses LLM to select best result per segment
     """
     
-    def __init__(self, llm_service_url: str = "http://localhost:5000"):
+    def __init__(self):
         self.registry = ModelRegistry()
-        self.llm_service_url = llm_service_url
         self.executor = ThreadPoolExecutor(max_workers=2)
         self._whisperx_model = None
         self._taiwanese_model = None
@@ -304,17 +303,30 @@ class DualASREngine:
 
 請選擇較正確、較通順的版本。如果是台語內容，保留台語版本；如果是國語，保留國語版本；如果是混合，請整合兩者。
 
-只輸出最終選擇的文字，不要解釋："""
+請以 JSON 格式回覆，key 為 "text"，value 為最終選擇的文字。"""
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{self.llm_service_url}/generate",
-                    json={"prompt": prompt, "max_tokens": 200}
+            client = get_gemini_client()
+            if not client:
+                 logger.warning("Gemini client not available for selection, fallback to Mandarin")
+                 return zh_text
+
+            def _call_gemini():
+                response = client.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=prompt,
+                    config={
+                        "response_mime_type": "application/json",
+                        "temperature": 0.1,
+                        "max_output_tokens": 200
+                    }
                 )
-                if response.status_code == 200:
-                    result = response.json()
-                    return result.get("text", zh_text).strip()
+                return json.loads(response.text)
+
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(self.executor, _call_gemini)
+            return result.get("text", zh_text).strip()
+            
         except Exception as e:
             logger.error(f"LLM selection failed: {e}")
         
@@ -371,10 +383,10 @@ class DualASREngine:
 
 _dual_asr_engine = None
 
-def get_dual_asr_engine(llm_service_url: str = None) -> DualASREngine:
+def get_dual_asr_engine() -> DualASREngine:
     """Get or create DualASREngine singleton"""
     global _dual_asr_engine
     if _dual_asr_engine is None:
-        url = llm_service_url or os.getenv("LLM_SERVICE_URL", "http://localhost:5000")
-        _dual_asr_engine = DualASREngine(llm_service_url=url)
+        _dual_asr_engine = DualASREngine()
     return _dual_asr_engine
+

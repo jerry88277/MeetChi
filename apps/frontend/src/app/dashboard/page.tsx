@@ -322,6 +322,8 @@ const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: RecordingV
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const transcriptEndRef = useRef<HTMLDivElement>(null);
+    const recognitionRef = useRef<any>(null);
+    const isRecordingRef = useRef(false);
 
     // P0-C: Preheat — trigger Cloud Run cold start on component mount
     useEffect(() => {
@@ -430,8 +432,10 @@ const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: RecordingV
                                 newEntries.push({ id: msg.id, type: 'partial', content: msg.content });
                             }
                         } else if (msg.type === 'raw') {
-                            // Remove partial, add raw
-                            const filtered = newEntries.filter(e => !(e.id === msg.id && e.type === 'partial'));
+                            // Remove partial (both backend partial and Web Speech partial), add raw
+                            const filtered = newEntries.filter(e =>
+                                !((e.id === msg.id && e.type === 'partial') || e.id === 'web-speech-partial')
+                            );
                             if (msg.content) {
                                 filtered.push({ id: msg.id, type: 'raw', content: msg.content });
                             }
@@ -533,6 +537,61 @@ const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: RecordingV
                 }
             }, 25000);
 
+            // 7. Web Speech API — free, low-latency partial transcription
+            const SpeechRecognition = (window as any).webkitSpeechRecognition
+                || (window as any).SpeechRecognition;
+            if (SpeechRecognition) {
+                const recognition = new SpeechRecognition();
+                recognition.lang = 'zh-TW';
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                recognition.maxAlternatives = 1;
+
+                recognition.onresult = (event: any) => {
+                    const last = event.results[event.resultIndex];
+                    const text = last[0].transcript;
+                    if (!last.isFinal) {
+                        // Show interim result as partial transcript
+                        setTranscriptEntries(prev => {
+                            const idx = prev.findIndex(e => e.id === 'web-speech-partial' && e.type === 'partial');
+                            if (idx >= 0) {
+                                const updated = [...prev];
+                                updated[idx] = { ...updated[idx], content: text };
+                                return updated;
+                            }
+                            return [...prev, { id: 'web-speech-partial', type: 'partial' as const, content: text }];
+                        });
+                    }
+                    // Note: We don't use isFinal from Web Speech API as final.
+                    // The authoritative final transcript comes from Gemini API via backend.
+                };
+
+                recognition.onerror = (event: any) => {
+                    if (event.error !== 'no-speech' && event.error !== 'aborted') {
+                        console.warn('[MeetChi] Web Speech API error:', event.error);
+                    }
+                };
+
+                recognition.onend = () => {
+                    // Auto-restart if still recording
+                    if (isRecordingRef.current) {
+                        try { recognition.start(); } catch { /* ignore */ }
+                    }
+                };
+
+                try {
+                    recognition.start();
+                    recognitionRef.current = recognition;
+                    console.log('[MeetChi] Web Speech API started for partial transcription');
+                } catch (e) {
+                    console.warn('[MeetChi] Web Speech API failed to start:', e);
+                }
+            } else {
+                console.warn('[MeetChi] Web Speech API not supported in this browser');
+            }
+
+            isRecordingRef.current = true;
+
         } catch (err) {
             setIsPreparing(false);
             if (err instanceof DOMException && err.name === 'NotAllowedError') {
@@ -570,6 +629,13 @@ const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: RecordingV
             streamRef.current = null;
         }
 
+        // Stop Web Speech API
+        if (recognitionRef.current) {
+            try { recognitionRef.current.stop(); } catch { /* ignore */ }
+            recognitionRef.current = null;
+        }
+        isRecordingRef.current = false;
+
         // Close WebSocket (triggers backend WAV save)
         if (wsRef.current) {
             wsRef.current.close();
@@ -598,6 +664,8 @@ const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: RecordingV
             if (audioContextRef.current) audioContextRef.current.close();
             if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
             if (wsRef.current) wsRef.current.close();
+            if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch { } }
+            isRecordingRef.current = false;
         };
     }, []);
 

@@ -13,6 +13,7 @@ class MeetingStatus(enum.Enum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     PENDING = "PENDING"
+    REFINING = "REFINING"  # Offline ASR refinement in progress (Plan B)
 
 class ArtifactType(enum.Enum):
     AUDIO = "AUDIO"

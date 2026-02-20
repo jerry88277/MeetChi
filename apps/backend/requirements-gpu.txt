@@ -12,6 +12,12 @@ torchaudio>=2.1.0
 # ASR Engine (CTranslate2-based Whisper)
 faster-whisper>=1.0.0
 
+# WhisperX — Forced alignment + Speaker diarization (Plan B)
+whisperx>=3.1.0
+
+# Speaker Diarization (pyannote.audio — required by WhisperX)
+pyannote.audio>=3.1.0
+
 # Audio/Numeric
 numpy>=1.24.0
 ffmpeg-python>=0.2.0

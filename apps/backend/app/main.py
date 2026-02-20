@@ -12,7 +12,9 @@ import io
 import asyncio
 import numpy as np
 import logging
-import httpx # For async HTTP requests
+import httpx  # For GPU ASR service-to-service HTTP calls
+import google.auth.transport.requests as google_auth_requests
+import google.oauth2.id_token as google_id_token
 import uuid # For UUID generation
 from datetime import datetime # For datetime fields
 from dotenv import load_dotenv
@@ -698,34 +700,92 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 # --- Re-declare Base if needed, or import from models.py ---
 # Assuming Base is already declared in models.py and imported via 'from app.models import Base, ...'
-from app.models import Base, Meeting, TranscriptSegment, Artifact, TaskStatus # Import all relevant models
+from app.models import Base, Meeting, MeetingStatus, TranscriptSegment, Artifact, TaskStatus # Import all relevant models
 from app.vad import VADAudioBuffer
 
-# Conditional import for GPU-dependent ASR functions
-# In Cloud Run CPU environment, these functions are provided by the LLM Service
+from app.llm_utils import get_gemini_client, polish_text, generate_summary, GEMINI_MODEL
+
+# Gemini Setup handled in llm_utils
+
+
+
+async def get_transcription_gemini(audio_np, lang="zh", prompt=""):
+    """
+    Transcribe audio using Gemini API (multimodal input).
+    
+    Args:
+        audio_np: numpy float32 array of audio samples at 16kHz
+        lang: source language code ('zh', 'en', etc.)
+        prompt: context/initial prompt for better accuracy
+    Returns:
+        Transcribed text string
+    """
+    client = get_gemini_client()
+    if client is None:
+        raise RuntimeError("Gemini client not initialized. Set GCP_PROJECT or GEMINI_API_KEY.")
+    
+    import soundfile as sf
+    
+    # Convert numpy array to WAV bytes in memory
+    wav_buffer = io.BytesIO()
+    sf.write(wav_buffer, audio_np, 16000, format='WAV')
+    wav_bytes = wav_buffer.getvalue()
+    
+    lang_map = {"zh": "繁體中文", "en": "English", "ja": "日本語"}
+    lang_name = lang_map.get(lang, lang)
+    
+    system_prompt = (
+        f"你是語音轉文字引擎。請將音頻精確轉寫為{lang_name}文字。"
+        "只輸出轉寫文字，不要添加任何額外說明、標點符號修飾或格式化。"
+        "如果音頻中沒有語音或只有噪音，回傳空字串。"
+    )
+    
+    user_content = []
+    if prompt:
+        user_content.append(f"上下文提示：{prompt}")
+    user_content.append("請轉寫以下音頻：")
+    
+    from google.genai import types
+    user_content.append(types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav"))
+    
+    def _call_gemini_asr():
+        return client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=user_content,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                temperature=0.1,
+            )
+        )
+    
+    # Run synchronous Gemini call in thread pool
+    response = await asyncio.to_thread(_call_gemini_asr)
+    
+    result = response.text.strip() if response.text else ""
+    return result
+
+
+# Conditional import for GPU-dependent ASR functions (optional local mode)
 try:
     from scripts.transcribe_sprint0 import get_transcription, load_asr_model, correct_keywords, logger as asr_logger
     LOCAL_ASR_AVAILABLE = True
 except ImportError as e:
-    import logging
     asr_logger = logging.getLogger("asr_fallback")
-    asr_logger.warning(f"Local ASR not available (torch not installed): {e}. Using LLM Service for ASR.")
+    asr_logger.info(f"Local ASR not available: {e}. Using Gemini API for ASR.")
     LOCAL_ASR_AVAILABLE = False
     
-    # Placeholder functions - actual ASR handled by LLM Service
     def get_transcription(*args, **kwargs):
-        raise NotImplementedError("Local ASR not available. Use LLM Service endpoint.")
+        raise NotImplementedError("Local ASR not available. Use Gemini API.")
     
     def load_asr_model(*args, **kwargs):
-        asr_logger.info("Skipping local ASR model load - using LLM Service")
         pass
     
     def correct_keywords(text):
-        return text  # Pass through without correction
+        return text
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sql_app.db")
-LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://localhost:5000")
+# LLM_SERVICE_URL removed
 
 # SQLite needs check_same_thread=False for FastAPI async
 connect_args = {}
@@ -965,7 +1025,7 @@ async def regenerate_summary(
     
     # Clear existing summary and reset status to processing
     meeting.summary_json = None
-    meeting.status = "processing"
+    meeting.status = MeetingStatus.PROCESSING
     meeting.updated_at = datetime.utcnow()
     db.commit()
     
@@ -1045,26 +1105,30 @@ async def summarize_full_transcript(request_data: SummarizeRequestModel):
     """
     app_logger.info(f"Received summarization request for transcript (len: {len(request_data.transcript)}) with template: {request_data.template_name}")
     try:
-        async with httpx.AsyncClient() as client:
-            llm_response = await client.post(
-                f"{LLM_SERVICE_URL}/summarize",
-                json={
-                    "text": request_data.transcript,
-                    "template_name": request_data.template_name
-                },
-                timeout=120.0 # Longer timeout for summarization
-            )
-            llm_response.raise_for_status()
-            summary_data = llm_response.json()
+        client = get_gemini_client()
+        if not client:
+            raise HTTPException(status_code=500, detail="Gemini client unavailable")
             
-            return SummarizeResponseModel(
-                summary=summary_data.get("summary", "無法生成摘要。"),
-                action_items=summary_data.get("action_items", []),
-                decisions=summary_data.get("decisions", []),
-                risks=summary_data.get("risks", [])
+        def _run_summary():
+            return generate_summary(
+                client=client,
+                text=request_data.transcript,
+                template_name=request_data.template_name
             )
+            
+        summary_data = await asyncio.to_thread(_run_summary)
+        
+        if "error" in summary_data:
+            raise Exception(summary_data["error"])
+            
+        return SummarizeResponseModel(
+            summary=summary_data.get("summary", "無法生成摘要。"),
+            action_items=summary_data.get("action_items", []),
+            decisions=summary_data.get("decisions", []),
+            risks=summary_data.get("risks", [])
+        )
     except Exception as e:
-        app_logger.error(f"Error calling LLM /summarize service: {e}", exc_info=True)
+        app_logger.error(f"Error calling Gemini for summary: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to generate summary: {e}")
 
 
@@ -1105,54 +1169,44 @@ def db_test(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Database connection failed: {e}")
 
 async def polish_transcription_task(segment_id: str, transcript_text: str, previous_context: str, source_lang: str, target_lang: str, websocket: WebSocket):
-    """
-    Async task to call LLM service for polishing and send result back to WebSocket.
-    Includes previous_context for better semantic accuracy.
-    """
+    # Async task to call Gemini directly for polishing and send result back to WebSocket.
     try:
-        async with httpx.AsyncClient() as client:
-            llm_response = await client.post(
-                f"{LLM_SERVICE_URL}/polish",
-                json={
-                    "text": transcript_text,
-                    "previous_context": previous_context,
-                    "source_lang": source_lang,
-                    "target_lang": target_lang
-                },
-                timeout=30.0 
+        client = get_gemini_client()
+        if not client:
+            raise Exception("Gemini client unavailable")
+
+        # Run synchronous polish_text in thread pool
+        def _run_polish():
+            return polish_text(
+                client=client,
+                raw_text=transcript_text,
+                source_lang=source_lang,
+                target_lang=target_lang
             )
-            llm_response.raise_for_status() 
-            polished_data = llm_response.json()
-            
-            # New format: {'refined': '...', 'translated': '...'}
-            # Fallback to 'polished_text' or raw text if keys missing
-            refined_text = polished_data.get("refined", polished_data.get("polished_text", transcript_text))
-            translated_text = polished_data.get("translated", "")
 
-            # DEFENSIVE CODING: Ensure these are strings, not dicts
-            if isinstance(refined_text, dict):
-                refined_text = refined_text.get('content', str(refined_text))
-            if isinstance(translated_text, dict):
-                translated_text = translated_text.get('content', str(translated_text))
-            
-            refined_text = str(refined_text)
-            translated_text = str(translated_text)
+        polished_data = await asyncio.to_thread(_run_polish)
+        
+        if "error" in polished_data:
+            raise Exception(polished_data["error"])
+        
+        refined_text = polished_data.get("polished_text", transcript_text)
+        translated_text = polished_data.get("translated", "")
+        
+        app_logger.info(f"Polished [{segment_id}]: {refined_text} | Translated: {translated_text}")
 
-            app_logger.info(f"Polished [{segment_id}]: {refined_text} | Translated: {translated_text}")
-
-            # Send polished transcript to frontend
-            try:
-                await websocket.send_json({
-                    "type": "polished",
-                    "id": segment_id,
-                    "content": refined_text, 
-                    "translated": translated_text
-                })
-            except RuntimeError as e:
-                # WebSocket might be closed/disconnected
-                app_logger.warning(f"Could not send polished text, websocket probably closed: {e}")
-            except Exception as e:
-                app_logger.error(f"Error sending polished text via websocket: {e}")
+        # Send polished transcript to frontend
+        try:
+            await websocket.send_json({
+                "type": "polished",
+                "id": segment_id,
+                "content": refined_text, 
+                "translated": translated_text
+            })
+        except RuntimeError as e:
+            # WebSocket might be closed/disconnected
+            app_logger.warning(f"Could not send polished text, websocket probably closed: {e}")
+        except Exception as e:
+            app_logger.error(f"Error sending polished text via websocket: {e}")
 
     except Exception as e:
         app_logger.error(f"Polishing task failed for segment {segment_id}: {e}")
@@ -1222,7 +1276,7 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
 
     # Background heartbeat task — keeps connection alive without corrupting receive()
     async def _heartbeat_ping(ws: WebSocket, interval: int = 25):
-        """Send periodic pings to prevent Cloud Run proxy idle timeout."""
+        # Send periodic pings to prevent Cloud Run proxy idle timeout.
         try:
             while True:
                 await asyncio.sleep(interval)
@@ -1315,33 +1369,11 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
             # Returns bytes only if a split point (silence or max duration) is reached
             audio_bytes = vad_buffer.process_chunk(data, force_speech=is_initial_phase)
 
-            # --- Partial Transcription (Every 2.0s) ---
-            now = time.time()
-            if not audio_bytes and (now - last_partial_time) > 2.0:
-                snapshot_bytes = vad_buffer.snapshot()
-                if snapshot_bytes:
-                    snapshot_np = np.frombuffer(snapshot_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-                    # Only transcribe if we have at least 1s of audio to avoid noise hallucinations
-                    if snapshot_np.size > 16000:
-                        # Use previous_context as initial_prompt for ASR consistency
-                        combined_prompt = f"{custom_initial_prompt} {previous_context}".strip()
-                        try:
-                            partial_text = await asyncio.wait_for(
-                                asyncio.to_thread(get_transcription, snapshot_np, source_lang, combined_prompt, skip_hallucination_filter=(operation_mode == "alignment")),
-                                timeout=10.0
-                            )
-                            # Filter extremely short partials
-                            if partial_text and len(partial_text.strip()) > 1:
-                                await websocket.send_json({
-                                    "type": "partial",
-                                    "id": current_segment_id,
-                                    "content": partial_text
-                                })
-                        except asyncio.TimeoutError:
-                            app_logger.warning(f"Partial transcription timed out for [{current_segment_id}]. Skipping.")
-                        except Exception as e:
-                            app_logger.warning(f"Partial transcription failed for [{current_segment_id}]: {e}")
-                        last_partial_time = now
+            # --- Partial Transcription ---
+            # REMOVED: Backend no longer does partial ASR.
+            # Partial transcription is handled by the frontend using Web Speech API (free, <500ms latency).
+            # Backend only handles Final transcription via Gemini API when VAD detects a split.
+
 
             # --- Final Transcription (Split Event) ---
             if audio_bytes:
@@ -1364,19 +1396,18 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
                     combined_prompt = f"{custom_initial_prompt} {previous_context}".strip()
                     
                     try:
-                        # Add a timeout for ASR transcription to prevent service hang
-                        # Longer timeout (e.g., 10s) to accommodate potentially slow ASR or longer segments
+                        # Gemini API ASR — async call with timeout
                         transcript_text = await asyncio.wait_for(
-                            asyncio.to_thread(get_transcription, audio_for_transcription, source_lang, combined_prompt, skip_hallucination_filter=(operation_mode == "alignment")),
-                            timeout=20.0 
+                            get_transcription_gemini(audio_for_transcription, source_lang, combined_prompt),
+                            timeout=30.0
                         )
-                        app_logger.info(f"ASR Output: '{transcript_text}'") # Log ASR output for debugging
+                        app_logger.info(f"Gemini ASR Output: '{transcript_text}'")
                     except asyncio.TimeoutError:
-                        app_logger.error(f"ASR transcription timed out for segment {current_segment_id}. Skipping segment.")
-                        transcript_text = "" # Treat as empty on timeout
+                        app_logger.error(f"Gemini ASR timed out for segment {current_segment_id}. Skipping segment.")
+                        transcript_text = ""
                     except Exception as e:
-                        app_logger.error(f"Error during ASR transcription for segment {current_segment_id}: {e}", exc_info=True)
-                        transcript_text = "" # Treat as empty on error
+                        app_logger.error(f"Gemini ASR error for segment {current_segment_id}: {e}", exc_info=True)
+                        transcript_text = ""
                     
                     if transcript_text:
                         app_logger.info(f"Raw Transcription [{current_segment_id}]: {transcript_text}")
@@ -1515,5 +1546,49 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
                 meeting_to_update = db.query(Meeting).filter(Meeting.id == current_meeting_id).first()
                 if meeting_to_update:
                     meeting_to_update.audio_url = gcs_url
+                    # Calculate and store recording duration
+                    if first_audio_time is not None:
+                        meeting_to_update.duration = time.time() - first_audio_time
+                        app_logger.info(f"Meeting {current_meeting_id} duration: {meeting_to_update.duration:.1f}s")
+                    # Mark meeting as completed (Gemini realtime transcript available)
+                    meeting_to_update.status = MeetingStatus.COMPLETED
                     db.commit()
-                    app_logger.info(f"Updated meeting {current_meeting_id} with audio_url: {gcs_url}")
+                    app_logger.info(f"Updated meeting {current_meeting_id} with audio_url: {gcs_url}, status: COMPLETED")
+                    
+                    # Plan B (Dual Service): Trigger GPU ASR Service via HTTP
+                    # CPU Service → HTTP POST → GPU Service (/asr/refine)
+                    # The user already has the Gemini realtime transcript available
+                    gpu_asr_url = os.getenv("GPU_ASR_SERVICE_URL")
+                    if gpu_asr_url:
+                        try:
+                            # Get ID token for service-to-service auth
+                            auth_req = google_auth_requests.Request()
+                            id_token = google_id_token.fetch_id_token(auth_req, gpu_asr_url)
+
+                            async def _trigger_gpu_asr():
+                                try:
+                                    async with httpx.AsyncClient(timeout=30.0) as client:
+                                        resp = await client.post(
+                                            f"{gpu_asr_url}/asr/refine",
+                                            json={
+                                                "meeting_id": current_meeting_id,
+                                                "audio_url": gcs_url,
+                                                "language": source_lang or "zh",
+                                            },
+                                            headers={"Authorization": f"Bearer {id_token}"},
+                                        )
+                                        if resp.status_code == 200:
+                                            app_logger.info(f"[Plan B] GPU ASR triggered: {resp.json()}")
+                                        else:
+                                            app_logger.warning(f"[Plan B] GPU ASR responded {resp.status_code}: {resp.text}")
+                                except Exception as e:
+                                    app_logger.warning(f"[Plan B] GPU ASR HTTP call failed: {e}")
+
+                            # Fire-and-forget: don't block WebSocket cleanup
+                            asyncio.ensure_future(_trigger_gpu_asr())
+                            app_logger.info(f"[Plan B] GPU ASR request dispatched for {current_meeting_id}")
+                        except Exception as e:
+                            app_logger.warning(f"[Plan B] Failed to trigger GPU ASR: {e}")
+                            # Non-fatal: Gemini transcript is still available
+                    else:
+                        app_logger.info("[Plan B] GPU_ASR_SERVICE_URL not set, keeping Gemini transcript only")

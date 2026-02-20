@@ -1,0 +1,70 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  annotations:
+    run.googleapis.com/ingress: all
+  name: meetchi-backend
+  namespace: '705495828555'
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/maxScale: '5'
+        autoscaling.knative.dev/minScale: '1'
+        run.googleapis.com/cpu-throttling: 'false'
+        run.googleapis.com/startup-cpu-boost: 'true'
+    spec:
+      containerConcurrency: 40
+      containers:
+      - env:
+        - name: DATABASE_URL
+          value: sqlite:////mnt/gcs/db/meetchi.db
+        - name: GCS_BUCKET
+          value: project-51769b5e-7f0f-4a2f-80c-meetchi-audio
+        - name: PYTHONPATH
+          value: /app
+        - name: USE_LOCAL_ASR
+          value: 'false'
+        - name: GCP_PROJECT
+          value: project-51769b5e-7f0f-4a2f-80c
+        - name: GEMINI_MODEL
+          value: gemini-2.5-flash
+        - name: DEPLOY_VERSION
+          value: v5-hybrid
+        image: asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-backend:v3-hybrid
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 8000
+          periodSeconds: 30
+          timeoutSeconds: 1
+        ports:
+        - containerPort: 8000
+          name: http1
+        resources:
+          limits:
+            cpu: '4'
+            memory: 4Gi
+        startupProbe:
+          failureThreshold: 12
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          timeoutSeconds: 5
+        volumeMounts:
+        - mountPath: /mnt/gcs
+          name: gcs-data
+      serviceAccountName: meetchi-cloudrun@project-51769b5e-7f0f-4a2f-80c.iam.gserviceaccount.com
+      timeoutSeconds: 3600
+      volumes:
+      - csi:
+          driver: gcsfuse.run.googleapis.com
+          volumeAttributes:
+            bucketName: project-51769b5e-7f0f-4a2f-80c-meetchi-audio
+        name: gcs-data
+  traffic:
+  - latestRevision: true
+    percent: 100

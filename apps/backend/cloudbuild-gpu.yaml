@@ -1,31 +1,17 @@
-# ============================================
-# MeetChi Backend - GPU Cloud Build Config
-# Build + Push only (deploy via gcloud alpha)
-# ============================================
-
 steps:
-  # Build GPU Docker image
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
-      - '-f'
-      - 'Dockerfile.gpu'
       - '-t'
-      - 'asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-backend-gpu:v1'
+      - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/meetchi/meetchi-gpu-asr:v1'
+      - '-t'
+      - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/meetchi/meetchi-gpu-asr:latest'
+      - '-f'
+      - 'Dockerfile.gpu-service'
       - '.'
-
-  # Push to Artifact Registry
-  - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'push'
-      - 'asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-backend-gpu:v1'
-
 images:
-  - 'asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-backend-gpu:v1'
-
-# GPU image build takes longer (torch ~2GB)
-timeout: '2400s'
-
+  - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/meetchi/meetchi-gpu-asr:v1'
+  - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/meetchi/meetchi-gpu-asr:latest'
+timeout: 1800s
 options:
   machineType: 'E2_HIGHCPU_8'
-  diskSizeGb: 50
