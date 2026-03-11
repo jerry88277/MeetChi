@@ -48,6 +48,13 @@ apps/llm_service/log/
 *.mkv
 *.wav
 *.mp3
+*.m4a
+
+# Test audio files (large)
+GCP_app_test_audio/
+
+# Large PDF docs
+docs/*.pdf
 
 # Project specific ignores
 .ai/
@@ -96,3 +103,10 @@ apps/tauri-client/src-tauri/target/
 apps/backend/upload/
 apps/backend/uploadlc/
 apps/backend/transcribe/
+
+# Temporary files (one-time logs, debug dumps)
+temp/
+.agent copy/
+
+# Large binaries
+*.exe

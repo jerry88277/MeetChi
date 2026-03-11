@@ -105,6 +105,18 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"}
         )
     
+    # E2E Test mode: conditionally accept mock token
+    is_e2e_mode = os.getenv("NEXT_PUBLIC_E2E_TEST_MODE", "false").lower() == "true"
+    if is_e2e_mode and credentials.credentials == "mock_id_token_for_e2e_testing":
+        logger.debug("Auth bypass: E2E Test Mode active with mock token")
+        return {
+            "id": "test_e2e_user_123",
+            "email": "test@example.com",
+            "name": "E2E Test User",
+            "picture": None,
+            "email_verified": True
+        }
+    
     user = await verify_google_token(credentials.credentials)
     
     if not user:

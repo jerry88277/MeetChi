@@ -16,13 +16,25 @@ variable "zone" {
   default     = "asia-southeast1-b"
 }
 
-# Database Configuration — REMOVED (migrated to SQLite on GCS FUSE)
+# Database Configuration
+variable "db_password" {
+  description = "Cloud SQL database password"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
 
 # Cloud Run Configuration
 variable "backend_image" {
   description = "Backend Docker image URL"
   type        = string
-  default     = "gcr.io/PROJECT_ID/meetchi-backend:latest"
+  default     = "asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-backend@sha256:42b849f8078a2c1cd4634a19a221028f6af7673c0a4d5cba9d0a4de02652f6d5"
+}
+
+variable "gpu_asr_image" {
+  description = "GPU ASR Service Docker image URL"
+  type        = string
+  default     = "asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-gpu-asr@sha256:4a74a40ff6f510f54eae8116d89d13a41d5b1b7e85e4c0bb2ca461594d4cb4ad"
 }
 
 variable "llm_service_image" {
@@ -74,5 +86,11 @@ variable "gemini_api_key" {
   description = "Google Gemini API Key for LLM summarization"
   type        = string
   sensitive   = true
+  default     = ""
+}
+
+variable "gpu_asr_service_url" {
+  description = "URL for the GPU ASR Cloud Run service (used by backend to call ASR)"
+  type        = string
   default     = ""
 }

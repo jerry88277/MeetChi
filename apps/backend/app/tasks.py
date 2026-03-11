@@ -150,7 +150,8 @@ def run_offline_asr_refinement(meeting_id: str, audio_path: str, language: str =
         db.close()
 
 
-def generate_summary_core(meeting_id: str, template_type: str = "general", context: str = "", length: str = "", style: str = ""):
+
+def generate_summary_core(meeting_id: str, template_type: str = "general", context: str = "", length: str = "", style: str = "", skip_asr: bool = False):
     """
     Core logic for meeting processing:
     1. Run offline ASR refinement (Breeze ASR via OfflineASRProvider) if audio exists.
@@ -178,50 +179,96 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
             logger.error(f"Meeting {meeting_id} not found.")
             return {"status": "failed", "error": "Meeting not found"}
 
-        # 1. Run Offline ASR Refinement (if audio exists)
-        if meeting.audio_url:
-            audio_path = meeting.audio_url
-            # Handle GCS URLs: download to temp file first
-            if audio_path.startswith("gs://"):
-                logger.info(f"Audio is on GCS: {audio_path}. Downloading for offline ASR...")
+        # 1. Run Offline ASR Refinement (if audio exists and not skipped)
+        if meeting.audio_url and not skip_asr:
+            gpu_asr_url = os.getenv("GPU_ASR_SERVICE_URL")
+            logger.info(f"[DEBUG] GPU_ASR_SERVICE_URL env value: '{gpu_asr_url}'")
+            if gpu_asr_url:
+                logger.info(f"GPU_ASR_SERVICE_URL is set ({gpu_asr_url}). Triggering remote GPU ASR refinement...")
+                
+                # Set status to PROCESSING immediately so frontend can track
+                meeting.status = MeetingStatus.PROCESSING
+                db.commit()
+                logger.info(f"Set meeting {meeting_id} status to PROCESSING")
+                
                 try:
-                    from google.cloud import storage as gcs_storage
-                    import tempfile
-
-                    # Parse gs:// URL
-                    parts = audio_path.replace("gs://", "").split("/", 1)
-                    bucket_name = parts[0]
-                    blob_name = parts[1] if len(parts) > 1 else ""
-
-                    client = gcs_storage.Client()
-                    bucket = client.bucket(bucket_name)
-                    blob = bucket.blob(blob_name)
-
-                    # Download to temp file
-                    temp_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp")
-                    os.makedirs(temp_dir, exist_ok=True)
-                    local_path = os.path.join(temp_dir, os.path.basename(blob_name))
-                    blob.download_to_filename(local_path)
-                    audio_path = local_path
-                    logger.info(f"Downloaded audio to: {audio_path}")
+                    import httpx
+                    
+                    # Generate public callback URL for GPU to hit back
+                    backend_public_url = os.getenv("BACKEND_PUBLIC_URL", "http://localhost:8000")
+                    callback_url = f"{backend_public_url.rstrip('/')}/api/v1/callbacks/asr-done"
+                    
+                    # GPU ASR timeout must match Cloud Run Service timeout (3600s)
+                    # GPU processes audio synchronously and returns result + hits callback
+                    with httpx.Client(timeout=3600.0) as client:
+                        response = client.post(
+                            f"{gpu_asr_url.rstrip('/')}/asr/refine",
+                            json={
+                                "meeting_id": meeting_id,
+                                "audio_url": meeting.audio_url,
+                                "language": meeting.language or "zh",
+                                "callback_url": callback_url
+                            }
+                        )
+                        response.raise_for_status()
+                        result_data = response.json()
+                        logger.info(f"Triggered remote GPU ASR: status {result_data.get('status')}")
+                        
+                        _update_task_status(db, meeting_id, "offline_asr", "IN_PROGRESS", 
+                                            f"Triggered remote GPU ASR. Awaiting callback at {callback_url}")
+                        
+                        # Return 'accepted' so Cloud Tasks/Background Tasks can finish the current worker
+                        return {"status": "accepted", "meeting_id": meeting_id, "message": "GPU ASR Refinement started in background"}
+                        
                 except Exception as e:
-                    logger.error(f"Failed to download audio from GCS: {e}")
-                    audio_path = None
-
-            if audio_path and os.path.exists(audio_path):
-                logger.info(f"Audio found: {audio_path}. Running offline ASR refinement...")
-                language = meeting.language or "zh"
-                asr_result = run_offline_asr_refinement(meeting_id, audio_path, language)
-                logger.info(f"Offline ASR result: {asr_result}")
-
-                # Clean up temp file if we downloaded from GCS
-                if meeting.audio_url.startswith("gs://") and audio_path != meeting.audio_url:
-                    try:
-                        os.remove(audio_path)
-                    except Exception:
-                        pass
+                    logger.error(f"Remote GPU ASR trigger failed: {e}")
+                    meeting.status = MeetingStatus.FAILED
+                    db.commit()
+                    _update_task_status(db, meeting_id, "offline_asr", "FAILED", f"Remote trigger error: {str(e)}")
             else:
-                logger.warning(f"Audio file not accessible: {meeting.audio_url}")
+                logger.info("GPU_ASR_SERVICE_URL not set. Running local offline ASR refinement...")
+                audio_path = meeting.audio_url
+                # Handle GCS URLs: download to temp file first
+                if audio_path.startswith("gs://"):
+                    logger.info(f"Audio is on GCS: {audio_path}. Downloading for offline ASR...")
+                    try:
+                        from google.cloud import storage as gcs_storage
+                        import tempfile
+
+                        # Parse gs:// URL
+                        parts = audio_path.replace("gs://", "").split("/", 1)
+                        bucket_name = parts[0]
+                        blob_name = parts[1] if len(parts) > 1 else ""
+
+                        client = gcs_storage.Client()
+                        bucket = client.bucket(bucket_name)
+                        blob = bucket.blob(blob_name)
+
+                        # Download to temp file
+                        temp_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp")
+                        os.makedirs(temp_dir, exist_ok=True)
+                        local_path = os.path.join(temp_dir, os.path.basename(blob_name))
+                        blob.download_to_filename(local_path)
+                        audio_path = local_path
+                        logger.info(f"Downloaded audio to: {audio_path}")
+                    except Exception as e:
+                        logger.error(f"Failed to download audio from GCS: {e}")
+                        audio_path = None
+
+                if audio_path and os.path.exists(audio_path):
+                    logger.info(f"Audio found: {audio_path}. Running offline ASR refinement...")
+                    language = meeting.language or "zh"
+                    asr_result = run_offline_asr_refinement(meeting_id, audio_path, language)
+                    logger.info(f"Offline ASR result: {asr_result}")
+
+                    # Clean up temp file if we downloaded from GCS
+                    if meeting.audio_url.startswith("gs://") and audio_path != meeting.audio_url:
+                        try:
+                            os.remove(audio_path)
+                        except Exception:
+                            pass
+                else:
+                    logger.warning(f"Audio file not accessible: {meeting.audio_url}")
         else:
             logger.warning("No audio file found. Skipping offline ASR refinement.")
 
@@ -268,13 +315,14 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
                 extra_instructions=extra_instructions_str
             )
             
-            # Check for error in response
-            if "error" in summary_data and len(summary_data) == 1:
+            # Check for error in response (covers both {"error": ...} and {"error": ..., "raw_text": ...})
+            if "error" in summary_data:
                  raise Exception(summary_data["error"])
 
             meeting.summary_json = json.dumps(summary_data, ensure_ascii=False)
             # Store full text snapshot
             meeting.transcript_raw = transcript_text
+            meeting.status = MeetingStatus.COMPLETED
             
             db.commit()
             logger.info(f"Successfully generated summary for {meeting_id}")
@@ -283,6 +331,8 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
 
         except Exception as e:
              logger.error(f"Error calling Gemini Service: {e}")
+             meeting.status = MeetingStatus.FAILED
+             db.commit()
              return {"status": "failed", "error": str(e)}
 
     except Exception as e:
@@ -292,10 +342,10 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
         db.close()
 
 
-def generate_meeting_minutes(meeting_id: str, template_type: str = "general", context: str = "", length: str = "", style: str = ""):
+def generate_meeting_minutes(meeting_id: str, template_type: str = "general", context: str = "", length: str = "", style: str = "", skip_asr: bool = False):
     """
     Wrapper function for backward compatibility.
     Previously was a Celery task, now a direct function call.
     Can be invoked via Cloud Tasks HTTP handler or directly.
     """
-    return generate_summary_core(meeting_id, template_type, context, length, style)
+    return generate_summary_core(meeting_id, template_type, context, length, style, skip_asr=skip_asr)

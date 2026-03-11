@@ -16,6 +16,9 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GCP_PROJECT = os.getenv("GCP_PROJECT", "")
 GCP_LOCATION = os.getenv("GCP_LOCATION", "asia-southeast1")
+# Gemini Vertex AI endpoint location (separate from GCP_LOCATION used by Cloud Tasks)
+# Must be "global" or a US/EU region — asia-southeast1 is NOT supported for Gemini models
+GEMINI_LOCATION = os.getenv("GEMINI_LOCATION", "us-central1")
 
 def get_gemini_client() -> Optional[genai.Client]:
     """Initialize and return a Gemini client."""
@@ -46,7 +49,7 @@ def get_gemini_client() -> Optional[genai.Client]:
                 client = genai.Client(
                     vertexai=True,
                     project=project,
-                    location=GCP_LOCATION
+                    location=GEMINI_LOCATION
                 )
                 logger.info(f"Gemini client initialized with ADC (Vertex AI), project={project}")
                 return client
@@ -183,18 +186,28 @@ def generate_summary(
                 "response_mime_type": "application/json",
                 "response_schema": schema_class, # Use direct schema class for Pydantic
                 "temperature": 0.2,
-                "max_output_tokens": 4096
+                "max_output_tokens": 8192
             }
         )
         
-        # In the new SDK, response.parsed is available if response_schema is set? Or response.text needs parsing?
-        # The new SDK documentation says when using pydantic schema, we can get parsed object.
-        # But let's stick to parsing text to be safe if .parsed isn't auto-populated in this version.
-        # Actually Google GenAI SDK v1.0+ supports parsed response.
+        # Debug: log response metadata
+        resp_text = response.text
+        logger.info(f"Gemini response type: {type(resp_text)}, length: {len(resp_text) if resp_text else 'None'}")
+        if resp_text:
+            logger.info(f"Gemini response preview: {resp_text[:200]}")
+        
+        # Handle None response.text (happens with some SDK versions in JSON mode)
+        if not resp_text:
+            # Try to extract from candidates
+            try:
+                resp_text = response.candidates[0].content.parts[0].text
+                logger.info(f"Extracted text from candidates, length: {len(resp_text)}")
+            except (IndexError, AttributeError) as e:
+                logger.error(f"No text in response or candidates: {e}")
+                return {"error": "Gemini returned empty response"}
         
         try:
-            # Let's try standard json load from text first to be generic
-            result_json = json.loads(response.text)
+            result_json = json.loads(resp_text)
             
             # Normalize output structure to match frontend expectations
             if template_name == "general":
@@ -232,8 +245,28 @@ def generate_summary(
                 return result_json
 
         except json.JSONDecodeError:
-            logger.error(f"JSON Decode Error. Raw text: {response.text}")
-            return {"error": "Failed to parse JSON response", "raw_text": response.text}
+            # Retry: strip markdown code fences that Gemini sometimes adds
+            cleaned = re.sub(r'^```(?:json)?\s*\n?', '', response.text.strip())
+            cleaned = re.sub(r'\n?```\s*$', '', cleaned).strip()
+            try:
+                result_json = json.loads(cleaned)
+                logger.info("JSON parsed after stripping markdown fences")
+                # Re-enter the normalization logic
+                if template_name == "general":
+                    return result_json
+                elif template_name == "sales_bant":
+                    return {
+                        "summary": result_json.get("summary", ""),
+                        "action_items": result_json.get("next_steps", []),
+                        "decisions": [], "risks": [],
+                        "BANT": result_json.get("BANT", {}),
+                        "next_steps": result_json.get("next_steps", [])
+                    }
+                else:
+                    return result_json
+            except json.JSONDecodeError:
+                logger.error(f"JSON Decode Error even after cleanup. Raw text: {response.text[:500]}")
+                return {"error": "Failed to parse JSON response", "raw_text": response.text}
             
     except Exception as e:
         logger.error(f"Gemini API Error: {e}")

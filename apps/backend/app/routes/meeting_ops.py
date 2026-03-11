@@ -7,11 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 import os
 import subprocess
 import logging
+from google.cloud import storage as gcs_storage
 
 from app.models import Meeting, TranscriptSegment, MeetingStatus
 from app.database import get_db
@@ -42,6 +43,14 @@ class MeetingOperationResponse(BaseModel):
     success: bool
     message: str
     new_meeting_ids: List[str]
+
+class UploadUrlRequest(BaseModel):
+    filename: str = "audio.webm"
+    contentType: str = "audio/webm"
+
+class UploadUrlResponse(BaseModel):
+    uploadUrl: str
+    upload_url: str
 
 
 # ============================================
@@ -387,3 +396,55 @@ async def split_audio_file(
         
     except Exception as e:
         logger.error(f"Audio split error: {e}")
+
+@router.post("/{meeting_id}/upload-url", response_model=UploadUrlResponse)
+def generate_upload_url(
+    meeting_id: str,
+    request: UploadUrlRequest,
+    db: Session = Depends(get_db)
+):
+    """Generate a GCS signed URL for direct audio upload from frontend"""
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    # Get bucket name from environment (Terraform sets GCS_BUCKET)
+    bucket_name = os.getenv("GCS_BUCKET")
+    if not bucket_name:
+        raise HTTPException(status_code=500, detail="GCS_BUCKET not configured on server")
+
+    import google.auth
+    from google.auth.transport import requests as google_requests
+
+    try:
+        credentials, project_id = google.auth.default()
+        if credentials.token is None:
+            credentials.refresh(google_requests.Request())
+            
+        sa_email = getattr(credentials, "service_account_email", f"meetchi-cloudrun@{project_id}.iam.gserviceaccount.com")
+
+        client = gcs_storage.Client(project=project_id)
+        bucket = client.bucket(bucket_name)
+
+        # Support extension from filename
+        ext = os.path.splitext(request.filename)[1] if request.filename else ".webm"
+        blob_name = f"audio/{meeting_id}{ext}"
+        blob = bucket.blob(blob_name)
+
+        url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(minutes=60),
+            method="PUT",
+            content_type=request.contentType,
+            service_account_email=sa_email,
+            access_token=credentials.token
+        )
+
+        # Pre-assign audio_url to the meeting so it can be processed later
+        meeting.audio_url = f"gs://{bucket_name}/{blob_name}"
+        db.commit()
+
+        return UploadUrlResponse(uploadUrl=url, upload_url=url)
+    except Exception as e:
+        logger.error(f"Failed to generate signed url: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate upload URL")

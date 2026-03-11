@@ -3,14 +3,14 @@ steps:
     args:
       - 'build'
       - '-t'
-      - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/meetchi/meetchi-gpu-asr:v1'
+      - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/meetchi/meetchi-gpu-asr:v2'
       - '-t'
       - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/meetchi/meetchi-gpu-asr:latest'
       - '-f'
       - 'Dockerfile.gpu-service'
       - '.'
 images:
-  - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/meetchi/meetchi-gpu-asr:v1'
+  - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/meetchi/meetchi-gpu-asr:v2'
   - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/meetchi/meetchi-gpu-asr:latest'
 timeout: 1800s
 options:

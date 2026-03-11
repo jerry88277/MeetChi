@@ -3,7 +3,7 @@ Cloud Tasks HTTP Handler Routes
 Receives task requests from Google Cloud Tasks queues
 """
 
-from fastapi import APIRouter, HTTPException, Request, Header, Depends
+from fastapi import APIRouter, HTTPException, Request, Header, Depends, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import Optional
 import logging
@@ -67,19 +67,28 @@ def verify_cloud_tasks_request(
     return True
 
 
-@router.post("/transcription", response_model=TaskResponse)
-async def handle_transcription_task(
+@router.post("/transcription", status_code=200)
+def handle_transcription_task(
     request: TranscriptionTaskRequest,
     x_cloudtasks_queuename: Optional[str] = Header(None),
     x_cloudtasks_taskname: Optional[str] = Header(None)
 ):
     """
     HTTP handler for Cloud Tasks transcription queue.
-    Processes audio -> transcript -> summary pipeline.
+    
+    IMPORTANT: Runs SYNCHRONOUSLY to keep the HTTP request alive.
+    Cloud Run only keeps CPU active while an HTTP request is in-flight.
+    Using BackgroundTasks (fire-and-forget) would cause Cloud Run to
+    throttle/kill the container after the 202 response, interrupting
+    long-running GPU ASR processing.
+    
+    Cloud Tasks manages retries and timeout (up to 30 min).
+    Cloud Run Service timeout is set to 3600s.
     """
     logger.info(f"Received transcription task for meeting {request.meeting_id}")
     logger.info(f"Cloud Tasks headers: queue={x_cloudtasks_queuename}, task={x_cloudtasks_taskname}")
-    
+    logger.info(f"Starting SYNCHRONOUS meeting processing for {request.meeting_id} (Template: {request.template_type})")
+
     try:
         result = generate_meeting_minutes(
             meeting_id=request.meeting_id,
@@ -88,21 +97,21 @@ async def handle_transcription_task(
             length=request.length or "",
             style=request.style or ""
         )
-        
-        if result.get("status") == "completed":
-            return TaskResponse(status="completed", meeting_id=request.meeting_id)
-        elif result.get("status") == "skipped":
-            return TaskResponse(status="skipped", meeting_id=request.meeting_id, error=result.get("reason"))
+
+        if result.get("status") in ("completed", "accepted"):
+            return {"status": result["status"], "meeting_id": request.meeting_id, "message": "Processing completed synchronously"}
         else:
             raise HTTPException(status_code=500, detail=result.get("error", "Unknown error"))
-            
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error processing transcription task: {e}")
+        logger.error(f"Error processing transcription task: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/summarization", response_model=TaskResponse)
-async def handle_summarization_task(
+def handle_summarization_task(
     request: SummarizationTaskRequest,
     x_cloudtasks_queuename: Optional[str] = Header(None),
     x_cloudtasks_taskname: Optional[str] = Header(None)
@@ -117,7 +126,8 @@ async def handle_summarization_task(
         result = generate_meeting_minutes(
             meeting_id=request.meeting_id,
             template_type=request.template_type,
-            context=request.context or ""
+            context=request.context or "",
+            skip_asr=True  # Segments already in DB via Webhook callback
         )
         
         if result.get("status") == "completed":

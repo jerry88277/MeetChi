@@ -6,8 +6,13 @@
 -r requirements.txt
 
 # PyTorch (GPU)
-torch>=2.1.0
-torchaudio>=2.1.0
+# IMPORTANT: PyTorch 2.6 changed torch.load default to weights_only=True,
+# which breaks pyannote.audio/speechbrain checkpoint loading (TorchVersion, omegaconf etc.).
+# Pin to <2.6.0 to avoid this breaking change.
+# Also: torchaudio>=2.9.0 removed AudioMetaData which pyannote.audio depends on.
+# Ref: https://github.com/pyannote/pyannote-audio/issues/1804
+torch>=2.1.0,<2.6.0
+torchaudio>=2.1.0,<2.6.0
 
 # ASR Engine (CTranslate2-based Whisper)
 faster-whisper>=1.0.0
@@ -18,9 +23,17 @@ whisperx>=3.1.0
 # Speaker Diarization (pyannote.audio — required by WhisperX)
 pyannote.audio>=3.1.0
 
+# IMPORTANT: huggingface_hub>=1.0 removed use_auth_token which pyannote.audio depends on.
+# Pin to <1.0 to keep use_auth_token working until pyannote.audio migrates to token=.
+# Ref: https://discuss.huggingface.co/t/having-trouble-importing-speechbrain-inference/172402/4
+huggingface_hub>=0.20.0,<1.0
+
 # Audio/Numeric
 numpy>=1.24.0
 ffmpeg-python>=0.2.0
 
 # Cloud Storage (for audio upload)
 google-cloud-storage>=2.14.0
+
+# HTTP requests for callbacks
+httpx>=0.24.0

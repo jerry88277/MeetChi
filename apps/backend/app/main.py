@@ -784,24 +784,21 @@ except ImportError as e:
         return text
 
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sql_app.db")
-# LLM_SERVICE_URL removed
-
-# SQLite needs check_same_thread=False for FastAPI async
-connect_args = {}
-if DATABASE_URL.startswith("sqlite"):
-    connect_args["check_same_thread"] = False
-
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Auto-create tables for SQLite (no migration needed)
+from app.database import engine, SessionLocal, get_db, DATABASE_URL
 from app.models import Base
-# Ensure DB directory exists (for GCS FUSE mount paths like /mnt/gcs/db/)
-if DATABASE_URL.startswith("sqlite"):
+from sqlalchemy import text
+import os
+
+# Auto-create tables (SQLite and initial PostgreSQL setup)
+if DATABASE_URL.startswith("postgresql"):
+    with engine.connect() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+        conn.commit()
+elif DATABASE_URL.startswith("sqlite"):
     db_file_path = DATABASE_URL.replace("sqlite:///", "")
     if db_file_path.startswith("/"):
         os.makedirs(os.path.dirname(db_file_path), exist_ok=True)
+
 Base.metadata.create_all(bind=engine)
 
 
@@ -814,9 +811,19 @@ app = FastAPI(
     description="Meeting Intelligence Platform API",
     version="1.0.0"
 )
+# Dynamic CORS setup for E2E testing
+is_e2e_mode = os.getenv("NEXT_PUBLIC_E2E_TEST_MODE", "false").lower() == "true"
+cors_origins = ["*"] if is_e2e_mode else [
+    "http://localhost:3000",
+    "https://meetchi-staging-test-wfqjx2j42q-de.a.run.app",
+    "https://your-production-domain.com", # TODO: Update this when deploying to actual prod domain
+    "https://meetchi-frontend-705495828555.asia-southeast1.run.app",
+    "https://meetchi-frontend-wfqjx2j42q-as.a.run.app"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins if not is_e2e_mode else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

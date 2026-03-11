@@ -4,11 +4,7 @@ output "backend_url" {
   value       = google_cloud_run_v2_service.backend.uri
 }
 
-# Cloud Run LLM GPU URL
-output "llm_service_url" {
-  description = "URL of the LLM GPU Cloud Run service"
-  value       = google_cloud_run_v2_service.llm_gpu.uri
-}
+
 
 # Cloud SQL outputs — REMOVED (migrated to SQLite on GCS FUSE)
 

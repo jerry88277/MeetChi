@@ -420,3 +420,80 @@ The key was valid in format but rejected by the Gemini API, indicating it had be
 4.  **Sync**: Run `terraform apply` to push the new secret version to Secret Manager.
 
 - **Lesson**: /health signaling `gemini_enabled: true` only confirms the *presence* of a key, not its *validity*. Always verify the actual key string if 400 errors occur in a clean environment.
+
+---
+
+## 17. Case Study: Vertex AI ADC 路徑造成 gemini-2.5-flash-lite 404 (March 2026)
+
+### 17.1 症狀
+- **錯誤**: `404 NOT_FOUND: Publisher Model 'projects/.../locations/asia-southeast1/publishers/google/models/gemini-2.5-flash-lite' was not found`
+- **發生場景**: Fire-and-Forget 架構重構後，GPU ASR 轉錄成功（804 segments），但後續 Gemini 摘要呼叫失敗
+
+### 17.2 根本原因：兩條認證路徑
+
+`llm_utils.py` 的 `get_gemini_client()` 存在兩條路徑：
+
+| 路徑 | 條件 | 問題 |
+|------|------|------|
+| **API Key 模式** | `GEMINI_API_KEY` env var 存在 | ✅ 無地區限制，gemini-2.5-flash-lite 直接可用 |
+| **Vertex AI ADC 模式** | 無 `GEMINI_API_KEY`，用 `vertexai=True + location=asia-southeast1` | ❌ 特定模型在特定地區的 publisher model 可能 404 |
+
+Cloud Run 生產環境長期未注入 `GEMINI_API_KEY`，因此走 Vertex AI ADC 路徑 → Publisher Model 404。
+
+### 17.3 錯誤排查歷程
+1. **第一次嘗試（錯誤方向）**: 改換模型 `gemini-2.0-flash-001` → 不根本，且降級
+2. **第二次嘗試（卡迴圈）**: browser_subagent 查地區可用性 → 未收斂
+3. **正確解法**: Gemini Deep Thinking 分析 → API Key 模式不受地區限制
+
+### 17.4 正確解法
+
+**步驟 1**: 確認 Secret Manager 已有 API Key
+```bash
+gcloud secrets list --project=PROJECT_ID
+# 確認 meetchi-gemini-api-key 存在
+```
+
+**步驟 2**: 注入 Secret 並同步恢復模型名稱
+```bash
+gcloud run services update meetchi-backend \
+  --region=asia-southeast1 \
+  --set-secrets="GEMINI_API_KEY=meetchi-gemini-api-key:latest" \
+  --update-env-vars="GEMINI_MODEL=gemini-2.5-flash-lite"
+```
+
+**步驟 3**: 驗證 — 查看新 Revision 日誌，確認無 404 錯誤
+
+### 17.5 設計原則（防止未來重現）
+
+- **模型名稱與地區無關**: `gemini-2.5-flash-lite` 本身是正確名稱，透過 [Google AI Studio API Key](https://aistudio.google.com/app/apikey) 呼叫時無地區限制
+- **Cloud Run 預設走 ADC**: 無 `GEMINI_API_KEY` 時，`google-genai` SDK 的 `vertexai=True` 模式依賴 Application Default Credentials，需確認 publisher model 在指定 location 可用
+- **Secret Manager 必須預先設定**: 不要在 gcloud 環境變數中直接放 API Key 明文，始終用 `--set-secrets`
+- **Terraform 應包含**: `--set-secrets GEMINI_API_KEY=meetchi-gemini-api-key:latest` 以確保 IaC 一致性
+
+### 17.6 Wisdom
+> 遇到「已知可用的模型卻 404」，**第一步檢查 SDK 走的是哪條認證路徑（API Key vs Vertex AI ADC）**，而不是更換模型版本。模型名稱通常是正確的，問題在 endpoint 路徑。
+
+### 17.7 後續問題：API Key HTTP Referrer Blocked（403）
+
+修復 404 後，另一個問題出現：
+```
+403 PERMISSION_DENIED: API_KEY_HTTP_REFERRER_BLOCKED
+reason: API_KEY_HTTP_REFERRER_BLOCKED
+httpReferrer: <empty>
+```
+
+**原因**: GCP Console > 憑證 > API 金鑰設定了「網站」應用程式限制。Server-side Cloud Run 呼叫無 HTTP Referer → 被封鎖。
+
+**修復**: 至 GCP Console > APIs & Services > 憑證 > 找到目標 API Key > 應用程式限制改為**「無」**。
+- 注意：修改後**最多需要 5 分鐘**生效。
+
+**最終驗證結果**:
+```
+07:37:11 - Gemini client initialized with API Key, model: gemini-2.5-flash-lite ✅
+07:37:11 - Remote GPU ASR result: status completed with 804 segments ✅
+07:37:11 - Updated DB with remote GPU ASR results ✅
+07:37:15 - POST https://generativelanguage.googleapis.com/.../gemini-2.5-flash-lite → HTTP 200 OK ✅
+07:37:15 - Successfully generated summary for meeting ✅
+```
+
+**完整 E2E Pipeline 至此全線暢通。**

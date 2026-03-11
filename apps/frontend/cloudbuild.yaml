@@ -1,37 +1,34 @@
-# MeetChi Frontend Cloud Build Configuration
-# Builds with NEXT_PUBLIC_API_URL baked at build time
+# ⚠️ DEPRECATED — DO NOT USE THIS FILE
+# ========================================
+# This file has an INCORRECT default URL: http://127.0.0.1:8000
+# Use cloudbuild-frontend.yaml instead.
+#
+# Correct command:
+#   gcloud builds submit --config apps/frontend/cloudbuild-frontend.yaml \
+#     apps/frontend --substitutions=_IMAGE_TAG="v6"
+#
+# See: cloudbuild-frontend.yaml for the canonical build configuration.
+
+substitutions:
+  _NEXT_PUBLIC_API_URL: "https://meetchi-backend-705495828555.asia-southeast1.run.app"
+  _IMAGE_TAG: "asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:latest"
 
 steps:
-  # Build Docker image with build-arg
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '--build-arg'
-      - 'NEXT_PUBLIC_API_URL=https://meetchi-backend-705495828555.asia-southeast1.run.app'
+      - 'NEXT_PUBLIC_API_URL=${_NEXT_PUBLIC_API_URL}'
       - '-t'
-      - 'asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:v14'
+      - '${_IMAGE_TAG}'
       - '.'
 
-  # Push to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:v14'
-
-  # Deploy to Cloud Run
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: 'gcloud'
-    args:
-      - 'run'
-      - 'deploy'
-      - 'meetchi-frontend'
-      - '--image=asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:v14'
-      - '--region=asia-southeast1'
-      - '--platform=managed'
-      - '--allow-unauthenticated'
+      - '${_IMAGE_TAG}'
 
 images:
-  - 'asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:v14'
+  - '${_IMAGE_TAG}'
 
-
-timeout: '1200s'
+timeout: '900s'

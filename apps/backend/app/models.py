@@ -5,6 +5,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
 import uuid # Import uuid for UUID type
+from pgvector.sqlalchemy import Vector
 
 Base = declarative_base()
 
@@ -85,6 +86,9 @@ class Meeting(Base):
     transcript_polished = Column(Text, nullable=True)
     summary_json = Column(Text, nullable=True) # Structured summary in JSON format
     
+    # pgvector embedding for future semantic search
+    summary_embedding = Column(Vector(768), nullable=True)
+    
     # Full Text Search removed (PostgreSQL-only TSVECTOR)
     # Can be reimplemented with SQLite FTS5 if needed
 
@@ -111,6 +115,9 @@ class TranscriptSegment(Base):
     content_polished = Column(Text, nullable=True)
     content_translated = Column(Text, nullable=True)
     is_final = Column(Boolean, default=False) # Whether this segment is a final transcription
+    
+    # pgvector embedding for future semantic search
+    content_embedding = Column(Vector(768), nullable=True)
     
     # FTS removed (PostgreSQL-only TSVECTOR)
 

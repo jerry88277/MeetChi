@@ -1,19 +1,33 @@
 @import "tailwindcss";
 
 /* ===============================
-   CSS Variables (Theme)
+   MeetChi Brand Theme System
+   奇美品牌色彩 + Light/Dark Mode
    =============================== */
 
 @theme {
-  /* Colors */
+  /* --- Brand Colors (奇美色彩指南) --- */
+  --color-brand-navy: #041E42;
+  --color-brand-cta: #2D428B;
+  --color-brand-accent: #7C3AED;
+  --color-brand-highlight: #5BFAE6;
+
+  /* --- Status Colors --- */
+  --color-status-success: #48B070;
+  --color-status-warning: #E4831A;
+  --color-status-error: #D2343D;
+
+  /* --- Semantic Colors (Light Mode Default) --- */
   --color-background: #ffffff;
   --color-foreground: #0f172a;
-  --color-primary: #6366f1;
-  --color-primary-foreground: #ffffff;
+  --color-surface: #f8fafc;
+  --color-card: #ffffff;
   --color-muted: #f1f5f9;
   --color-muted-foreground: #64748b;
   --color-border: #e2e8f0;
-  --color-ring: #6366f1;
+  --color-ring: #2D428B;
+  --color-primary: #2D428B;
+  --color-primary-foreground: #ffffff;
 
   /* Radius */
   --radius-lg: 0.75rem;
@@ -22,6 +36,21 @@
 
   /* Fonts */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ===============================
+   Dark Mode Override
+   =============================== */
+
+[data-theme="dark"] {
+  --color-background: #0f172a;
+  --color-foreground: #f1f5f9;
+  --color-surface: #1e293b;
+  --color-card: #1e293b;
+  --color-muted: #334155;
+  --color-muted-foreground: #94a3b8;
+  --color-border: #334155;
+  --color-ring: #5BFAE6;
 }
 
 /* ===============================
@@ -43,59 +72,28 @@ body {
    =============================== */
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes slideInFromBottom {
-  from {
-    opacity: 0;
-    transform: translateY(1rem);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(1rem); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes slideInFromRight {
-  from {
-    opacity: 0;
-    transform: translateX(2rem);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+  from { opacity: 0; transform: translateX(2rem); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 @keyframes pulse {
-
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.5;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 @keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* ===============================
@@ -108,54 +106,21 @@ body {
   animation-fill-mode: both;
 }
 
-.fade-in {
-  animation-name: fadeIn;
-}
-
-.slide-in-from-bottom-4 {
-  animation-name: slideInFromBottom;
-}
-
-.slide-in-from-right-8 {
-  animation-name: slideInFromRight;
-}
-
-.animate-pulse {
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-.animate-spin {
-  animation: spin 1s linear infinite;
-}
+.fade-in { animation-name: fadeIn; }
+.slide-in-from-bottom-4 { animation-name: slideInFromBottom; }
+.slide-in-from-right-8 { animation-name: slideInFromRight; }
+.animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+.animate-spin { animation: spin 1s linear infinite; }
 
 /* ===============================
    Duration Classes
    =============================== */
 
-.duration-100 {
-  animation-duration: 0.1s;
-  transition-duration: 0.1s;
-}
-
-.duration-150 {
-  animation-duration: 0.15s;
-  transition-duration: 0.15s;
-}
-
-.duration-200 {
-  animation-duration: 0.2s;
-  transition-duration: 0.2s;
-}
-
-.duration-300 {
-  animation-duration: 0.3s;
-  transition-duration: 0.3s;
-}
-
-.duration-500 {
-  animation-duration: 0.5s;
-  transition-duration: 0.5s;
-}
+.duration-100 { animation-duration: 0.1s; transition-duration: 0.1s; }
+.duration-150 { animation-duration: 0.15s; transition-duration: 0.15s; }
+.duration-200 { animation-duration: 0.2s; transition-duration: 0.2s; }
+.duration-300 { animation-duration: 0.3s; transition-duration: 0.3s; }
+.duration-500 { animation-duration: 0.5s; transition-duration: 0.5s; }
 
 /* ===============================
    Utility Classes
@@ -168,9 +133,7 @@ body {
   overflow: hidden;
 }
 
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
-}
+.tabular-nums { font-variant-numeric: tabular-nums; }
 
 /* ===============================
    Scrollbar Styles
@@ -208,5 +171,5 @@ button:focus {
 }
 
 input:focus-visible {
-  box-shadow: 0 0 0 2px var(--color-primary), 0 0 0 4px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 0 2px var(--color-primary), 0 0 0 4px rgba(45, 66, 139, 0.2);
 }

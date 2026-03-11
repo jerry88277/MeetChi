@@ -19,6 +19,10 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional
 from enum import Enum
 
+# Note: PyTorch 2.6 weights_only=True breaking change is avoided by pinning
+# torch<2.6.0 in requirements-gpu.txt (more reliable than add_safe_globals).
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -241,7 +245,7 @@ class BreezeASRProvider(OfflineASRProvider):
                 start=seg.start,
                 end=seg.end,
                 text=seg.text.strip(),
-                confidence=seg.avg_log_prob,
+                confidence=getattr(seg, 'avg_logprob', getattr(seg, 'avg_log_prob', 0.0)),
                 language=language,
                 words=[
                     {"word": w.word, "start": w.start, "end": w.end, "probability": w.probability}
@@ -325,11 +329,21 @@ class BreezeASRProvider(OfflineASRProvider):
 
         try:
             import whisperx
+            # Direct import from submodule — consistent with bake_gpu_models.py
+            # hasattr(whisperx, "diarize") fails in some Cloud Run envs where
+            # the submodule is not auto-exported until explicitly imported.
+            try:
+                from whisperx.diarize import DiarizationPipeline
+            except ImportError:
+                # Fallback for older whisperx versions (< 3.0)
+                DiarizationPipeline = whisperx.DiarizationPipeline
 
             device = self._resolve_device()
             logger.info("[Breeze ASR] Step 3/3: Speaker diarization")
 
-            diarize_model = whisperx.DiarizationPipeline(
+            diarize_model = DiarizationPipeline(
+                # Pin huggingface_hub<1.0 in requirements-gpu.txt to keep use_auth_token valid.
+                # Ref: https://discuss.huggingface.co/t/having-trouble-importing-speechbrain-inference/172402/4
                 use_auth_token=self.config.hf_token,
                 device=device,
             )
@@ -373,6 +387,7 @@ class BreezeASRProvider(OfflineASRProvider):
             logger.warning(f"[Breeze ASR] Diarization failed: {e}")
 
         return segments
+
 
     async def transcribe_with_diarization(
         self,

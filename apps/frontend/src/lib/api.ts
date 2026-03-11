@@ -207,6 +207,49 @@ class ApiClient {
     }
 
     /**
+     * Get a signed URL for direct GCS upload
+     */
+    async getUploadUrl(meetingId: string, filename: string, contentType: string): Promise<{ uploadUrl: string }> {
+        return this.fetch(`/api/v1/meetings/${meetingId}/upload-url`, {
+            method: 'POST',
+            body: JSON.stringify({ filename, contentType }),
+        });
+    }
+
+    /**
+     * Upload a file directly to GCS using a signed URL
+     */
+    async uploadToGcs(uploadUrl: string, file: File): Promise<void> {
+        const response = await fetch(uploadUrl, {
+            method: 'PUT',
+            body: file,
+            headers: {
+                'Content-Type': file.type,
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to upload file. Status: ${response.status}`);
+        }
+    }
+
+    /**
+     * Trigger the background transcription and summarization task
+     */
+    async startTranscriptionTask(meetingId: string, templateType = 'general', context = '', length = 'medium', style = 'formal'): Promise<{ status: string }> {
+        return this.fetch('/api/v1/tasks/transcription', {
+            method: 'POST',
+            body: JSON.stringify({
+                meeting_id: meetingId,
+                template_type: templateType,
+                context,
+                length,
+                style
+            }),
+        });
+    }
+
+    /**
      * Regenerate summary for a meeting (triggers background task)
      */
     async regenerateSummary(

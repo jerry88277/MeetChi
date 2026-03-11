@@ -16,17 +16,15 @@ import logging
 import json
 import time
 import tempfile
-from typing import Optional
+from typing import Optional, List
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+import httpx
 
 # Add parent directory to path so we can import app modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.offline_asr import get_offline_asr_provider, BreezeASRProvider, BreezeASRConfig
-from app.models import Meeting, TranscriptSegment, MeetingStatus, TaskStatus as TaskStatusModel
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
 # ============================================
 # Logging
@@ -37,13 +35,6 @@ logging.basicConfig(
     stream=sys.stderr,
 )
 logger = logging.getLogger(__name__)
-
-# ============================================
-# Database
-# ============================================
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sql_app.db")
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # ============================================
 # FastAPI App
@@ -62,12 +53,18 @@ class ASRRefineRequest(BaseModel):
     meeting_id: str
     audio_url: str  # GCS URL (gs://...) or local path
     language: str = "zh"
+    callback_url: Optional[str] = None
 
+class SegmentResponse(BaseModel):
+    start: float
+    end: float
+    speaker: str
+    text: str
 
 class ASRRefineResponse(BaseModel):
     status: str  # "completed", "failed", "skipped"
     meeting_id: str
-    segments_count: int = 0
+    segments: list[SegmentResponse] = []
     speakers_count: int = 0
     duration: float = 0.0
     error: Optional[str] = None
@@ -76,26 +73,6 @@ class ASRRefineResponse(BaseModel):
 # ============================================
 # Helper Functions
 # ============================================
-def _update_task_status(db, meeting_id: str, task_name: str, status: str, message: str = None):
-    """Create/update TaskStatus record."""
-    task = db.query(TaskStatusModel).filter(
-        TaskStatusModel.meeting_id == meeting_id,
-        TaskStatusModel.task_name == task_name,
-    ).first()
-    if task:
-        task.status = status
-        task.message = message
-    else:
-        task = TaskStatusModel(
-            meeting_id=meeting_id,
-            task_name=task_name,
-            status=status,
-            message=message,
-        )
-        db.add(task)
-    db.commit()
-
-
 def _download_from_gcs(gcs_url: str, local_dir: str) -> str:
     """Download audio from GCS to local temp file."""
     from google.cloud import storage as gcs_storage
@@ -137,42 +114,15 @@ async def health():
     }
 
 
-@app.post("/asr/refine", response_model=ASRRefineResponse)
-async def asr_refine(request: ASRRefineRequest):
-    """
-    Main endpoint: Offline ASR refinement with speaker diarization.
-    
-    Called by CPU Service after recording ends.
-    
-    Flow:
-      1. Set meeting status to REFINING
-      2. Download audio from GCS (if needed)
-      3. Run Breeze ASR (CTranslate2) + WhisperX diarization
-      4. Replace DB segments with refined results
-      5. Set meeting status to COMPLETED
-    """
-    start_time = time.time()
+async def _run_asr_processing(request: ASRRefineRequest, start_time: float) -> ASRRefineResponse:
+    """Run ASR processing synchronously and return result."""
     meeting_id = request.meeting_id
-    logger.info(f"[ASR Refine] Received request for meeting {meeting_id}")
-
-    # Check provider
-    provider = get_offline_asr_provider()
-    if provider is None:
-        logger.error("[ASR Refine] No offline ASR provider available")
-        raise HTTPException(status_code=503, detail="ASR provider not available")
-
-    db = SessionLocal()
     temp_dir = None
-    try:
-        # Validate meeting exists
-        meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
-        if not meeting:
-            raise HTTPException(status_code=404, detail=f"Meeting {meeting_id} not found")
 
-        # Set REFINING status
-        meeting.status = MeetingStatus.REFINING
-        db.commit()
-        _update_task_status(db, meeting_id, "offline_asr", "IN_PROGRESS", f"Running {provider.provider_name}")
+    try:
+        provider = get_offline_asr_provider()
+        if provider is None:
+            raise Exception("ASR provider not available")
 
         # Resolve audio path
         audio_path = request.audio_url
@@ -181,80 +131,49 @@ async def asr_refine(request: ASRRefineRequest):
             audio_path = _download_from_gcs(audio_path, temp_dir)
 
         if not os.path.exists(audio_path):
-            raise HTTPException(status_code=400, detail=f"Audio file not found: {audio_path}")
+            raise Exception(f"Audio file not found: {audio_path}")
 
-        # Run ASR
+        # Run ASR synchronously
         result = await provider.transcribe_with_diarization(audio_path, language=request.language)
 
         if not result.segments:
             logger.warning(f"[ASR Refine] Empty result for {meeting_id}")
-            meeting.status = MeetingStatus.COMPLETED
-            db.commit()
-            _update_task_status(db, meeting_id, "offline_asr", "COMPLETED", "Empty result, kept Gemini transcript")
             return ASRRefineResponse(
                 status="skipped", meeting_id=meeting_id,
                 duration=time.time() - start_time,
             )
 
-        # Replace segments in DB
-        db.query(TranscriptSegment).filter(TranscriptSegment.meeting_id == meeting_id).delete()
-
-        new_segments = []
-        for idx, seg in enumerate(result.segments):
-            new_seg = TranscriptSegment(
-                meeting_id=meeting_id,
-                order=idx,
-                start_time=seg.start,
-                end_time=seg.end,
-                speaker=seg.speaker,
-                content_raw=seg.text,
-                content_polished=seg.text,
-                is_final=True,
-            )
-            new_segments.append(new_seg)
-        db.add_all(new_segments)
-
-        # Update meeting
-        meeting.transcript_raw = result.to_transcript_text(include_speaker=True)
-        meeting.status = MeetingStatus.COMPLETED
-        db.commit()
+        # Prepare segment response
+        response_segments = []
+        for seg in result.segments:
+            response_segments.append(SegmentResponse(
+                start=seg.start,
+                end=seg.end,
+                speaker=seg.speaker or "",
+                text=seg.text
+            ))
 
         elapsed = time.time() - start_time
-        _update_task_status(
-            db, meeting_id, "offline_asr", "COMPLETED",
-            f"{len(new_segments)} segments, {result.num_speakers} speakers, {elapsed:.1f}s"
-        )
-
         logger.info(
             f"[ASR Refine] Done for {meeting_id}: "
-            f"{len(new_segments)} segments, {result.num_speakers} speakers, {elapsed:.1f}s"
+            f"{len(response_segments)} segments, {result.num_speakers} speakers, {elapsed:.1f}s"
         )
 
         return ASRRefineResponse(
             status="completed",
             meeting_id=meeting_id,
-            segments_count=len(new_segments),
+            segments=response_segments,
             speakers_count=result.num_speakers,
             duration=elapsed,
         )
 
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"[ASR Refine] Failed for {meeting_id}: {e}", exc_info=True)
-        try:
-            if meeting:
-                meeting.status = MeetingStatus.COMPLETED  # Fallback: keep Gemini transcript
-                db.commit()
-            _update_task_status(db, meeting_id, "offline_asr", "FAILED", str(e))
-        except Exception:
-            pass
         return ASRRefineResponse(
             status="failed", meeting_id=meeting_id,
             error=str(e), duration=time.time() - start_time,
         )
     finally:
-        db.close()
         # Clean up temp files
         if temp_dir:
             import shutil
@@ -262,6 +181,49 @@ async def asr_refine(request: ASRRefineRequest):
                 shutil.rmtree(temp_dir)
             except Exception:
                 pass
+
+@app.post("/asr/refine", response_model=ASRRefineResponse, status_code=200)
+async def asr_refine(request: ASRRefineRequest):
+    """
+    Main endpoint: Offline ASR refinement with speaker diarization.
+    
+    IMPORTANT: Runs SYNCHRONOUSLY to keep the HTTP request alive.
+    Cloud Run only keeps CPU active while an HTTP request is in-flight.
+    Using BackgroundTasks would cause Cloud Run to kill the container
+    after the 202 response, interrupting long-running transcription.
+    
+    Cloud Run Service timeout is set to 3600s to support long audio files.
+    """
+    start_time = time.time()
+    meeting_id = request.meeting_id
+    logger.info(f"[ASR Refine] Received request for meeting {meeting_id}")
+
+    # Check provider quickly
+    provider = get_offline_asr_provider()
+    if provider is None:
+        logger.error("[ASR Refine] No offline ASR provider available")
+        raise HTTPException(status_code=503, detail="ASR provider not available")
+
+    # Run ASR synchronously (this is the key fix!)
+    response_payload = await _run_asr_processing(request, start_time)
+    
+    # Send callback after processing completes (still within the HTTP request)
+    if request.callback_url and response_payload:
+        logger.info(f"[ASR Refine] Sending callback to {request.callback_url}")
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    request.callback_url,
+                    json=response_payload.model_dump()
+                )
+                if resp.status_code >= 400:
+                    logger.warning(f"[ASR Refine] Callback failed with status {resp.status_code}: {resp.text}")
+                else:
+                    logger.info(f"[ASR Refine] Callback successful status {resp.status_code}")
+        except Exception as e:
+            logger.error(f"[ASR Refine] Failed to send callback for {meeting_id}: {e}")
+
+    return response_payload
 
 
 # ============================================

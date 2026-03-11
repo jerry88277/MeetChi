@@ -1,12 +1,28 @@
+# MeetChi Frontend Cloud Build Configuration
+# ============================================
+# IMPORTANT: This is the ONLY correct way to build the frontend.
+# Do NOT use `gcloud builds submit --tag` — it bypasses --build-arg
+# and causes NEXT_PUBLIC_API_URL to fallback to localhost.
+#
+# Usage:
+#   gcloud builds submit --config apps/frontend/cloudbuild-frontend.yaml \
+#     apps/frontend --substitutions=_IMAGE_TAG="v6"
+
+substitutions:
+  _IMAGE_TAG: "latest"
+
 steps:
+  # Build Docker image with build-arg for API URL
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '--build-arg'
       - 'NEXT_PUBLIC_API_URL=https://meetchi-backend-705495828555.asia-southeast1.run.app'
       - '-t'
-      - 'asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:v16'
+      - 'asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:${_IMAGE_TAG}'
       - '.'
+
 images:
-  - 'asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:v16'
-timeout: '600s'
+  - 'asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:${_IMAGE_TAG}'
+
+timeout: '900s'

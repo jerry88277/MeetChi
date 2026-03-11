@@ -3,7 +3,7 @@
 # Lightweight: only ASR dependencies, no full backend
 # ============================================
 
-FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -13,7 +13,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install Python 3.10 + system dependencies
+# Install Python 3.10 + system dependencies (including patchelf for libctranslate2 fix)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-venv \
@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
     curl \
+    patchelf \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3.10 /usr/bin/python \
     && ln -sf /usr/bin/python3.10 /usr/bin/python3
@@ -35,6 +36,12 @@ COPY requirements-gpu.txt .
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements-gpu.txt
 
+# Fix: libctranslate2 executable stack issue on Cloud Run GPU (glibc >= 2.41)
+# CTranslate2 PR #1852 - newer versions include noexecstack linker flag
+# As a workaround, use patchelf to clear the execstack flag post-install
+RUN find /usr/local/lib/python3.10/dist-packages -name "libctranslate2*.so*" -exec patchelf --clear-execstack {} \; 2>/dev/null || \
+    find /usr/local/lib -name "libctranslate2*.so*" -exec patchelf --clear-execstack {} \; 2>/dev/null || true
+
 # Copy only what the GPU service needs
 COPY app/offline_asr.py app/offline_asr.py
 COPY app/models.py app/models.py
@@ -43,6 +50,7 @@ COPY gpu_service/ gpu_service/
 
 # Create necessary directories
 RUN mkdir -p /app/logs && chmod -R 777 /app/logs
+
 
 # Expose port (Cloud Run GPU uses 8080 by default)
 EXPOSE 8080

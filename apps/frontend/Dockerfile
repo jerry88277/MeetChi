@@ -31,7 +31,9 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 # Copy necessary files from builder
-COPY --from=builder /app/public ./public
+# Use wildcard to avoid failure if public does not exist
+COPY --from=builder /app/public* ./public/
+# Copy the standalone output and static files
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 

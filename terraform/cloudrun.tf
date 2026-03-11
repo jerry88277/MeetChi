@@ -8,7 +8,11 @@ resource "google_service_account" "cloudrun" {
 }
 
 # Grant necessary permissions
-# Cloud SQL IAM — REMOVED (migrated to SQLite on GCS FUSE)
+resource "google_project_iam_member" "cloudrun_sql_client" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.cloudrun.email}"
+}
 
 resource "google_project_iam_member" "cloudrun_storage" {
   project = var.project_id
@@ -22,10 +26,23 @@ resource "google_project_iam_member" "cloudrun_secrets" {
   member  = "serviceAccount:${google_service_account.cloudrun.email}"
 }
 
+resource "google_project_iam_member" "cloudrun_token_creator" {
+  project = var.project_id
+  role    = "roles/iam.serviceAccountTokenCreator"
+  member  = "serviceAccount:${google_service_account.cloudrun.email}"
+}
+
 # Gemini API via ADC (Application Default Credentials)
 resource "google_project_iam_member" "cloudrun_aiplatform" {
   project = var.project_id
   role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.cloudrun.email}"
+}
+
+# Cloud Tasks enqueuer (needed for Webhook → Cloud Tasks summarization dispatch)
+resource "google_project_iam_member" "cloudrun_cloudtasks_enqueuer" {
+  project = var.project_id
+  role    = "roles/cloudtasks.enqueuer"
   member  = "serviceAccount:${google_service_account.cloudrun.email}"
 }
 
@@ -39,6 +56,7 @@ resource "google_cloud_run_v2_service" "backend" {
 
   template {
     service_account = google_service_account.cloudrun.email
+    timeout         = "3600s"
 
     scaling {
       min_instance_count = var.min_instances
@@ -61,7 +79,7 @@ resource "google_cloud_run_v2_service" "backend" {
 
       env {
         name  = "DATABASE_URL"
-        value = "sqlite:////mnt/gcs/db/meetchi.db"
+        value = "postgresql+psycopg2://postgres:${random_password.db_password.result}@/meetchi?host=/cloudsql/${google_sql_database_instance.meetchi_pg.connection_name}"
       }
 
       env {
@@ -69,14 +87,40 @@ resource "google_cloud_run_v2_service" "backend" {
         value = "projects/${var.project_id}/locations/${var.region}/queues/meetchi-transcription-queue"
       }
 
-      env {
-        name  = "LLM_SERVICE_URL"
-        value = google_cloud_run_v2_service.llm_gpu.uri
-      }
 
       env {
         name  = "GCS_BUCKET"
         value = google_storage_bucket.audio.name
+      }
+
+      env {
+        name  = "GEMINI_MODEL"
+        value = "gemini-2.5-flash-lite"
+      }
+
+      env {
+        name  = "GEMINI_LOCATION"
+        value = "us-central1"
+      }
+
+      env {
+        name  = "GCP_PROJECT"
+        value = var.project_id
+      }
+
+      env {
+        name  = "GCP_LOCATION"
+        value = var.region
+      }
+
+      env {
+        name  = "GPU_ASR_SERVICE_URL"
+        value = "https://meetchi-gpu-asr-705495828555.asia-southeast1.run.app"
+      }
+
+      env {
+        name  = "BACKEND_PUBLIC_URL"
+        value = "https://meetchi-backend-705495828555.asia-southeast1.run.app"
       }
 
       env {
@@ -89,6 +133,7 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
 
+      # GCS FUSE mount removed completely to prevent SQLite locks
       startup_probe {
         http_get {
           path = "/health"
@@ -105,19 +150,16 @@ resource "google_cloud_run_v2_service" "backend" {
         period_seconds    = 30
         failure_threshold = 3
       }
-      # GCS FUSE volume mount for SQLite persistence
       volume_mounts {
-        name       = "gcs-data"
-        mount_path = "/mnt/gcs"
+        name       = "cloudsql"
+        mount_path = "/cloudsql"
       }
     }
 
-    # GCS FUSE volume (same bucket as audio)
     volumes {
-      name = "gcs-data"
-      gcs {
-        bucket    = google_storage_bucket.audio.name
-        read_only = false
+      name = "cloudsql"
+      cloud_sql_instance {
+        instances = [google_sql_database_instance.meetchi_pg.connection_name]
       }
     }
   }
@@ -130,85 +172,27 @@ resource "google_cloud_run_v2_service" "backend" {
   depends_on = [
     google_project_service.apis,
     google_cloud_tasks_queue.transcription,
+    google_storage_bucket.db,
+    google_sql_database_instance.meetchi_pg,
+    google_sql_user.default
   ]
 }
 
+
 # ============================================
-# Cloud Run - LLM/ASR Service (CPU Version - GPU requires quota)
-# Apply for GPU quota at: https://console.cloud.google.com/iam-admin/quotas
-# Search: NvidiaL4GpuAllocPerProjectRegion, Region: asia-southeast1
+# NOTE: meetchi-gpu-asr is managed directly via gcloud CLI
+# (not via Terraform) due to GPU node_selector provider compatibility.
+# Deployed with: gcloud run deploy meetchi-gpu-asr --image ...
 # ============================================
 
-resource "google_cloud_run_v2_service" "llm_gpu" {
-  # CPU-only for Terraform deployment, GPU enabled via gcloud CLI separately
-  name     = "meetchi-llm-gpu"
+resource "google_cloud_run_v2_service_iam_member" "gpu_asr_backend" {
+  name     = "meetchi-gpu-asr"
   location = var.region
-
-  template {
-    service_account = google_service_account.cloudrun.email
-
-    scaling {
-      min_instance_count = 0 # Scale to zero when idle
-      max_instance_count = 2 # Allow some concurrency
-    }
-
-    # Lightweight CPU-only resources (Gemini API mode)
-    containers {
-      image = var.llm_service_image
-
-      ports {
-        container_port = 5000
-      }
-
-      resources {
-        limits = {
-          cpu    = "1"
-          memory = "1Gi"
-        }
-      }
-
-      # Gemini API Configuration
-      # Authentication: ADC via Cloud Run Service Account (no API key needed)
-      # Vertex AI backend with us-central1 (model availability)
-      env {
-        name  = "USE_GEMINI"
-        value = "true"
-      }
-
-      env {
-        name  = "GEMINI_MODEL"
-        value = "gemini-2.5-flash-lite"
-      }
-
-      env {
-        name  = "GCP_LOCATION"
-        value = "us-central1"
-      }
-
-      # Startup probe with generous timing for Python cold start
-      startup_probe {
-        http_get {
-          path = "/health"
-        }
-        initial_delay_seconds = 15
-        period_seconds        = 10
-        timeout_seconds       = 5
-        failure_threshold     = 5
-      }
-    }
-
-    # Short timeout (no model loading needed)
-    timeout = "300s"
-  }
-
-  traffic {
-    percent = 100
-    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
-  }
-
-
-  depends_on = [google_project_service.apis]
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.cloudrun.email}"
 }
+
+
 
 # ============================================
 # IAM - Allow unauthenticated access (public API)
@@ -221,10 +205,3 @@ resource "google_cloud_run_v2_service_iam_member" "backend_public" {
   member   = "allUsers"
 }
 
-# LLM service is internal only (called by backend)
-resource "google_cloud_run_v2_service_iam_member" "llm_internal" {
-  name     = google_cloud_run_v2_service.llm_gpu.name
-  location = var.region
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.cloudrun.email}"
-}

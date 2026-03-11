@@ -1,7 +1,54 @@
 # ============================================
-# Cloud SQL — REMOVED (migrated to SQLite on GCS FUSE)
-# Instance meetchi-db was deleted on 2026-02-11
+# Cloud SQL for PostgreSQL
 # ============================================
+resource "google_sql_database_instance" "meetchi_pg" {
+  name             = "meetchi-db-pg"
+  database_version = "POSTGRES_15"
+  region           = var.region
+  
+  deletion_protection = false
+
+  settings {
+    tier = "db-f1-micro"
+    
+    ip_configuration {
+      ipv4_enabled = true
+    }
+  }
+}
+
+resource "google_sql_database" "default" {
+  name     = "meetchi"
+  instance = google_sql_database_instance.meetchi_pg.name
+}
+
+resource "random_password" "db_password" {
+  length  = 16
+  special = false
+}
+
+resource "google_sql_user" "default" {
+  name     = "postgres"
+  instance = google_sql_database_instance.meetchi_pg.name
+  password = random_password.db_password.result
+}
+
+# ============================================
+# Cloud Storage Bucket (for SQLite DB persistence via GCS FUSE)
+# Mounts to /mnt/db in Cloud Run — provides durable SQLite storage
+# ============================================
+resource "google_storage_bucket" "db" {
+  name     = "${var.project_id}-meetchi-db"
+  location = var.region
+
+  uniform_bucket_level_access = true
+  force_destroy               = false  # protect DB data
+
+  versioning {
+    enabled = true  # keep DB file history for recovery
+  }
+}
+
 
 # ============================================
 # Cloud Tasks Queue (replaces Celery + Redis)
@@ -78,7 +125,19 @@ resource "google_storage_bucket" "audio" {
 # Secret Manager
 # ============================================
 
-# db_password secret — REMOVED (Cloud SQL deleted)
+# db_password secret
+resource "google_secret_manager_secret" "db_password" {
+  secret_id = "meetchi-db-password"
+
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "db_password" {
+  secret      = google_secret_manager_secret.db_password.id
+  secret_data = random_password.db_password.result
+}
 
 resource "google_secret_manager_secret" "hf_token" {
   secret_id = "meetchi-hf-token"
