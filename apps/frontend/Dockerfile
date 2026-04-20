@@ -16,7 +16,9 @@ RUN npm ci
 COPY . .
 
 # Build-time environment variables
-ARG NEXT_PUBLIC_API_URL
+# ⚠️ DEFAULT VALUE IS CRITICAL: gcloud builds submit does NOT support --build-arg
+# Without a default, NEXT_PUBLIC_API_URL will be empty → fallback to localhost
+ARG NEXT_PUBLIC_API_URL=https://meetchi-backend-705495828555.asia-southeast1.run.app
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
 # Build the application

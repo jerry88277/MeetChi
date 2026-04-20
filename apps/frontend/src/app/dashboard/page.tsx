@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import {
     Mic,
@@ -14,8 +14,13 @@ import {
     WifiOff,
     Shield,
     Calendar,
+    AlertTriangle,
+    UploadCloud,
+    MessageSquare,
+    Loader2
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { keys, get, del } from 'idb-keyval';
 import type { Meeting } from '@/types/meeting';
 import { transformMeeting } from '@/lib/transform';
 import { Sidebar } from '@/components/Sidebar';
@@ -23,17 +28,22 @@ import { DashboardView } from '@/components/DashboardView';
 import { DetailView } from '@/components/DetailView';
 import { RecordingView } from '@/components/RecordingView';
 import { SettingsView } from '@/components/SettingsView';
+import { TemplateGallery } from '@/components/TemplateGallery';
+import { RagWorkspace } from '@/components/chat/RagWorkspace';
+import { RagSidebar } from '@/components/chat/RagSidebar';
 import { useMeetings } from '@/hooks/useMeetings';
 import { useRecording } from '@/hooks/useRecording';
 import { useSummary } from '@/hooks/useSummary';
+import { useMeetingPolling } from '@/hooks/useMeetingPolling';
 import { useState } from 'react';
 
 // --- Main App Component ---
 export default function DashboardPage() {
     const { data: session } = useSession();
-    const [currentView, setCurrentView] = useState<'dashboard' | 'record' | 'detail' | 'settings' | 'templates' | 'admin'>('dashboard');
+    const [currentView, setCurrentView] = useState<'dashboard' | 'record' | 'detail' | 'settings' | 'templates' | 'admin' | 'rag'>('dashboard');
     const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [isRagSidebarOpen, setIsRagSidebarOpen] = useState(false);
 
     // Custom hooks
     const {
@@ -42,11 +52,69 @@ export default function DashboardPage() {
     } = useMeetings();
 
     const {
-        recordingMeetingId, recordingTitle, isUploading,
-        fileInputRef, startRecording, triggerFileInput, uploadFile,
+        recordingMeetingId, recordingTitle, isUploading, uploadState,
+        lastUploadedMeetingId, fileInputRef, startRecording, triggerFileInput,
+        uploadFile, resetUploadState,
     } = useRecording();
 
-    const { isRegenerating, regenerateSummary } = useSummary(fetchMeetings);
+    // Phase C: Upload template & context selection
+    const [uploadTemplateName, setUploadTemplateName] = useState('general');
+    const [uploadContext, setUploadContext] = useState('');
+    const [availableTemplates, setAvailableTemplates] = useState<import('@/lib/api').TemplateDTO[]>([]);
+
+    useEffect(() => {
+        api.getTemplates()
+            .then(setAvailableTemplates)
+            .catch(() => {/* graceful degradation */});
+    }, []);
+
+    // Phase 3: Crash Recovery — Check for stranded recordings in IndexedDB
+    const [orphanedBackups, setOrphanedBackups] = useState<string[]>([]);
+    const [isRecovering, setIsRecovering] = useState(false);
+
+    const checkOrphanedBackups = useCallback(async () => {
+        try {
+            const allKeys = await keys();
+            const meetingKeys = allKeys.filter(k => typeof k === 'string' && k.startsWith('meeting_audio_')) as string[];
+            setOrphanedBackups(meetingKeys);
+        } catch (e) {
+            console.error('Failed to check IDB keys:', e);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (currentView === 'dashboard') {
+            checkOrphanedBackups();
+        }
+    }, [currentView, checkOrphanedBackups]);
+
+    // Phase 9.1: Toast message for polling completion
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+    const showToast = useCallback((msg: string) => {
+        setToastMessage(msg);
+        setTimeout(() => setToastMessage(null), 6000);
+    }, []);
+
+    // Phase 9.1: Polling hook — watches lastUploadedMeetingId
+    // Root fix: enabled driven by ACTUAL meeting data state, not just UI state
+    const hasProcessingMeeting = meetings.some(
+        m => m.status === 'processing' || m.status === 'pending'
+    );
+
+    const handlePollingStatusChange = useCallback(async () => {
+        await fetchMeetings();
+        resetUploadState();
+        showToast('✅ 會議摘要已生成完成！');
+    }, [fetchMeetings, resetUploadState, showToast]);
+
+    useMeetingPolling(
+        lastUploadedMeetingId,
+        hasProcessingMeeting || uploadState === 'processing',
+        handlePollingStatusChange,
+    );
+
+    const { isRegenerating, regenerateSummary, regenerateTranscript } = useSummary(fetchMeetings);
 
     // Sync session token with API client
     useEffect(() => {
@@ -56,6 +124,53 @@ export default function DashboardPage() {
             api.setToken(null);
         }
     }, [session?.idToken]);
+
+    // --- Dashboard Refresh D3 Fix ---
+    // D3-1: Visibility Refresh — refetch when tab becomes visible
+    useEffect(() => {
+        const handleVisibility = () => {
+            if (!document.hidden) {
+                fetchMeetings();
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
+        return () => document.removeEventListener('visibilitychange', handleVisibility);
+    }, [fetchMeetings]);
+
+    // D3-2: Smart Interval Safety Net (v15)
+    // Only activates when there's a processing meeting but NO active single-meeting poll.
+    // This handles: (1) page refresh losing lastUploadedMeetingId, (2) uploads from other devices.
+    // When useMeetingPolling is active, this stays dormant to avoid double polling.
+    const needsSafetyNet = hasProcessingMeeting && !lastUploadedMeetingId;
+    useEffect(() => {
+        if (!needsSafetyNet) return;
+
+        // Immediate fetch on activation, then every 60s
+        fetchMeetings();
+        const id = setInterval(() => {
+            if (!document.hidden) {
+                fetchMeetings();
+            }
+        }, 60_000); // 60s interval — pure safety net, not primary mechanism
+
+        return () => clearInterval(id);
+    }, [needsSafetyNet, fetchMeetings]);
+
+    // D3-3: selectedMeeting sync — update detail view when meetings list refreshes
+    const prevMeetingsRef = useRef(meetings);
+    useEffect(() => {
+        if (prevMeetingsRef.current !== meetings && selectedMeeting) {
+            const updated = meetings.find(m => m.id === selectedMeeting.id);
+            if (updated && (
+                updated.status !== selectedMeeting.status ||
+                updated.summary !== selectedMeeting.summary ||
+                updated.transcript !== selectedMeeting.transcript
+            )) {
+                setSelectedMeeting(updated);
+            }
+        }
+        prevMeetingsRef.current = meetings;
+    }, [meetings, selectedMeeting]);
 
     // --- Handlers ---
     const handleStartRecord = async () => {
@@ -73,14 +188,46 @@ export default function DashboardPage() {
         if (!file) return;
         event.target.value = '';
 
-        await uploadFile(
-            file,
-            (fileName) => {
-                showSuccess(`上傳成功！檔案「${fileName}」已開始處理。`);
-                fetchMeetings();
-            },
-            (msg) => setError(msg),
-        );
+        const executeUpload = async (f: File) => {
+            await uploadFile(
+                f,
+                (fileName) => {
+                    showSuccess(`上傳成功！檔案「${fileName}」已開始處理。`);
+                    fetchMeetings();
+                },
+                (msg) => setError(msg),
+                uploadTemplateName,
+                uploadContext,
+            );
+        };
+
+        // Phase C.2: Audio duration prediction/warning
+        if (file.type.startsWith('audio/') || file.type.startsWith('video/')) {
+            const url = URL.createObjectURL(file);
+            const media = new Audio(url);
+            
+            media.addEventListener('loadedmetadata', () => {
+                URL.revokeObjectURL(url);
+                const durationMinutes = media.duration / 60;
+                
+                // Warn if longer than 120 minutes
+                if (durationMinutes > 120) {
+                    if(!window.confirm(`警告：音檔長度約 ${Math.round(durationMinutes)} 分鐘。處理時間可能需要 20 分鐘以上，是否確定繼續上傳？`)) {
+                        return;
+                    }
+                }
+                executeUpload(file);
+            });
+            
+            media.addEventListener('error', () => {
+                // Ignore errors (unsupported formats by browser) and just upload
+                URL.revokeObjectURL(url);
+                executeUpload(file);
+            });
+        } else {
+            // General files (like if someone tries uploading a supported but non-media file)
+            executeUpload(file);
+        }
     };
 
     const handleViewDetail = (meeting: Meeting) => {
@@ -88,12 +235,21 @@ export default function DashboardPage() {
         setCurrentView('detail');
     };
 
-    const handleRegenerateSummary = async (meetingId: string) => {
+    const handleRegenerateSummary = async (meetingId: string, templateName?: string) => {
         try {
-            await regenerateSummary(meetingId, selectedMeeting, setSelectedMeeting);
+            await regenerateSummary(meetingId, selectedMeeting, setSelectedMeeting, templateName);
         } catch (err) {
             console.error('Failed to regenerate summary:', err);
             setError(err instanceof Error ? err.message : '重新生成摘要失敗');
+        }
+    };
+
+    const handleRegenerateTranscript = async (meetingId: string, templateName?: string) => {
+        try {
+            await regenerateTranscript(meetingId, selectedMeeting, setSelectedMeeting, templateName);
+        } catch (err) {
+            console.error('Failed to regenerate transcript:', err);
+            setError(err instanceof Error ? err.message : '重新整理與轉錄失敗');
         }
     };
 
@@ -107,23 +263,67 @@ export default function DashboardPage() {
         if (success) handleBackToDashboard();
     };
 
+    const handleRecovery = async (key: string) => {
+        setIsRecovering(true);
+        try {
+            const blob = await get(key);
+            if (blob) {
+                const meetingId = key.replace('meeting_audio_', '');
+                showToast('開始恢復音檔上傳，請稍候...');
+                const file = new File([blob], 'audio.webm', { type: blob.type || 'audio/webm' });
+                const { uploadUrl } = await api.getUploadUrl(meetingId, 'audio.webm', blob.type || 'audio/webm');
+                await api.uploadToGcs(uploadUrl, file);
+                await api.regenerateSummary(meetingId, 'general');
+                await del(key);
+                showSuccess('音檔恢復成功！預計幾分鐘後產出總結摘要。');
+                checkOrphanedBackups();
+                fetchMeetings();
+            }
+        } catch (e) {
+            console.error('Recovery failed:', e);
+            setError('恢復上傳失敗，請稍後重試。');
+        } finally {
+            setIsRecovering(false);
+        }
+    };
+
+    const handleDiscardBackup = async (key: string) => {
+        if (confirm('確定要放棄此未完成的音檔嗎？（清除後無法復原）')) {
+            await del(key);
+            checkOrphanedBackups();
+        }
+    };
+
     const handleTabChange = (tab: string) => {
-        if (tab === 'record') {
-            handleStartRecord();
-        } else if (tab === 'settings') {
+        if (tab === 'settings') {
             setCurrentView('settings');
         } else if (tab === 'templates') {
             setCurrentView('templates');
         } else if (tab === 'admin') {
             setCurrentView('admin');
+        } else if (tab === 'rag') {
+            setCurrentView('rag');
         } else {
             handleBackToDashboard();
         }
     };
 
     return (
-        <div className="flex h-screen bg-surface font-sans text-foreground overflow-hidden">
-            {currentView !== 'record' && (
+        <div className="flex h-screen bg-surface font-sans text-foreground overflow-hidden relative">
+            {/* Global FAB for RagSidebar */}
+            <button 
+                onClick={() => setIsRagSidebarOpen(true)}
+                className="fixed bottom-6 right-6 z-40 bg-[#0052cc] text-white p-4 rounded-full shadow-[0_8px_32px_rgba(0,82,204,0.3)] hover:scale-105 hover:bg-[#0040a2] transition-transform flex items-center justify-center group"
+                title="召喚智能助理"
+            >
+                <MessageSquare className="w-6 h-6" />
+                <span className="max-w-0 overflow-hidden whitespace-nowrap group-hover:max-w-xs group-hover:ml-3 transition-all duration-300 font-medium text-sm">
+                    智能助理
+                </span>
+            </button>
+            
+            <RagSidebar isOpen={isRagSidebarOpen} onClose={() => setIsRagSidebarOpen(false)} />
+            {currentView !== 'record' && currentView !== 'rag' && (
                 <Sidebar
                     activeTab={currentView === 'detail' ? 'dashboard' : currentView}
                     setActiveTab={handleTabChange}
@@ -135,7 +335,7 @@ export default function DashboardPage() {
             )}
 
             <main className="flex-1 flex flex-col relative overflow-hidden">
-                {currentView !== 'record' && (
+                {currentView !== 'record' && currentView !== 'rag' && (
                     <div className="md:hidden bg-background border-b border-border p-4 flex items-center justify-between z-20">
                         <div className="flex items-center gap-2">
                             <div className="w-6 h-6 bg-brand-cta rounded flex items-center justify-center">
@@ -143,9 +343,14 @@ export default function DashboardPage() {
                             </div>
                             <span className="font-bold">MeetChi</span>
                         </div>
-                        <button onClick={() => setIsMobileMenuOpen(true)}>
-                            <Menu className="text-muted-foreground" />
-                        </button>
+                        <div className="flex items-center gap-4">
+                            <button onClick={() => setIsRagSidebarOpen(true)} className="text-brand-cta">
+                                <MessageSquare size={20} />
+                            </button>
+                            <button onClick={() => setIsMobileMenuOpen(true)}>
+                                <Menu className="text-muted-foreground" />
+                            </button>
+                        </div>
                     </div>
                 )}
 
@@ -159,18 +364,72 @@ export default function DashboardPage() {
                                 ref={fileInputRef}
                                 onChange={handleFileUpload}
                             />
+                            
+                            {/* Crash Recovery UI */}
+                            {orphanedBackups.length > 0 && (
+                                <div className="mx-6 mt-6 mb-2 bg-amber-50 border border-amber-200 rounded-xl p-4 shadow-sm">
+                                    <div className="flex items-start gap-4">
+                                        <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0 text-amber-600">
+                                            <AlertTriangle size={24} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <h3 className="text-amber-800 font-bold text-lg">發現未完成的錄音檔</h3>
+                                            <p className="text-amber-700 text-sm mt-1">
+                                                您的裝置上保留了以防中斷而暫存的會議音檔（共 {orphanedBackups.length} 筆）。您可以嘗試手動重傳，或將其放棄。
+                                            </p>
+                                            <div className="mt-4 flex flex-col gap-3">
+                                                {orphanedBackups.map(key => (
+                                                    <div key={key} className="flex items-center gap-3 bg-white/50 rounded-lg p-3 border border-amber-200/50">
+                                                        <UploadCloud size={16} className="text-amber-600" />
+                                                        <span className="text-sm font-medium text-amber-800 flex-1 truncate">{key.replace('meeting_audio_', '')}</span>
+                                                        <button 
+                                                            onClick={() => handleRecovery(key)}
+                                                            disabled={isRecovering}
+                                                            className="px-3 py-1.5 text-xs font-semibold bg-amber-600 text-white rounded hover:bg-amber-700 transition"
+                                                        >
+                                                            {isRecovering ? '恢復中...' : '恢復並上傳'}
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleDiscardBackup(key)}
+                                                            disabled={isRecovering}
+                                                            className="px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 rounded transition"
+                                                        >
+                                                            放棄
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             <DashboardView
                                 meetings={meetings}
                                 isLoading={isLoading}
                                 isUploading={isUploading}
+                                uploadState={uploadState}
                                 error={error}
                                 successMessage={successMessage}
                                 onSelectMeeting={handleViewDetail}
                                 onCreateMeeting={handleStartRecord}
                                 onUploadClick={triggerFileInput}
                                 onRefresh={fetchMeetings}
+                                toastMessage={toastMessage}
+                                availableTemplates={availableTemplates}
+                                selectedTemplateName={uploadTemplateName}
+                                onTemplateChange={setUploadTemplateName}
+                                uploadContext={uploadContext}
+                                onUploadContextChange={setUploadContext}
                             />
                         </>
+                    )}
+
+                    {currentView === 'rag' && (
+                        <div className="h-full relative">
+                            {/* Desktop top-right assistant button toggle when in specific views but RagWorkspace itself is the full view so maybe no toggle needed here */}
+                            <RagWorkspace onBack={handleBackToDashboard} />
+                        </div>
                     )}
 
                     {currentView === 'record' && (
@@ -196,6 +455,7 @@ export default function DashboardPage() {
                             meeting={selectedMeeting}
                             onBack={handleBackToDashboard}
                             onRegenerateSummary={handleRegenerateSummary}
+                            onRegenerateTranscript={handleRegenerateTranscript}
                             isRegenerating={isRegenerating}
                             onDelete={handleDeleteMeeting}
                             isDeleting={false}
@@ -210,50 +470,7 @@ export default function DashboardPage() {
                     )}
 
                     {currentView === 'templates' && (
-                        <div className="p-6 md:p-8 max-w-5xl mx-auto overflow-auto">
-                            <div className="mb-8">
-                                <h1 className="text-2xl font-bold text-foreground mb-2">模板管理</h1>
-                                <p className="text-muted-foreground">選擇適合會議類型的摘要模板（生成摘要時可指定）</p>
-                            </div>
-
-                            <div className="bg-status-warning/10 border border-status-warning/30 rounded-xl p-4 mb-6 flex items-start gap-3">
-                                <AlertCircle className="text-status-warning flex-shrink-0 mt-0.5" size={20} />
-                                <div>
-                                    <p className="font-medium text-status-warning">模板管理功能開發中</p>
-                                    <p className="text-sm text-status-warning/70 mt-1">以下是後端已支援的模板。自訂模板 CRUD 功能尚未開放。</p>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {[
-                                    { name: 'general', label: '一般會議', desc: '通用模板，含摘要、待辦、決議', color: 'brand-cta', icon: FileText, tags: ['摘要', '待辦事項', '決議'] },
-                                    { name: 'sales_bant', label: '業務會議 (BANT)', desc: 'Budget / Authority / Need / Timeline', color: 'status-warning', icon: Clock, tags: ['預算', '決策者', '需求', '時程'] },
-                                    { name: 'hr_star', label: '面試評估 (STAR)', desc: 'Situation / Task / Action / Result', color: 'status-success', icon: CheckCircle2, tags: ['情境', '任務', '行動', '結果'] },
-                                    { name: 'rd', label: '研發會議', desc: '技術決策與進度追蹤', color: 'brand-accent', icon: Mic, tags: ['技術決策', '進度', '風險'] },
-                                ].map(tpl => (
-                                    <div key={tpl.name} className="bg-card rounded-xl border border-border p-6 transition-all">
-                                        <div className="flex items-start gap-4">
-                                            <div className={`w-12 h-12 bg-${tpl.color}/15 rounded-xl flex items-center justify-center text-${tpl.color}`}>
-                                                <tpl.icon size={24} />
-                                            </div>
-                                            <div className="flex-1">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <h3 className="font-semibold text-foreground">{tpl.label}</h3>
-                                                    {tpl.name === 'general' && <span className="px-2 py-0.5 text-xs bg-brand-cta/15 text-brand-cta rounded-full">預設</span>}
-                                                </div>
-                                                <p className="text-sm text-muted-foreground mb-3">{tpl.desc}</p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {tpl.tags.map(tag => (
-                                                        <span key={tag} className="px-2 py-1 text-xs bg-muted text-muted-foreground rounded">{tag}</span>
-                                                    ))}
-                                                </div>
-                                                <p className="text-xs text-muted-foreground/50 mt-3 font-mono">template_name: &quot;{tpl.name}&quot;</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+                        <TemplateGallery onBack={handleBackToDashboard} />
                     )}
 
                     {currentView === 'admin' && (
@@ -354,6 +571,24 @@ export default function DashboardPage() {
                         </div>
                     )}
                 </div>
+                
+                {/* Global Processing Queue Indicator */}
+                {(uploadState === 'uploading' || uploadState === 'processing' || Object.values(isRegenerating).filter(Boolean).length > 0) && (
+                    <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-5">
+                        <div className="bg-white/95 backdrop-blur-md shadow-xl border border-brand-cta/20 rounded-full px-4 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-brand-cta/5 transition-colors"
+                             title={uploadState === 'uploading' ? '有音檔正在上傳' : 'AI 正在背景處理會議摘要'}>
+                            <div className="relative flex items-center justify-center">
+                                <Loader2 size={18} className="text-brand-cta animate-spin" />
+                            </div>
+                            <span className="text-sm font-bold text-slate-700 pr-1">
+                                處理中佇列 ({
+                                    (uploadState === 'uploading' || uploadState === 'processing' ? 1 : 0) + 
+                                    Object.values(isRegenerating).filter(Boolean).length
+                                })
+                            </span>
+                        </div>
+                    </div>
+                )}
             </main>
         </div>
     );

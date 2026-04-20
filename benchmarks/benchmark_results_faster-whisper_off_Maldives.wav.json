@@ -1,0 +1,13 @@
+{
+    "model": "faster-whisper",
+    "vad": "off",
+    "audio": "Maldives.wav",
+    "duration_sec": 7551.0826875,
+    "load_time_sec": 5.975029468536377,
+    "infer_time_sec": 1309.881850719452,
+    "rtf": 0.17346940894817897,
+    "base_vram_mb": 0,
+    "peak_vram_mb": 4460,
+    "vram_delta_mb": 4460,
+    "text_snippet": "在這個居民島跟渡假村對比來說我們只能說出海的行程居民島是屌打渡假村不管在活動的豐富程度上面來說"
+}

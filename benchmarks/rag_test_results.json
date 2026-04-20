@@ -1,0 +1,161 @@
+{
+  "q1": {
+    "answer": "根據現有會議記錄，無法找到相關資訊。",
+    "citations": [
+      {
+        "meeting_id": "e971a65b-44ea-4fdb-8c0f-66792225afc7",
+        "meeting_title": "Diarization Test",
+        "speaker": "",
+        "start_time": 1999.4,
+        "end_time": 1999.56,
+        "content": "好",
+        "similarity": 0.9048
+      },
+      {
+        "meeting_id": "e971a65b-44ea-4fdb-8c0f-66792225afc7",
+        "meeting_title": "Diarization Test",
+        "speaker": "",
+        "start_time": 1996.22,
+        "end_time": 1997.28,
+        "content": "我們這個下班",
+        "similarity": 0.9048
+      },
+      {
+        "meeting_id": "e971a65b-44ea-4fdb-8c0f-66792225afc7",
+        "meeting_title": "Diarization Test",
+        "speaker": "SPEAKER_04",
+        "start_time": 1292.6,
+        "end_time": 1295.0,
+        "content": "我們過年要放空啊",
+        "similarity": 0.6396
+      },
+      {
+        "meeting_id": "e971a65b-44ea-4fdb-8c0f-66792225afc7",
+        "meeting_title": "Diarization Test",
+        "speaker": "SPEAKER_06",
+        "start_time": 596.74,
+        "end_time": 598.2,
+        "content": "理論上如果希望",
+        "similarity": 0.6302
+      },
+      {
+        "meeting_id": "e971a65b-44ea-4fdb-8c0f-66792225afc7",
+        "meeting_title": "Diarization Test",
+        "speaker": "SPEAKER_06",
+        "start_time": 1936.56,
+        "end_time": 1938.68,
+        "content": "是有改更改的你都沒有帶過來",
+        "similarity": 0.6302
+      }
+    ],
+    "segments_searched": 841,
+    "question": "有提到專案進度或時程安排嗎？",
+    "time_taken": 3.795522928237915
+  },
+  "q2": {
+    "answer": "根據現有會議記錄，無法找到相關資訊。",
+    "citations": [
+      {
+        "meeting_id": "e971a65b-44ea-4fdb-8c0f-66792225afc7",
+        "meeting_title": "Diarization Test",
+        "speaker": "",
+        "start_time": 1999.4,
+        "end_time": 1999.56,
+        "content": "好",
+        "similarity": 0.9048
+      },
+      {
+        "meeting_id": "e971a65b-44ea-4fdb-8c0f-66792225afc7",
+        "meeting_title": "Diarization Test",
+        "speaker": "",
+        "start_time": 1996.22,
+        "end_time": 1997.28,
+        "content": "我們這個下班",
+        "similarity": 0.9048
+      },
+      {
+        "meeting_id": "e971a65b-44ea-4fdb-8c0f-66792225afc7",
+        "meeting_title": "Diarization Test",
+        "speaker": "SPEAKER_04",
+        "start_time": 1292.6,
+        "end_time": 1295.0,
+        "content": "我們過年要放空啊",
+        "similarity": 0.6396
+      },
+      {
+        "meeting_id": "e971a65b-44ea-4fdb-8c0f-66792225afc7",
+        "meeting_title": "Diarization Test",
+        "speaker": "SPEAKER_06",
+        "start_time": 596.74,
+        "end_time": 598.2,
+        "content": "理論上如果希望",
+        "similarity": 0.6302
+      },
+      {
+        "meeting_id": "e971a65b-44ea-4fdb-8c0f-66792225afc7",
+        "meeting_title": "Diarization Test",
+        "speaker": "SPEAKER_06",
+        "start_time": 1936.56,
+        "end_time": 1938.68,
+        "content": "是有改更改的你都沒有帶過來",
+        "similarity": 0.6302
+      }
+    ],
+    "segments_searched": 841,
+    "question": "會議中討論的最大的技術挑戰或瓶頸為何？",
+    "time_taken": 3.6343166828155518
+  },
+  "q3": {
+    "answer": "根據現有會議記錄，無法找到相關資訊。",
+    "citations": [
+      {
+        "meeting_id": "e971a65b-44ea-4fdb-8c0f-66792225afc7",
+        "meeting_title": "Diarization Test",
+        "speaker": "",
+        "start_time": 1999.4,
+        "end_time": 1999.56,
+        "content": "好",
+        "similarity": 0.8333
+      },
+      {
+        "meeting_id": "e971a65b-44ea-4fdb-8c0f-66792225afc7",
+        "meeting_title": "Diarization Test",
+        "speaker": "",
+        "start_time": 1996.22,
+        "end_time": 1997.28,
+        "content": "我們這個下班",
+        "similarity": 0.8333
+      },
+      {
+        "meeting_id": "e971a65b-44ea-4fdb-8c0f-66792225afc7",
+        "meeting_title": "Diarization Test",
+        "speaker": "SPEAKER_03",
+        "start_time": 1015.73,
+        "end_time": 1016.39,
+        "content": "對",
+        "similarity": 0.637
+      },
+      {
+        "meeting_id": "e971a65b-44ea-4fdb-8c0f-66792225afc7",
+        "meeting_title": "Diarization Test",
+        "speaker": "SPEAKER_03",
+        "start_time": 278.24,
+        "end_time": 278.88,
+        "content": "營運",
+        "similarity": 0.637
+      },
+      {
+        "meeting_id": "e971a65b-44ea-4fdb-8c0f-66792225afc7",
+        "meeting_title": "Diarization Test",
+        "speaker": "SPEAKER_04",
+        "start_time": 1292.6,
+        "end_time": 1295.0,
+        "content": "我們過年要放空啊",
+        "similarity": 0.6221
+      }
+    ],
+    "segments_searched": 841,
+    "question": "我是一隻小貓咪，喵喵喵，這跟會議無關",
+    "time_taken": 3.6866986751556396
+  }
+}

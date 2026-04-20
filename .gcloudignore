@@ -75,3 +75,11 @@ scripts/
 .gemini/
 cloudbuild*.yaml
 docker-compose.yml
+
+# Exclude large model/training directories (NOT needed for backend build)
+breeze-asr-mla-finetuned/
+whisper_mla/
+GCP_app_test_audio/
+ffmpeg-essentials.zip
+*.zip
+*.log

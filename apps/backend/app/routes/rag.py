@@ -1,0 +1,467 @@
+"""
+RAG (Retrieval-Augmented Generation) Routes for Cross-Meeting Q&A
+
+Enables users to ask natural language questions across all meeting transcripts.
+Uses pgvector cosine similarity to find relevant segments, then generates
+cited answers via Gemini.
+
+Endpoint:
+    POST /api/v1/rag/ask - Ask a question across meetings
+    POST /api/v1/rag/backfill - One-time backfill embeddings for existing data
+"""
+
+import logging
+import json
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field, field_validator
+
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+
+from app.database import get_db
+from app.models import Meeting, TranscriptSegment, MeetingParticipant
+from app.llm_utils import get_gemini_client, GEMINI_MODEL
+from app.embedding import embed_single_text, backfill_all_embeddings
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/v1/rag", tags=["RAG"])
+
+
+# ============================================
+# Request / Response Schemas
+# ============================================
+
+class ChatMessage(BaseModel):
+    role: str = Field(..., description="user or ai")
+    text: str = Field(..., description="Message text")
+
+class RAGRequest(BaseModel):
+    question:    str            = Field(..., min_length=2, max_length=2000, description="自然語言問題")
+    history:     Optional[List[ChatMessage]] = Field([], description="前面的對話歷史紀錄，用於處理跟進追問 (Follow-up) 的上下文切換")
+    user_upn:    str            = Field(..., description="當前登入用戶的 AD UPN（user@company.com），強制 MemPlace 隔離存取")
+    meeting_ids: Optional[List[str]] = Field(None, description="進一步限定搜索的會議 ID 清單（在 user_upn 範圍內篩選）")
+    top_k:       int            = Field(10, ge=1, le=50, description="返回的相關段落數")
+
+    @field_validator('user_upn', mode='before')
+    @classmethod
+    def validate_user_upn(cls, v: str) -> str:
+        """確保 UPN 格式包含 @ 符號，防止空白或非法值繞過存取控制"""
+        if not v or not isinstance(v, str):
+            raise ValueError("user_upn 不可為空")
+        v = v.strip()
+        if '@' not in v:
+            raise ValueError("user_upn 必須是有效的 AD UPN 格式（user@company.com）")
+        return v.lower()  # 統一小寫，避免大小寫造成查詢不到
+
+
+class Citation(BaseModel):
+    meeting_id: str
+    meeting_title: str
+    speaker: Optional[str] = None
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
+    content: str
+    similarity: float = Field(description="餘弦相似度分數 (0-1)")
+
+class RAGResponse(BaseModel):
+    answer: str
+    citations: List[Citation]
+    segments_searched: int = Field(description="共搜索了多少個 embedding 段落")
+    question: str
+
+
+# ============================================
+# RAG Pipeline Core
+# ============================================
+
+def _find_similar_segments(
+    db: Session,
+    query_embedding: list,
+    user_upn: Optional[str] = None,
+    meeting_ids: Optional[List[str]] = None,
+    top_k: int = 10,
+) -> tuple:
+    """
+    Find top-K most similar transcript segments using pgvector cosine distance.
+
+    存取控制隆離优先級（MemPlace 雔離）：
+      1. user_upn  → JOIN meeting_participants ，只搜尋該用戶有權限的會議（首選）
+      2. meeting_ids → 在以上範圍內進一步縮小搜索範圍（選遳）
+      3. 無兩者  → 展開全域搜索（已登入、管理員模式等）
+
+    Returns:
+        (results, total_searched): list of result rows and total segments in search scope
+    """
+    embedding_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
+
+    if user_upn:
+        # ============================================================
+        # ★ MemPlace 隔離查詢：JOIN meeting_participants 強制邏存取
+        # PostgreSQL Query Planner 會自動：
+        #   1. idx_mp_user_upn 定位少數幾場會議 meeting_id
+        #   2. 對這少數幾場會議的 segments 做 Exact Search
+        #   效能：~1ms（與所有會議的全域搜索相比減封99.95%車算量）
+        # ============================================================
+        if meeting_ids:
+            # user_upn + meeting_ids 雙重邏存取
+            placeholders = ",".join(f":mid_{i}" for i in range(len(meeting_ids)))
+            sql = text(f"""
+                SELECT
+                    ts.id,
+                    ts.meeting_id,
+                    ts.speaker,
+                    ts.start_time,
+                    ts.end_time,
+                    ts.content_polished,
+                    ts.content_raw,
+                    m.title as meeting_title,
+                    (ts.content_embedding <=> CAST(:query_embedding AS vector)) as distance
+                FROM transcript_segments ts
+                JOIN meetings m ON ts.meeting_id = m.id
+                JOIN meeting_participants mp
+                    ON m.id = mp.meeting_id AND mp.user_upn = :user_upn
+                WHERE ts.content_embedding IS NOT NULL
+                  AND ts.meeting_id IN ({placeholders})
+                ORDER BY ts.content_embedding <=> CAST(:query_embedding AS vector)
+                LIMIT :top_k
+            """)
+            params = {"query_embedding": embedding_str, "top_k": top_k, "user_upn": user_upn}
+            for i, mid in enumerate(meeting_ids):
+                params[f"mid_{i}"] = mid
+        else:
+            # 純 user_upn 隔離（最常見情境）
+            sql = text("""
+                SELECT
+                    ts.id,
+                    ts.meeting_id,
+                    ts.speaker,
+                    ts.start_time,
+                    ts.end_time,
+                    ts.content_polished,
+                    ts.content_raw,
+                    m.title as meeting_title,
+                    (ts.content_embedding <=> CAST(:query_embedding AS vector)) as distance
+                FROM transcript_segments ts
+                JOIN meetings m ON ts.meeting_id = m.id
+                JOIN meeting_participants mp
+                    ON m.id = mp.meeting_id AND mp.user_upn = :user_upn
+                WHERE ts.content_embedding IS NOT NULL
+                ORDER BY ts.content_embedding <=> CAST(:query_embedding AS vector)
+                LIMIT :top_k
+            """)
+            params = {"query_embedding": embedding_str, "top_k": top_k, "user_upn": user_upn}
+
+        results = db.execute(sql, params).fetchall()
+
+        # 隙間搜索範圍：該用戶實際被搜索的 segments 數
+        count_sql = text("""
+            SELECT COUNT(*) FROM transcript_segments ts
+            JOIN meeting_participants mp ON ts.meeting_id = mp.meeting_id
+            WHERE mp.user_upn = :user_upn AND ts.content_embedding IS NOT NULL
+        """)
+        total_searched = db.execute(count_sql, {"user_upn": user_upn}).scalar()
+
+    elif meeting_ids:
+        # 無 user_upn，只有 meeting_ids（公開 API 或管理員專用）
+        placeholders = ",".join(f":mid_{i}" for i in range(len(meeting_ids)))
+        sql = text(f"""
+            SELECT
+                ts.id,
+                ts.meeting_id,
+                ts.speaker,
+                ts.start_time,
+                ts.end_time,
+                ts.content_polished,
+                ts.content_raw,
+                m.title as meeting_title,
+                (ts.content_embedding <=> CAST(:query_embedding AS vector)) as distance
+            FROM transcript_segments ts
+            JOIN meetings m ON ts.meeting_id = m.id
+            WHERE ts.content_embedding IS NOT NULL
+              AND ts.meeting_id IN ({placeholders})
+            ORDER BY ts.content_embedding <=> CAST(:query_embedding AS vector)
+            LIMIT :top_k
+        """)
+        params = {"query_embedding": embedding_str, "top_k": top_k}
+        for i, mid in enumerate(meeting_ids):
+            params[f"mid_{i}"] = mid
+        results = db.execute(sql, params).fetchall()
+        count_sql = text(
+            f"SELECT COUNT(*) FROM transcript_segments "
+            f"WHERE meeting_id IN ({placeholders}) AND content_embedding IS NOT NULL"
+        )
+        total_searched = db.execute(count_sql, {f"mid_{i}": mid for i, mid in enumerate(meeting_ids)}).scalar()
+
+    else:
+        # 全域搜索（管理員或未實作 AD 整合時指, 建議硝亮命名 limit 限更小）
+        sql = text("""
+            SELECT
+                ts.id,
+                ts.meeting_id,
+                ts.speaker,
+                ts.start_time,
+                ts.end_time,
+                ts.content_polished,
+                ts.content_raw,
+                m.title as meeting_title,
+                (ts.content_embedding <=> CAST(:query_embedding AS vector)) as distance
+            FROM transcript_segments ts
+            JOIN meetings m ON ts.meeting_id = m.id
+            WHERE ts.content_embedding IS NOT NULL
+            ORDER BY ts.content_embedding <=> CAST(:query_embedding AS vector)
+            LIMIT :top_k
+        """)
+        params = {"query_embedding": embedding_str, "top_k": top_k}
+        results = db.execute(sql, params).fetchall()
+        total_searched = db.execute(
+            text("SELECT COUNT(*) FROM transcript_segments WHERE content_embedding IS NOT NULL")
+        ).scalar()
+
+    return results, total_searched
+
+
+def _build_rag_prompt(question: str, citations: List[Citation], history: Optional[List[ChatMessage]] = None) -> str:
+    """
+    Build a Gemini prompt with retrieved context, conversation history, and clear citation instructions.
+    """
+    context_parts = []
+    for i, c in enumerate(citations, 1):
+        speaker_info = f" ({c.speaker})" if c.speaker else ""
+        time_info = f" [{c.start_time:.1f}s]" if c.start_time else ""
+        context_parts.append(
+            f"[來源{i}] 會議「{c.meeting_title}」{speaker_info}{time_info}:\n{c.content}"
+        )
+    
+    context_block = "\n\n".join(context_parts)
+    
+    history_block = ""
+    if history and len(history) > 0:
+        history_parts = []
+        for msg in history:
+            role_name = "User" if msg.role.lower() == "user" else "AI"
+            history_parts.append(f"{role_name}: {msg.text}")
+        history_block = "過去的對話紀錄：\n" + "\n".join(history_parts) + "\n---\n"
+    
+    prompt = f"""你是 MeetChi 跨會議問答智能助手。請作為一名資深分析師，根據以下會議記錄段落與上下文，有邏輯、有條理地綜合分析並解答用戶的問題。
+
+核心原則：
+1. 【嚴格 JSON 輸出格式】你必須將回答封裝在一個有效的 JSON 格式中，包含兩個欄位："answer" (字串，你的完整回答內容) 與 "used_citations" (整數陣列，你想在 answer 中引用的來源數字)。
+2. 【禁止 Markdown】請拋棄 AI 特有的撰寫風格（明確禁止使用 **、# 粗體或大標題等多餘的 Markdown 語法）。直接提供清晰平鋪直敘、有條理的結構化「純文字」。可適度使用換行符號 `\n` 排版。
+3. 【統整思考】不要機械性貼上原文，請消化內容後給出一份清晰易懂的綜合回答。
+4. 【事實根據與引用標註】你的回答必須有來源依據。引用特定會議的觀點時，請在句末自然地標註來源，格式嚴格為 [來源N]。
+5. 【資訊不足】如果資料無法解答用戶問題，請誠實說明「現有會議記錄未提及相關資訊」。
+6. 【對話連貫】如果用戶的最新問題是針對先前的對話追問，請保持連貫性地回答。
+
+請確保你回傳的資料為純 JSON，並遵守以下範例結構：
+{{
+  "answer": "你清晰平鋪直敘的結構化文字回答，例如：行銷專案的第一階段已經完成[來源1]。後續進度尚未確認[來源2]。",
+  "used_citations": [1, 2]
+}}
+
+---
+提供的會議記錄段落（可用於尋找客觀事實）：
+
+{context_block}
+
+---
+{history_block}
+用戶最新問題：{question}
+
+請綜合分析並回答："""
+    
+    return prompt
+
+def _contextualize_query(client, question: str, history: List[ChatMessage]) -> str:
+    """
+    Query Contextualization: 
+    Rewrite the user's question into a standalone query based on conversational history.
+    """
+    if not history:
+        return question
+        
+    history_str = "\n".join([f"{'User' if m.role.lower() == 'user' else 'AI'}: {m.text}" for m in history])
+    
+    prompt = f"""你是一個幫助資料庫檢索的「查詢重寫 (Query Rewrite) 助手」。
+給定以下對話紀錄以及使用者最新提出的問題，這個問題可能使用了代名詞（例如「那件事的負責人是誰？」或「後來預算怎麼定？」），缺乏具體主詞。
+請根據對話紀錄推斷出使用者正在詢問的主題，並將使用者的最新問題重新改寫成一個獨立且沒有代名詞的完整搜尋句（Standalone Query），方便用來搜尋相關會議紀錄。
+
+只要回傳改寫後的完整搜尋句即可，不需要提供任何解釋。如果問題已經完整且不需要歷史脈絡也能理解，請直接原封不動回傳該問題。
+
+>>> 對話紀錄:
+{history_str}
+
+>>> 使用者最新問題:
+{question}
+
+>>> 改寫後的搜尋句:"""
+
+    try:
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config={
+                "temperature": 0.0,
+                "max_output_tokens": 100,
+            },
+        )
+        rewritten = response.text.strip() if response.text else question
+        logger.info(f"[Query Contextualizer] Original: {question} -> Rewritten: {rewritten}")
+        return rewritten
+    except Exception as e:
+        logger.warning(f"[Query Contextualizer] Failed to rewrite query: {e}. Falling back to original.")
+        return question
+
+
+# ============================================
+# API Endpoints
+# ============================================
+
+@router.post("/ask", response_model=RAGResponse)
+async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)):
+    """
+    Ask a question across all (or selected) meeting transcripts.
+    
+    Pipeline:
+    1. Embed the question → 768-dim vector
+    2. pgvector cosine similarity search → Top-K segments
+    3. Build context prompt → Gemini generates cited answer
+    """
+    client = get_gemini_client()
+    if not client:
+        raise HTTPException(status_code=503, detail="Gemini client unavailable")
+    
+    # Step 1: Query Contextualization (If history exists)
+    search_query = request.question
+    if request.history:
+        search_query = _contextualize_query(client, request.question, request.history)
+    
+    # Step 1.5: Embed the contextualized query
+    query_embedding = embed_single_text(client, search_query)
+    if query_embedding is None:
+        raise HTTPException(status_code=500, detail="Failed to generate query embedding")
+    
+    # Step 2: Find similar segments via pgvector (with MemPlace isolation)
+    try:
+        results, total_searched = _find_similar_segments(
+            db, query_embedding,
+            user_upn=request.user_upn,
+            meeting_ids=request.meeting_ids,
+            top_k=request.top_k,
+        )
+    except Exception as e:
+        logger.error(f"[RAG] Vector search failed: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Vector search failed. Ensure pgvector extension is enabled: {str(e)}"
+        )
+    
+    if not results:
+        return RAGResponse(
+            answer="根據現有會議記錄，未找到與您問題相關的段落。可能尚未有會議記錄被索引。",
+            citations=[],
+            segments_searched=total_searched,
+            question=request.question,
+        )
+    
+    # Build citations from results
+    citations = []
+    for row in results:
+        content = row.content_polished or row.content_raw or ""
+        similarity = 1.0 - float(row.distance)  # Convert distance to similarity
+        citations.append(Citation(
+            meeting_id=row.meeting_id,
+            meeting_title=row.meeting_title or "未命名會議",
+            speaker=row.speaker,
+            start_time=row.start_time,
+            end_time=row.end_time,
+            content=content,
+            similarity=round(similarity, 4),
+        ))
+    
+    # Step 3: Generate answer with Gemini
+    rag_prompt = _build_rag_prompt(request.question, citations, request.history)
+    
+    try:
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=rag_prompt,
+            config={
+                "temperature": 0.2,
+                "max_output_tokens": 4096,
+                "response_mime_type": "application/json",
+            },
+        )
+        try:
+            import json
+            data = json.loads(response.text)
+            answer = data.get("answer", "無法生成回答")
+            used_citations_list = data.get("used_citations", [])
+            # You can optionally use `used_citations_list` to filter returned citations if you want,
+            # but returning and showing all citations initially passed gives full context.
+        except Exception:
+            answer = response.text or "無法生成回答。"
+    except Exception as e:
+        logger.error(f"[RAG] Gemini generation failed: {e}")
+        # Return citations without generated answer
+        answer = f"（回答生成失敗，但以下是最相關的會議段落供參考）\n\n錯誤: {str(e)}"
+    
+    return RAGResponse(
+        answer=answer,
+        citations=citations,
+        segments_searched=total_searched,
+        question=request.question,
+    )
+
+
+@router.post("/backfill")
+async def trigger_backfill(db: Session = Depends(get_db)):
+    """
+    One-time endpoint to backfill embeddings for all existing meetings.
+    Should be called after enabling pgvector and deploying embedding pipeline.
+    """
+    try:
+        result = backfill_all_embeddings(db)
+        return {"status": "ok", **result}
+    except Exception as e:
+        logger.error(f"[RAG] Backfill failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/status")
+async def rag_status(db: Session = Depends(get_db)):
+    """
+    Check RAG system health: how many segments/summaries have embeddings.
+    """
+    try:
+        total_segments = db.execute(
+            text("SELECT COUNT(*) FROM transcript_segments")
+        ).scalar()
+        embedded_segments = db.execute(
+            text("SELECT COUNT(*) FROM transcript_segments WHERE content_embedding IS NOT NULL")
+        ).scalar()
+        total_meetings = db.execute(
+            text("SELECT COUNT(*) FROM meetings")
+        ).scalar()
+        embedded_meetings = db.execute(
+            text("SELECT COUNT(*) FROM meetings WHERE summary_embedding IS NOT NULL")
+        ).scalar()
+        
+        return {
+            "status": "ok",
+            "segments": {
+                "total": total_segments,
+                "embedded": embedded_segments,
+                "coverage": f"{(embedded_segments/total_segments*100):.1f}%" if total_segments > 0 else "N/A",
+            },
+            "meetings": {
+                "total": total_meetings,
+                "embedded": embedded_meetings,
+                "coverage": f"{(embedded_meetings/total_meetings*100):.1f}%" if total_meetings > 0 else "N/A",
+            },
+        }
+    except Exception as e:
+        logger.error(f"[RAG] Status check failed: {e}")
+        return {"status": "error", "detail": str(e)}

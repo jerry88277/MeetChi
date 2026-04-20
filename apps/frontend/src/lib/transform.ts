@@ -1,5 +1,5 @@
 import { Meeting as ApiMeeting, MeetingSummary } from '@/lib/api';
-import type { Meeting, ActionItem, TranscriptLine } from '@/types/meeting';
+import type { Meeting, ActionItem, TranscriptLine, SpeakerMappings } from '@/types/meeting';
 
 export function formatSeconds(seconds: number): string {
     const mins = Math.floor(seconds / 60);
@@ -35,6 +35,16 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
         text: seg.content_polished || seg.content_raw
     }));
 
+    // Parse speaker mappings (Phase 8.1.3)
+    let speakerMappings: SpeakerMappings | undefined;
+    if (apiMeeting.speaker_mappings) {
+        try {
+            speakerMappings = JSON.parse(apiMeeting.speaker_mappings);
+        } catch {
+            speakerMappings = undefined;
+        }
+    }
+
     // Format duration
     const durationStr = apiMeeting.duration
         ? formatSeconds(apiMeeting.duration)
@@ -52,6 +62,7 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
                     : "processing",
         summary,
         actionItems,
-        transcript
+        transcript,
+        speakerMappings
     };
 }

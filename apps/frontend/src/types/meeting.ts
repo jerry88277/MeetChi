@@ -13,6 +13,15 @@ export interface TranscriptLine {
     text: string;
 }
 
+// Phase 8.1.3: Speaker Mapping
+export interface SpeakerMapping {
+    display_name: string;
+    role: string;
+    color: string;
+}
+
+export type SpeakerMappings = Record<string, SpeakerMapping>;
+
 export interface Meeting {
     id: string;
     title: string;
@@ -23,4 +32,6 @@ export interface Meeting {
     summary: string;
     actionItems: ActionItem[];
     transcript: TranscriptLine[];
+    speakerMappings?: SpeakerMappings;  // Phase 8.1.3
+    audio_url?: string | null;       // Phase D: Audio Playback Sync
 }

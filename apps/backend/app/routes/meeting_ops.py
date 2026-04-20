@@ -448,3 +448,54 @@ def generate_upload_url(
     except Exception as e:
         logger.error(f"Failed to generate signed url: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate upload URL")
+
+class AudioUrlResponse(BaseModel):
+    audio_url: str
+
+@router.get("/{meeting_id}/audio-url", response_model=AudioUrlResponse)
+def get_audio_url(
+    meeting_id: str,
+    db: Session = Depends(get_db)
+):
+    """Generate a GCS signed URL for direct audio download/playback from frontend"""
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    if not meeting.audio_url or not meeting.audio_url.startswith("gs://"):
+        # Not a GCS URL or no audio
+        return AudioUrlResponse(audio_url=meeting.audio_url or "")
+
+    import google.auth
+    from google.auth.transport import requests as google_requests
+
+    try:
+        credentials, project_id = google.auth.default()
+        if credentials.token is None:
+            credentials.refresh(google_requests.Request())
+            
+        sa_email = getattr(credentials, "service_account_email", f"meetchi-cloudrun@{project_id}.iam.gserviceaccount.com")
+
+        client = gcs_storage.Client(project=project_id)
+        
+        # Parse gs://bucket_name/blob_name
+        parts = meeting.audio_url.replace("gs://", "").split("/", 1)
+        if len(parts) != 2:
+            return AudioUrlResponse(audio_url="")
+            
+        bucket_name, blob_name = parts[0], parts[1]
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+
+        url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(minutes=120),
+            method="GET",
+            service_account_email=sa_email,
+            access_token=credentials.token
+        )
+
+        return AudioUrlResponse(audio_url=url)
+    except Exception as e:
+        logger.error(f"Failed to generate signed GET url: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate playback URL")

@@ -94,3 +94,10 @@ variable "gpu_asr_service_url" {
   type        = string
   default     = ""
 }
+
+variable "discord_webhook_url" {
+  description = "Discord Webhook URL for completion notifications (Phase 9.2)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

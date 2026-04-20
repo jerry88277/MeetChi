@@ -12,6 +12,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 from app.llm_utils import get_gemini_client, generate_summary
+from app.notify import send_completion_notification
+from app.embedding import embed_transcript_segments, embed_meeting_summary
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +153,7 @@ def run_offline_asr_refinement(meeting_id: str, audio_path: str, language: str =
 
 
 
-def generate_summary_core(meeting_id: str, template_type: str = "general", context: str = "", length: str = "", style: str = "", skip_asr: bool = False):
+def generate_summary_core(meeting_id: str, template_type: str = "general", context: str = "", length: str = "", style: str = "", skip_asr: bool = False, suppress_fail_notification: bool = False):
     """
     Core logic for meeting processing:
     1. Run offline ASR refinement (Breeze ASR via OfflineASRProvider) if audio exists.
@@ -221,10 +223,13 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
                         return {"status": "accepted", "meeting_id": meeting_id, "message": "GPU ASR Refinement started in background"}
                         
                 except Exception as e:
-                    logger.error(f"Remote GPU ASR trigger failed: {e}")
-                    meeting.status = MeetingStatus.FAILED
-                    db.commit()
+                    logger.error(f"Remote GPU ASR trigger failed for meeting {meeting_id}: {e}")
+                    if not suppress_fail_notification:
+                        meeting.status = MeetingStatus.FAILED
+                        db.commit()
                     _update_task_status(db, meeting_id, "offline_asr", "FAILED", f"Remote trigger error: {str(e)}")
+                    # Return 'failed' so the cloud task handler will return 500 and trigger a retry
+                    return {"status": "failed", "error": f"Remote GPU ASR trigger failed: {str(e)}"}
             else:
                 logger.info("GPU_ASR_SERVICE_URL not set. Running local offline ASR refinement...")
                 audio_path = meeting.audio_url
@@ -322,17 +327,52 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
             meeting.summary_json = json.dumps(summary_data, ensure_ascii=False)
             # Store full text snapshot
             meeting.transcript_raw = transcript_text
+            
+            # Phase 8.1: Auto-populate speaker_mappings from CoT speaker_roles
+            speaker_roles = summary_data.get("speaker_roles")
+            if speaker_roles and not meeting.speaker_mappings:
+                SPEAKER_COLORS = [
+                    "#5FB7AC", "#2D428B", "#48B070", "#E4831A",
+                    "#D2343D", "#EDD414", "#513A57", "#1E455E"
+                ]
+                mappings = {}
+                for i, sr in enumerate(speaker_roles):
+                    sid = sr.get("speaker_id", f"Speaker_{i}")
+                    mappings[sid] = {
+                        "display_name": sr.get("display_name", sid),
+                        "role": sr.get("role", "未知"),
+                        "color": SPEAKER_COLORS[i % len(SPEAKER_COLORS)]
+                    }
+                meeting.speaker_mappings = json.dumps(mappings, ensure_ascii=False)
+                logger.info(f"Auto-populated speaker_mappings for {meeting_id}: {len(mappings)} speakers")
+            
             meeting.status = MeetingStatus.COMPLETED
             
             db.commit()
             logger.info(f"Successfully generated summary for {meeting_id}")
             
+            # Phase RAG: Auto-embed transcript segments + summary for cross-meeting search
+            try:
+                seg_count = embed_transcript_segments(db, meeting_id)
+                sum_ok = embed_meeting_summary(db, meeting_id)
+                logger.info(f"[Embedding] Auto-embed complete: {seg_count} segments, summary={'OK' if sum_ok else 'SKIP'}")
+            except Exception as emb_err:
+                # Embedding failure must NOT break the core pipeline
+                logger.warning(f"[Embedding] Auto-embed failed (non-fatal): {emb_err}")
+            
+            # Phase 9.2: Fire-and-forget Discord notification
+            send_completion_notification(meeting, "completed")
+            
             return {"status": "completed", "meeting_id": meeting_id}
 
         except Exception as e:
              logger.error(f"Error calling Gemini Service: {e}")
-             meeting.status = MeetingStatus.FAILED
-             db.commit()
+             if not suppress_fail_notification:
+                 meeting.status = MeetingStatus.FAILED
+                 db.commit()
+                 send_completion_notification(meeting, "failed")
+             else:
+                 logger.info(f"Suppressed FAILED status and Discord notification for {meeting_id} (Cloud Tasks will retry)")
              return {"status": "failed", "error": str(e)}
 
     except Exception as e:
@@ -342,10 +382,10 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
         db.close()
 
 
-def generate_meeting_minutes(meeting_id: str, template_type: str = "general", context: str = "", length: str = "", style: str = "", skip_asr: bool = False):
+def generate_meeting_minutes(meeting_id: str, template_type: str = "general", context: str = "", length: str = "", style: str = "", skip_asr: bool = False, suppress_fail_notification: bool = False):
     """
     Wrapper function for backward compatibility.
     Previously was a Celery task, now a direct function call.
     Can be invoked via Cloud Tasks HTTP handler or directly.
     """
-    return generate_summary_core(meeting_id, template_type, context, length, style, skip_asr=skip_asr)
+    return generate_summary_core(meeting_id, template_type, context, length, style, skip_asr=skip_asr, suppress_fail_notification=suppress_fail_notification)

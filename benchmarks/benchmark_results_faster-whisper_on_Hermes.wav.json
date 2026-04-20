@@ -1,0 +1,13 @@
+{
+    "model": "faster-whisper",
+    "vad": "on",
+    "audio": "Hermes.wav",
+    "duration_sec": 788.0388125,
+    "load_time_sec": 5.993592023849487,
+    "infer_time_sec": 99.05487203598022,
+    "rtf": 0.12569796114703452,
+    "base_vram_mb": 0,
+    "peak_vram_mb": 4460,
+    "vram_delta_mb": 4460,
+    "text_snippet": "大家好"
+}

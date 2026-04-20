@@ -11,6 +11,11 @@ resource "google_sql_database_instance" "meetchi_pg" {
   settings {
     tier = "db-f1-micro"
     
+    database_flags {
+      name  = "cloudsql.enable_pgvector"
+      value = "on"
+    }
+    
     ip_configuration {
       ipv4_enabled = true
     }

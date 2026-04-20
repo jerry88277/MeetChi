@@ -1,0 +1,13 @@
+{
+    "model": "faster-whisper",
+    "vad": "on",
+    "audio": "Maldives.wav",
+    "duration_sec": 7551.0826875,
+    "load_time_sec": 6.325985431671143,
+    "infer_time_sec": 1269.0682883262634,
+    "rtf": 0.16806441418355392,
+    "base_vram_mb": 0,
+    "peak_vram_mb": 4460,
+    "vram_delta_mb": 4460,
+    "text_snippet": "在這個居民島跟渡假村對比來說我們只能說"
+}

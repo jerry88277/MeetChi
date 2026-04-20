@@ -14,10 +14,34 @@ export function useSummary(
         meetingId: string,
         selectedMeeting: Meeting | null,
         setSelectedMeeting: (m: Meeting) => void,
+        templateName = 'general',
     ) => {
         setIsRegenerating(true);
         try {
-            await api.regenerateSummary(meetingId, 'general');
+            await api.regenerateSummary(meetingId, templateName);
+            await fetchMeetings();
+
+            if (selectedMeeting && selectedMeeting.id === meetingId) {
+                const apiMeetings = await api.listMeetings();
+                const updatedMeeting = apiMeetings.find(m => m.id === meetingId);
+                if (updatedMeeting) {
+                    setSelectedMeeting(transformMeeting(updatedMeeting));
+                }
+            }
+        } finally {
+            setIsRegenerating(false);
+        }
+    }, [fetchMeetings]);
+
+    const regenerateTranscript = useCallback(async (
+        meetingId: string,
+        selectedMeeting: Meeting | null,
+        setSelectedMeeting: (m: Meeting) => void,
+        templateName = 'general',
+    ) => {
+        setIsRegenerating(true);
+        try {
+            await api.startTranscriptionTask(meetingId, templateName);
             await fetchMeetings();
 
             if (selectedMeeting && selectedMeeting.id === meetingId) {
@@ -35,5 +59,6 @@ export function useSummary(
     return {
         isRegenerating,
         regenerateSummary,
+        regenerateTranscript,
     };
 }

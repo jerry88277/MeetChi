@@ -1,0 +1,541 @@
+.\whisper_mla\.venv\Scripts\python.exe : 2026-04-0
+8 11:37:04,822 - INFO - Loading Whisper-MLA model 
+for fine-tuning...
+位於 線路:1 字元:1
++ .\whisper_mla\.venv\Scripts\python.exe -u -m whi
+sper_mla.train --mode ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (2026 
+   -04-08 11:3... fine-tuning...:String) [], Rem  
+  oteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+2026-04-08 11:37:04,824 - INFO - Loading Whisper-M
+LA from .\whisper_mla\breeze-asr-mla
+2026-04-08 11:37:04,824 - INFO -   d_kp=80, d_kv=1
+60, compression=9.4%
+2026-04-08 11:37:06,168 - INFO - HTTP Request: HEA
+D https://huggingface.co/MediaTek-Research/Breeze-
+ASR-25/resolve/main/config.json "HTTP/1.1 307 Temp
+orary Redirect"
+Warning: You are sending unauthenticated requests 
+to the HF Hub. Please set a HF_TOKEN to enable hig
+her rate limits and faster downloads.
+2026-04-08 11:37:06,173 - WARNING - Warning: You a
+re sending unauthenticated requests to the HF Hub.
+ Please set a HF_TOKEN to enable higher rate limit
+s and faster downloads.
+2026-04-08 11:37:06,209 - INFO - HTTP Request: HEA
+D https://huggingface.co/api/resolve-cache/models/
+MediaTek-Research/Breeze-ASR-25/cffe7ccb404d025296
+a00758d0a33468bec3a9d0/config.json "HTTP/1.1 200 O
+K"
+2026-04-08 11:37:06,458 - INFO - HTTP Request: HEA
+D https://huggingface.co/MediaTek-Research/Breeze-
+ASR-25/resolve/main/model.safetensors "HTTP/1.1 30
+2 Found"
+
+Loading weights:   0%|          | 0/1259 [00:00<?,
+ ?it/s]
+Loading weights:   3%|�k         | 39/1259 [00:00<
+00:04, 304.72it/s]
+Loading weights:   6%|�m         | 74/1259 [00:00<
+00:03, 325.97it/s]
+Loading weights:   9%|�p         | 111/1259 [00:00
+<00:03, 314.18it/s]
+Loading weights:  12%|�i�j        | 149/1259 [00:0
+0<00:03, 333.43it/s]
+Loading weights:  15%|�i�l        | 183/1259 [00:0
+0<00:03, 304.21it/s]
+Loading weights:  18%|�i�o        | 227/1259 [00:0
+0<00:03, 321.55it/s]
+Loading weights:  21%|�i�i        | 262/1259 [00:0
+0<00:03, 326.23it/s]
+Loading weights:  24%|�i�i�l       | 303/1259 [00:
+00<00:03, 316.34it/s]
+Loading weights:  28%|�i�i�o       | 351/1259 [00:
+01<00:02, 321.22it/s]
+Loading weights:  31%|�i�i�i       | 391/1259 [00:
+01<00:02, 338.99it/s]
+Loading weights:  34%|�i�i�i�l      | 426/1259 [00
+:01<00:02, 320.34it/s]
+Loading weights:  37%|�i�i�i�n      | 467/1259 [00
+:01<00:02, 319.28it/s]
+Loading weights:  40%|�i�i�i�i      | 506/1259 [00
+:01<00:02, 336.73it/s]
+Loading weights:  43%|�i�i�i�i�k     | 541/1259 [0
+0:01<00:02, 315.44it/s]
+Loading weights:  46%|�i�i�i�i�n     | 585/1259 [0
+0:01<00:01, 344.13it/s]
+Loading weights:  49%|�i�i�i�i�p     | 621/1259 [0
+0:01<00:01, 336.78it/s]
+Loading weights:  52%|�i�i�i�i�i�j    | 657/1259 [
+00:02<00:01, 334.79it/s]
+Loading weights:  55%|�i�i�i�i�i�l    | 691/1259 [
+00:02<00:01, 324.92it/s]
+Loading weights:  58%|�i�i�i�i�i�o    | 724/1259 [
+00:02<00:01, 325.14it/s]
+Loading weights:  60%|�i�i�i�i�i�i    | 759/1259 [
+00:02<00:01, 309.91it/s]
+Loading weights:  63%|�i�i�i�i�i�i�k   | 792/1259 
+[00:02<00:01, 297.31it/s]
+Loading weights:  66%|�i�i�i�i�i�i�m   | 826/1259 
+[00:02<00:01, 304.31it/s]
+Loading weights:  69%|�i�i�i�i�i�i�o   | 863/1259 
+[00:02<00:01, 321.48it/s]
+Loading weights:  71%|�i�i�i�i�i�i�i   | 896/1259 
+[00:02<00:01, 285.12it/s]
+Loading weights:  74%|�i�i�i�i�i�i�i�k  | 927/1259
+ [00:02<00:01, 288.23it/s]
+Loading weights:  76%|�i�i�i�i�i�i�i�m  | 957/1259
+ [00:03<00:01, 272.73it/s]
+Loading weights:  79%|�i�i�i�i�i�i�i�o  | 991/1259
+ [00:03<00:00, 272.34it/s]
+Loading weights:  81%|�i�i�i�i�i�i�i�i  | 1021/125
+9 [00:03<00:00, 272.45it/s]
+Loading weights:  83%|�i�i�i�i�i�i�i�i�k | 1049/12
+59 [00:03<00:00, 273.26it/s]
+Loading weights:  86%|�i�i�i�i�i�i�i�i�m | 1081/12
+59 [00:03<00:00, 265.87it/s]
+Loading weights:  88%|�i�i�i�i�i�i�i�i�o | 1111/12
+59 [00:03<00:00, 265.49it/s]
+Loading weights:  90%|�i�i�i�i�i�i�i�i�i | 1138/12
+59 [00:03<00:00, 256.29it/s]
+Loading weights:  93%|�i�i�i�i�i�i�i�i�i�k| 1171/1
+259 [00:03<00:00, 264.46it/s]
+Loading weights:  95%|�i�i�i�i�i�i�i�i�i�m| 1198/1
+259 [00:03<00:00, 259.87it/s]
+Loading weights:  97%|�i�i�i�i�i�i�i�i�i�n| 1227/1
+259 [00:04<00:00, 258.64it/s]
+Loading weights: 100%|�i�i�i�i�i�i�i�i�i�i| 1259/1
+259 [00:04<00:00, 302.23it/s]
+2026-04-08 11:37:12,681 - INFO - HTTP Request: HEA
+D https://huggingface.co/MediaTek-Research/Breeze-
+ASR-25/resolve/main/generation_config.json "HTTP/1
+.1 307 Temporary Redirect"
+2026-04-08 11:37:12,720 - INFO - HTTP Request: HEA
+D https://huggingface.co/api/resolve-cache/models/
+MediaTek-Research/Breeze-ASR-25/cffe7ccb404d025296
+a00758d0a33468bec3a9d0/generation_config.json "HTT
+P/1.1 200 OK"
+2026-04-08 11:37:16,856 - INFO - Whisper-MLA model
+ loaded successfully (cuda, torch.float32)
+2026-04-08 11:37:20,258 - INFO - Loading AISHELL-1
+ (Offline Parquets)...
+2026-04-08 11:37:21,042 - INFO - HTTP Request: HEA
+D https://s3.amazonaws.com/datasets.huggingface.co
+/datasets/datasets/parquet/parquet.py "HTTP/1.1 40
+4 Not Found"
+2026-04-08 11:37:28,572 - INFO -   AISHELL-1: 1200
+98 samples
+2026-04-08 11:37:28,572 - INFO - Loading LibriSpee
+ch (Offline Parquets)...
+2026-04-08 11:37:29,323 - INFO - HTTP Request: HEA
+D https://s3.amazonaws.com/datasets.huggingface.co
+/datasets/datasets/parquet/parquet.py "HTTP/1.1 40
+4 Not Found"
+2026-04-08 11:37:29,376 - WARNING - Failed to load
+ LibriSpeech: The directory at D:/Side_project/Mee
+tChi/whisper_mla/data/librispeech_train100/clean/t
+rain.100 doesn't contain any data files
+2026-04-08 11:37:29,376 - INFO - Loading CommonVoi
+ce17 zh-TW (Offline Parquets)...
+2026-04-08 11:37:29,638 - INFO - HTTP Request: HEA
+D https://s3.amazonaws.com/datasets.huggingface.co
+/datasets/datasets/parquet/parquet.py "HTTP/1.1 40
+4 Not Found"
+2026-04-08 11:37:29,688 - WARNING - Failed to load
+ CV17-zh-TW (skipping for offline): The directory 
+at D:/Side_project/MeetChi/whisper_mla/data/cv17_z
+htw doesn't contain any data files
+2026-04-08 11:37:29,688 - INFO - Loading NTUML2021
+ (Offline Parquets)...
+2026-04-08 11:37:29,933 - INFO - HTTP Request: HEA
+D https://s3.amazonaws.com/datasets.huggingface.co
+/datasets/datasets/parquet/parquet.py "HTTP/1.1 40
+4 Not Found"
+2026-04-08 11:37:32,283 - INFO -   NTUML2021: 1777
+9 �� 5 = 88895 samples
+2026-04-08 11:37:32,283 - INFO - Dataset compositi
+on:
+2026-04-08 11:37:32,283 - INFO -   aishell1: 12009
+8 (57.5%)
+2026-04-08 11:37:32,283 - INFO -   ntuml2021: 8889
+5 (42.5%)
+
+Filter (num_proc=4):   0%|          | 0/208993 [00
+:00<?, ? examples/s]Traceback (most recent call la
+st):
+  File "<string>", line 1, in <module>
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 122
+, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 131
+, in _main
+    prepare(preparation_data)
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 244
+, in prepare
+    _fixup_main_from_name(data['init_main_from_nam
+e'])
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 268
+, in _fixup_main_from_name
+    main_content = runpy.run_module(mod_name,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 226, in run_module
+  File "<frozen runpy>", line 98, in _run_module_c
+ode
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\Side_project\MeetChi\whisper_mla\train.
+py", line 25, in <module>
+    import torch
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\torch\__init__.py", line 280, in
+ <module>
+    _load_dll_libraries()
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\torch\__init__.py", line 263, in
+ _load_dll_libraries
+    raise err
+OSError: [WinError 1455] �����ɤӤp�A�L�k�����ާ@�C E
+rror loading "D:\Side_project\MeetChi\whisper_mla\
+.venv\Lib\site-packages\torch\lib\curand64_10.dll"
+ or one of its dependencies.
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 122
+, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 131
+, in _main
+    prepare(preparation_data)
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 244
+, in prepare
+    _fixup_main_from_name(data['init_main_from_nam
+e'])
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 268
+, in _fixup_main_from_name
+    main_content = runpy.run_module(mod_name,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 226, in run_module
+  File "<frozen runpy>", line 98, in _run_module_c
+ode
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\Side_project\MeetChi\whisper_mla\train.
+py", line 25, in <module>
+    import torch
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\torch\__init__.py", line 280, in
+ <module>
+    _load_dll_libraries()
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\torch\__init__.py", line 263, in
+ _load_dll_libraries
+    raise err
+OSError: [WinError 1455] �����ɤӤp�A�L�k�����ާ@�C E
+rror loading "D:\Side_project\MeetChi\whisper_mla\
+.venv\Lib\site-packages\torch\lib\nvperf_host.dll"
+ or one of its dependencies.
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 122
+, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 131
+, in _main
+    prepare(preparation_data)
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 244
+, in prepare
+    _fixup_main_from_name(data['init_main_from_nam
+e'])
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 268
+, in _fixup_main_from_name
+    main_content = runpy.run_module(mod_name,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 226, in run_module
+  File "<frozen runpy>", line 98, in _run_module_c
+ode
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\Side_project\MeetChi\whisper_mla\train.
+py", line 25, in <module>
+    import torch
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\torch\__init__.py", line 280, in
+ <module>
+    _load_dll_libraries()
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\torch\__init__.py", line 263, in
+ _load_dll_libraries
+    raise err
+OSError: [WinError 1455] �����ɤӤp�A�L�k�����ާ@�C E
+rror loading "D:\Side_project\MeetChi\whisper_mla\
+.venv\Lib\site-packages\torch\lib\nvrtc64_120_0.al
+t.dll" or one of its dependencies.
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 122
+, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 131
+, in _main
+    prepare(preparation_data)
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 244
+, in prepare
+    _fixup_main_from_name(data['init_main_from_nam
+e'])
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 268
+, in _fixup_main_from_name
+    main_content = runpy.run_module(mod_name,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 226, in run_module
+  File "<frozen runpy>", line 98, in _run_module_c
+ode
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\Side_project\MeetChi\whisper_mla\train.
+py", line 25, in <module>
+    import torch
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\torch\__init__.py", line 280, in
+ <module>
+    _load_dll_libraries()
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\torch\__init__.py", line 263, in
+ _load_dll_libraries
+    raise err
+OSError: [WinError 1455] �����ɤӤp�A�L�k�����ާ@�C E
+rror loading "D:\Side_project\MeetChi\whisper_mla\
+.venv\Lib\site-packages\torch\lib\shm.dll" or one 
+of its dependencies.
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 122
+, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 131
+, in _main
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 122
+, in spawn_main
+    prepare(preparation_data)
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 244
+, in prepare
+    exitcode = _main(fd, parent_sentinel)
+    _fixup_main_from_name(data['init_main_from_nam
+e'])
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 268
+, in _fixup_main_from_name
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 131
+, in _main
+    main_content = runpy.run_module(mod_name,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 226, in run_module
+  File "<frozen runpy>", line 98, in _run_module_c
+ode
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\Side_project\MeetChi\whisper_mla\train.
+py", line 25, in <module>
+    prepare(preparation_data)
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 244
+, in prepare
+    import torch
+    _fixup_main_from_name(data['init_main_from_nam
+e'])
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\torch\__init__.py", line 280, in
+ <module>
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 268
+, in _fixup_main_from_name
+    main_content = runpy.run_module(mod_name,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 226, in run_module
+    _load_dll_libraries()
+  File "<frozen runpy>", line 98, in _run_module_c
+ode
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\Side_project\MeetChi\whisper_mla\train.
+py", line 25, in <module>
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\torch\__init__.py", line 263, in
+ _load_dll_libraries
+    import torch
+    raise err
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\torch\__init__.py", line 280, in
+ <module>
+OSError: [WinError 1455] �����ɤӤp�A�L�k�����ާ@�C E
+rror loading "D:\Side_project\MeetChi\whisper_mla\
+.venv\Lib\site-packages\torch\lib\nvperf_host.dll"
+ or one of its dependencies.
+    _load_dll_libraries()
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\torch\__init__.py", line 263, in
+ _load_dll_libraries
+    raise err
+OSError: [WinError 1455] �����ɤӤp�A�L�k�����ާ@�C E
+rror loading "D:\Side_project\MeetChi\whisper_mla\
+.venv\Lib\site-packages\torch\lib\nvperf_host.dll"
+ or one of its dependencies.
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 122
+, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 131
+, in _main
+    prepare(preparation_data)
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 244
+, in prepare
+    _fixup_main_from_name(data['init_main_from_nam
+e'])
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 268
+, in _fixup_main_from_name
+    main_content = runpy.run_module(mod_name,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 226, in run_module
+  File "<frozen runpy>", line 98, in _run_module_c
+ode
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\Side_project\MeetChi\whisper_mla\train.
+py", line 25, in <module>
+    import torch
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\torch\__init__.py", line 280, in
+ <module>
+    _load_dll_libraries()
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\torch\__init__.py", line 263, in
+ _load_dll_libraries
+    raise err
+OSError: [WinError 1455] �����ɤӤp�A�L�k�����ާ@�C E
+rror loading "D:\Side_project\MeetChi\whisper_mla\
+.venv\Lib\site-packages\torch\lib\nvperf_host.dll"
+ or one of its dependencies.
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 122
+, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 131
+, in _main
+    prepare(preparation_data)
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 244
+, in prepare
+    _fixup_main_from_name(data['init_main_from_nam
+e'])
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\multiprocess\spawn.py", line 268
+, in _fixup_main_from_name
+    main_content = runpy.run_module(mod_name,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 226, in run_module
+  File "<frozen runpy>", line 98, in _run_module_c
+ode
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\Side_project\MeetChi\whisper_mla\train.
+py", line 25, in <module>
+    import torch
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\torch\__init__.py", line 280, in
+ <module>
+    _load_dll_libraries()
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\torch\__init__.py", line 263, in
+ _load_dll_libraries
+    raise err
+OSError: [WinError 1455] �����ɤӤp�A�L�k�����ާ@�C E
+rror loading "D:\Side_project\MeetChi\whisper_mla\
+.venv\Lib\site-packages\torch\lib\nvrtc64_120_0.al
+t.dll" or one of its dependencies.
+
+Filter (num_proc=4):   0%|          | 0/208993 [00
+:33<?, ? examples/s]
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_
+as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\Side_project\MeetChi\whisper_mla\train.
+py", line 336, in <module>
+    train(args.model_path, args.output_dir, mla_co
+nfig)
+  File "D:\Side_project\MeetChi\whisper_mla\train.
+py", line 213, in train
+    combined = combined.filter(has_valid_text, num
+_proc=4)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\datasets\arrow_dataset.py", line
+ 557, in wrapper
+    out: Union["Dataset", "DatasetDict"] = func(se
+lf, *args, **kwargs)
+                                           ^^^^^^^
+^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\datasets\fingerprint.py", line 4
+42, in wrapper
+    out = func(dataset, *args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\datasets\arrow_dataset.py", line
+ 3746, in filter
+    indices = self.map(
+              ^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\datasets\arrow_dataset.py", line
+ 557, in wrapper
+    out: Union["Dataset", "DatasetDict"] = func(se
+lf, *args, **kwargs)
+                                           ^^^^^^^
+^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\datasets\arrow_dataset.py", line
+ 3171, in map
+    for rank, done, content in iflatmap_unordered(
+                               ^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\
+Lib\site-packages\datasets\utils\py_utils.py", lin
+e 721, in iflatmap_unordered
+    raise RuntimeError(
+RuntimeError: One of the subprocesses has abruptly
+ died during map operation.To debug the error, dis
+able multiprocessing.

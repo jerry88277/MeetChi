@@ -71,7 +71,8 @@ def verify_cloud_tasks_request(
 def handle_transcription_task(
     request: TranscriptionTaskRequest,
     x_cloudtasks_queuename: Optional[str] = Header(None),
-    x_cloudtasks_taskname: Optional[str] = Header(None)
+    x_cloudtasks_taskname: Optional[str] = Header(None),
+    x_cloudtasks_taskretrycount: Optional[str] = Header(None)
 ):
     """
     HTTP handler for Cloud Tasks transcription queue.
@@ -85,8 +86,13 @@ def handle_transcription_task(
     Cloud Tasks manages retries and timeout (up to 30 min).
     Cloud Run Service timeout is set to 3600s.
     """
+    retry_count = int(x_cloudtasks_taskretrycount) if x_cloudtasks_taskretrycount else 0
+    max_retries = 3  # Cloud Tasks default; suppress notification on first failures
+    is_cloud_tasks = bool(x_cloudtasks_queuename or x_cloudtasks_taskname)
+    suppress_fail_notify = is_cloud_tasks and retry_count < max_retries - 1
+
     logger.info(f"Received transcription task for meeting {request.meeting_id}")
-    logger.info(f"Cloud Tasks headers: queue={x_cloudtasks_queuename}, task={x_cloudtasks_taskname}")
+    logger.info(f"Cloud Tasks headers: queue={x_cloudtasks_queuename}, task={x_cloudtasks_taskname}, retry={retry_count}")
     logger.info(f"Starting SYNCHRONOUS meeting processing for {request.meeting_id} (Template: {request.template_type})")
 
     try:
@@ -95,7 +101,8 @@ def handle_transcription_task(
             template_type=request.template_type,
             context=request.context or "",
             length=request.length or "",
-            style=request.style or ""
+            style=request.style or "",
+            suppress_fail_notification=suppress_fail_notify
         )
 
         if result.get("status") in ("completed", "accepted"):
@@ -114,20 +121,34 @@ def handle_transcription_task(
 def handle_summarization_task(
     request: SummarizationTaskRequest,
     x_cloudtasks_queuename: Optional[str] = Header(None),
-    x_cloudtasks_taskname: Optional[str] = Header(None)
+    x_cloudtasks_taskname: Optional[str] = Header(None),
+    x_cloudtasks_taskretrycount: Optional[str] = Header(None),
 ):
     """
     HTTP handler for Cloud Tasks summarization queue.
     Generates summary for already-transcribed meeting.
+    
+    Cloud Tasks sends X-CloudTasks-TaskRetryCount header (0-based).
+    When retries are available, we suppress Discord FAIL notifications
+    to avoid the confusing ❌→✅ double-notification pattern.
     """
-    logger.info(f"Received summarization task for meeting {request.meeting_id}")
+    retry_count = int(x_cloudtasks_taskretrycount) if x_cloudtasks_taskretrycount else 0
+    max_retries = 3  # Cloud Tasks default; suppress notification on first failures
+    is_cloud_tasks = bool(x_cloudtasks_queuename or x_cloudtasks_taskname)
+    suppress_fail_notify = is_cloud_tasks and retry_count < max_retries - 1
+    
+    logger.info(
+        f"Received summarization task for meeting {request.meeting_id} "
+        f"(retry={retry_count}, suppress_fail_notify={suppress_fail_notify})"
+    )
     
     try:
         result = generate_meeting_minutes(
             meeting_id=request.meeting_id,
             template_type=request.template_type,
             context=request.context or "",
-            skip_asr=True  # Segments already in DB via Webhook callback
+            skip_asr=True,  # Segments already in DB via Webhook callback
+            suppress_fail_notification=suppress_fail_notify
         )
         
         if result.get("status") == "completed":
@@ -135,6 +156,8 @@ def handle_summarization_task(
         else:
             raise HTTPException(status_code=500, detail=result.get("error", "Unknown error"))
             
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error processing summarization task: {e}")
         raise HTTPException(status_code=500, detail=str(e))
