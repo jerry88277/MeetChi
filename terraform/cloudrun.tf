@@ -188,7 +188,10 @@ resource "google_cloud_run_v2_service" "backend" {
 # Cloud Run - GPU ASR Service (L4 GPU)
 # ============================================
 # Replaces the previous "manage via gcloud CLI" workaround.
-# Provider hashicorp/google 5.x supports GPU node_selector via google-beta.
+# Provider hashicorp/google 5.x does NOT support template.node_selector;
+# GPU type (nvidia-l4) is set via gcloud/yaml on the live service and the
+# accelerator change is excluded from this resource's plan via
+# lifecycle.ignore_changes (covered by the broad annotations + client* ignore).
 #
 # IMPORTANT — first-time IaC adoption procedure:
 #   1) Verify live config matches the resource block below:
@@ -213,14 +216,13 @@ resource "google_cloud_run_v2_service" "gpu_asr" {
   provider     = google-beta
   name         = "meetchi-gpu-asr"
   location     = var.region
-  launch_stage = "BETA"
+  launch_stage = "GA"
 
   template {
     service_account = google_service_account.cloudrun.email
     timeout         = "3600s"
 
     scaling {
-      min_instance_count = 0
       max_instance_count = 1
     }
 
@@ -232,12 +234,14 @@ resource "google_cloud_run_v2_service" "gpu_asr" {
       "run.googleapis.com/gpu-zonal-redundancy-disabled" = "true"
     }
 
-    # Pin to nvidia-l4 (cheapest GPU available in asia-southeast1)
-    node_selector {
-      accelerator = "nvidia-l4"
-    }
+    # GPU accelerator (nvidia-l4) is configured via the live service and
+    # NOT manageable from hashicorp/google v5.x (no node_selector block in
+    # google_cloud_run_v2_service). Listed in lifecycle.ignore_changes so
+    # Terraform won't try to remove it on plan. To upgrade GPU type, do it
+    # via gcloud or upgrade provider to google v6+.
 
     containers {
+      name  = "meetchi-gpu-asr-1"
       image = var.gpu_asr_image
       ports {
         container_port = 8080
@@ -245,19 +249,15 @@ resource "google_cloud_run_v2_service" "gpu_asr" {
 
       resources {
         limits = {
-          cpu              = "8"
+          cpu              = "8000m"
           memory           = "32Gi"
           "nvidia.com/gpu" = "1"
         }
-        # GPU services need CPU always allocated (controlled via the
-        # template-level cpu-throttling annotation; do not duplicate here).
+        startup_cpu_boost = true
       }
 
-      env {
-        name  = "DIARIZATION_MODEL"
-        value = "community-1"
-      }
-
+      # Env order MUST match the live service to avoid spurious diffs
+      # (Terraform compares env blocks positionally).
       # HF tokens — sourced from Secret Manager. Two duplicate vars because
       # different libraries (huggingface_hub vs pyannote) read different names.
       env {
@@ -277,6 +277,10 @@ resource "google_cloud_run_v2_service" "gpu_asr" {
             version = "latest"
           }
         }
+      }
+      env {
+        name  = "DIARIZATION_MODEL"
+        value = "community-1"
       }
 
       volume_mounts {
@@ -322,11 +326,13 @@ resource "google_cloud_run_v2_service" "gpu_asr" {
 
   lifecycle {
     # Image lifecycle is owned by cloudbuild-gpu-asr.yaml + manual gcloud deploys.
-    # Annotations may include runtime-managed labels (deploy-version etc.) we
-    # don't want to fight with on every plan.
+    # Traffic split (pinned revision vs LATEST + community1 tag) is owned by
+    # the cloudbuild deploy step and gcloud — Terraform must not fight with it.
+    # Annotations may include runtime-managed labels (deploy-version etc.).
     ignore_changes = [
       template[0].containers[0].image,
       template[0].annotations,
+      traffic,
       client,
       client_version,
     ]
