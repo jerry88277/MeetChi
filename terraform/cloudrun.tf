@@ -185,13 +185,168 @@ resource "google_cloud_run_v2_service" "backend" {
 
 
 # ============================================
-# NOTE: meetchi-gpu-asr is managed directly via gcloud CLI
-# (not via Terraform) due to GPU node_selector provider compatibility.
-# Deployed with: gcloud run deploy meetchi-gpu-asr --image ...
+# Cloud Run - GPU ASR Service (L4 GPU)
 # ============================================
+# Replaces the previous "manage via gcloud CLI" workaround.
+# Provider hashicorp/google 5.x does NOT support template.node_selector;
+# GPU type (nvidia-l4) is set via gcloud/yaml on the live service and the
+# accelerator change is excluded from this resource's plan via
+# lifecycle.ignore_changes (covered by the broad annotations + client* ignore).
+#
+# IMPORTANT — first-time IaC adoption procedure:
+#   1) Verify live config matches the resource block below:
+#        gcloud run services describe meetchi-gpu-asr --region asia-southeast1
+#   2) Import the live service WITHOUT recreating it:
+#        terraform import google_cloud_run_v2_service.gpu_asr \
+#          projects/${PROJECT_ID}/locations/${REGION}/services/meetchi-gpu-asr
+#   3) Run `terraform plan` and verify it shows 0 changes for this resource.
+#      If it shows changes, ALIGN the HCL to the live config — do NOT apply
+#      changes blindly. GPU services have ~90s cold-start during recreation.
+#   4) Image tag is intentionally `lifecycle.ignore_changes` so that
+#      gcloud / cloudbuild deploys don't trigger Terraform drift. Image
+#      lifecycle is owned by cloudbuild-gpu-asr.yaml.
+#
+# Live config snapshot (2026-04-22, revision 00038):
+#   image: meetchi-gpu-asr:v15-community1
+#   memory 32Gi, cpu 8, gpu 1 (nvidia-l4)
+#   env: DIARIZATION_MODEL=community-1, HF_AUTH_TOKEN/HF_TOKEN (Secret Manager)
+#   volume: /mnt/gcs -> ${audio bucket} via GCS Fuse
+#   timeout 3600s, concurrency 1, min 0 max 1, CPU always allocated
+resource "google_cloud_run_v2_service" "gpu_asr" {
+  provider     = google-beta
+  name         = "meetchi-gpu-asr"
+  location     = var.region
+  launch_stage = "GA"
+
+  template {
+    service_account = google_service_account.cloudrun.email
+    timeout         = "3600s"
+
+    scaling {
+      max_instance_count = 1
+    }
+
+    # GPU services must keep CPU always allocated; throttling causes the
+    # accelerator driver context to die between requests.
+    annotations = {
+      "run.googleapis.com/cpu-throttling"                = "false"
+      "run.googleapis.com/startup-cpu-boost"             = "true"
+      "run.googleapis.com/gpu-zonal-redundancy-disabled" = "true"
+    }
+
+    # GPU accelerator (nvidia-l4) is configured via the live service and
+    # NOT manageable from hashicorp/google v5.x (no node_selector block in
+    # google_cloud_run_v2_service). Listed in lifecycle.ignore_changes so
+    # Terraform won't try to remove it on plan. To upgrade GPU type, do it
+    # via gcloud or upgrade provider to google v6+.
+
+    containers {
+      name  = "meetchi-gpu-asr-1"
+      image = var.gpu_asr_image
+      ports {
+        container_port = 8080
+      }
+
+      resources {
+        limits = {
+          cpu              = "8000m"
+          memory           = "32Gi"
+          "nvidia.com/gpu" = "1"
+        }
+        startup_cpu_boost = true
+      }
+
+      # Env order MUST match the live service to avoid spurious diffs
+      # (Terraform compares env blocks positionally).
+      # HF tokens — sourced from Secret Manager. Two duplicate vars because
+      # different libraries (huggingface_hub vs pyannote) read different names.
+      env {
+        name = "HF_AUTH_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.hf_token.secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name = "HF_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.hf_token.secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name  = "DIARIZATION_MODEL"
+        value = "community-1"
+      }
+
+      volume_mounts {
+        name       = "gcs-data"
+        mount_path = "/mnt/gcs"
+      }
+
+      startup_probe {
+        http_get {
+          path = "/health"
+          port = 8080
+        }
+        initial_delay_seconds = 30
+        period_seconds        = 20
+        timeout_seconds       = 10
+        failure_threshold     = 10
+      }
+
+      liveness_probe {
+        http_get {
+          path = "/health"
+          port = 8080
+        }
+        period_seconds    = 60
+        timeout_seconds   = 1
+        failure_threshold = 3
+      }
+    }
+
+    volumes {
+      name = "gcs-data"
+      gcs {
+        bucket    = google_storage_bucket.audio.name
+        read_only = false
+      }
+    }
+  }
+
+  traffic {
+    percent = 100
+    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+  }
+
+  lifecycle {
+    # Image lifecycle is owned by cloudbuild-gpu-asr.yaml + manual gcloud deploys.
+    # Traffic split (pinned revision vs LATEST + community1 tag) is owned by
+    # the cloudbuild deploy step and gcloud — Terraform must not fight with it.
+    # Annotations may include runtime-managed labels (deploy-version etc.).
+    ignore_changes = [
+      template[0].containers[0].image,
+      template[0].annotations,
+      traffic,
+      client,
+      client_version,
+    ]
+  }
+
+  depends_on = [
+    google_project_service.apis,
+    google_storage_bucket.audio,
+    google_secret_manager_secret_version.hf_token,
+  ]
+}
 
 resource "google_cloud_run_v2_service_iam_member" "gpu_asr_backend" {
-  name     = "meetchi-gpu-asr"
+  name     = google_cloud_run_v2_service.gpu_asr.name
   location = var.region
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.cloudrun.email}"
