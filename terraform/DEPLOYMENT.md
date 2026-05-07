@@ -51,6 +51,47 @@ terraform plan
 terraform apply
 ```
 
+### 4-bis. gpu-asr 由 gcloud → Terraform 接管（一次性）
+
+`meetchi-gpu-asr` 自 v15-community1 起改由 Terraform 管理（`cloudrun.tf`）。
+**第一次 apply 前**，必須先把線上既有服務 import 進 state，否則 plan 會嘗試
+重建並造成 ~90s GPU cold-start 中斷：
+
+```bash
+# 1. 對齊：抓線上實際配置
+gcloud run services describe meetchi-gpu-asr \
+  --region asia-southeast1 --format=export > /tmp/live-gpu-asr.yaml
+
+# 2. import 既有資源到 Terraform state
+terraform import google_cloud_run_v2_service.gpu_asr \
+  projects/${PROJECT_ID}/locations/asia-southeast1/services/meetchi-gpu-asr
+
+terraform import google_cloud_run_v2_service_iam_member.gpu_asr_backend \
+  projects/${PROJECT_ID}/locations/asia-southeast1/services/meetchi-gpu-asr \
+  roles/run.invoker \
+  serviceAccount:meetchi-cloudrun@${PROJECT_ID}.iam.gserviceaccount.com
+
+# 3. plan 必須是 0 changes 才可 apply；若 N changes，逐欄調整 HCL 直到對齊
+terraform plan -target=google_cloud_run_v2_service.gpu_asr
+```
+
+> 💡 image tag 已由 `lifecycle.ignore_changes` 排除；cloudbuild-gpu-asr.yaml
+> 仍是 image lifecycle 的擁有者，gcloud / cloudbuild 部署不會引發 drift。
+
+### 4-ter. HF Token 輪替
+
+線上 v15 之前的 revision 把 `HF_AUTH_TOKEN` 寫成明文 env var；新的 Terraform
+資源已改成 Secret Manager `meetchi-hf-token` 引用。**輪替程序**：
+
+```bash
+# 1. 到 https://huggingface.co/settings/tokens 撤銷舊 token、產生新 token
+# 2. 寫進 terraform.tfvars（或 -var）
+# 3. 套用 — 只更新 secret version，不動服務
+terraform apply -target=google_secret_manager_secret_version.hf_token
+
+# 4. gpu-asr 下次冷啟動會自動讀取最新版（version=latest）
+```
+
 ### 5. 建置 Docker 映像
 
 ```bash
