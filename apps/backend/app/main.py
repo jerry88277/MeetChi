@@ -23,7 +23,7 @@ import json
 import sys
 from logging.handlers import TimedRotatingFileHandler
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict
 import wave 
 import difflib # Import difflib for fuzzy matching
 import re
@@ -700,7 +700,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 # --- Re-declare Base if needed, or import from models.py ---
 # Assuming Base is already declared in models.py and imported via 'from app.models import Base, ...'
-from app.models import Base, Meeting, MeetingStatus, TranscriptSegment, Artifact, TaskStatus # Import all relevant models
+from app.models import Base, Meeting, MeetingStatus, TranscriptSegment, Artifact, TaskStatus, User, MeetingParticipant # Import all relevant models
 from app.vad import VADAudioBuffer
 
 from app.llm_utils import get_gemini_client, polish_text, generate_summary, GEMINI_MODEL
@@ -801,6 +801,137 @@ elif DATABASE_URL.startswith("sqlite"):
 
 Base.metadata.create_all(bind=engine)
 
+# Phase 8.1: Safe column migration for existing tables
+# create_all() doesn't add columns to existing tables in PostgreSQL
+if DATABASE_URL.startswith("postgresql"):
+    with engine.connect() as conn:
+        # Add missing columns if not exist
+        for col_name in ["speaker_mappings", "custom_prompt"]:
+            conn.execute(text(f"""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name='meetings' AND column_name='{col_name}'
+                    ) THEN
+                        ALTER TABLE meetings ADD COLUMN {col_name} TEXT;
+                    END IF;
+                END $$;
+            """))
+        conn.commit()
+
+# Phase RAG-AC: Safe-create access control tables (users, meeting_participants)
+# Alembic migration f7a9d3e1c5b2 handles this formally; this block is a safety net
+# in case the Cloud Run container starts before migration runs.
+if DATABASE_URL.startswith("postgresql"):
+    with engine.connect() as conn:
+        # Ensure pgvector is available
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+
+        # Ensure Enum types exist
+        conn.execute(text("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'participantrole') THEN
+                    CREATE TYPE participantrole AS ENUM ('owner', 'participant', 'viewer');
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'accesssource') THEN
+                    CREATE TYPE accesssource AS ENUM ('upload', 'participant', 'granted');
+                END IF;
+            END $$;
+        """))
+        conn.commit()
+        
+    # ALTER TYPE requires AUTOCOMMIT isolation level
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as autocommit_conn:
+        try:
+            autocommit_conn.execute(text("ALTER TYPE participantrole ADD VALUE IF NOT EXISTS 'owner';"))
+        except Exception:
+            pass
+        try:
+            autocommit_conn.execute(text("ALTER TYPE accesssource ADD VALUE IF NOT EXISTS 'upload';"))
+        except Exception:
+            pass
+
+    with engine.connect() as conn:
+        # users table
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS users (
+                id            VARCHAR(36)  PRIMARY KEY,
+                ad_upn        VARCHAR(255) NOT NULL UNIQUE,
+                display_name  VARCHAR(255),
+                department    VARCHAR(255),
+                is_admin      BOOLEAN      NOT NULL DEFAULT FALSE,
+                created_at    TIMESTAMP    NOT NULL DEFAULT NOW(),
+                last_login_at TIMESTAMP
+            );
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_users_ad_upn ON users (ad_upn);"
+        ))
+
+        # owner_upn column in meetings
+        conn.execute(text("""
+            DO $$ BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'meetings' AND column_name = 'owner_upn'
+                ) THEN
+                    ALTER TABLE meetings ADD COLUMN owner_upn VARCHAR(255);
+                END IF;
+            END $$;
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_meetings_owner_upn ON meetings (owner_upn);"
+        ))
+
+        # meeting_participants table
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS meeting_participants (
+                id             VARCHAR(36)  PRIMARY KEY,
+                meeting_id     VARCHAR(36)  NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                user_upn       VARCHAR(255) NOT NULL REFERENCES users(ad_upn) ON DELETE CASCADE,
+                role           participantrole NOT NULL DEFAULT 'participant',
+                access_source  accesssource    NOT NULL DEFAULT 'participant',
+                granted_at     TIMESTAMP    NOT NULL DEFAULT NOW(),
+                granted_by_upn VARCHAR(255) REFERENCES users(ad_upn),
+                CONSTRAINT uq_meeting_participant UNIQUE (meeting_id, user_upn)
+            );
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_mp_user_upn    ON meeting_participants (user_upn);"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_mp_meeting_id  ON meeting_participants (meeting_id);"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_mp_upn_meeting ON meeting_participants (user_upn, meeting_id);"
+        ))
+        conn.commit()
+        
+        # BACKFILL: Find meetings with no participants and assign them to 'test@company.com'
+        conn.execute(text("""
+            INSERT INTO users (id, ad_upn, display_name, is_admin)
+            VALUES (:id, 'test@company.com', 'Test User', true)
+            ON CONFLICT (ad_upn) DO NOTHING;
+        """), {"id": str(uuid.uuid4())})
+        
+        conn.execute(text("""
+            UPDATE meetings SET owner_upn = 'test@company.com'
+            WHERE owner_upn IS NULL;
+        """))
+        
+        conn.execute(text("""
+            INSERT INTO meeting_participants (id, meeting_id, user_upn, role, access_source, granted_at)
+            SELECT gen_random_uuid()::varchar(36), m.id, 'test@company.com', 'owner', 'upload', NOW()
+            FROM meetings m
+            WHERE NOT EXISTS (
+                SELECT 1 FROM meeting_participants mp WHERE mp.meeting_id = m.id
+            );
+        """))
+        conn.commit()
+        
+    app_logger.info("[Startup] RAG access control tables verified/created and orphan meetings backfilled.")
+
 
 from app.tasks import generate_meeting_minutes  # Now a direct function (not Celery task)
 from app.routes import api_router  # Import routes
@@ -832,11 +963,28 @@ app.add_middleware(
 # Include API routes
 app.include_router(api_router)
 
-# Health check endpoint for Cloud Run
+# Health check endpoint for Cloud Run probes
+# CRITICAL: Must verify DB connectivity — a static "healthy" response
+# masked the 2026-03-12 env var wipe incident for hours.
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for Cloud Run probes"""
-    return {"status": "healthy", "service": "meetchi-backend"}
+    """Health check endpoint for Cloud Run probes.
+    
+    Validates DB connectivity via SELECT 1. Returns 503 if DB unreachable,
+    which causes Cloud Run startup/liveness probes to fail and prevents
+    traffic routing to a broken revision.
+    """
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+        return {"status": "healthy", "service": "meetchi-backend"}
+    except Exception as e:
+        app_logger.error(f"Health check FAILED — DB unreachable: {e}")
+        return JSONResponse(
+            content={"status": "unhealthy", "service": "meetchi-backend", "reason": "db_unreachable"},
+            status_code=503
+        )
 
 def get_db():
     db = SessionLocal()
@@ -884,6 +1032,7 @@ class MeetingRead(BaseModel):
     transcript_raw: Optional[str]
     transcript_polished: Optional[str]
     summary_json: Optional[str]
+    speaker_mappings: Optional[str] = None  # Phase 8.1.3
     
     transcript_segments: List[TranscriptSegmentRead] = [] # Include segments for detail view
 
@@ -894,6 +1043,9 @@ class MeetingCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     language: str = Field("zh", min_length=2, max_length=10)
     template_name: str = Field("general", min_length=1, max_length=50)
+    duration: Optional[float] = Field(None, description="Audio duration in seconds")
+    custom_context: Optional[str] = Field(None, description="Custom context or glossary for ASR and LLM")
+    user_upn: Optional[str] = Field(None, description="UPN of the user creating the meeting")
 
 class SummarizeRequestModel(BaseModel):
     transcript: str
@@ -913,12 +1065,42 @@ async def create_meeting(meeting_data: MeetingCreate, db: Session = Depends(get_
     """
     Creates a new meeting entry.
     """
+    upn = meeting_data.user_upn or 'test@company.com'
+    
+    # 1. Ensure user exists
+    user_obj = db.query(User).filter(User.ad_upn == upn).first()
+    if not user_obj:
+        user_obj = User(
+            id=str(uuid.uuid4()),
+            ad_upn=upn,
+            display_name=upn.split('@')[0],
+            is_admin=True if upn == 'test@company.com' else False
+        )
+        db.add(user_obj)
+        db.flush()
+        
+    # 2. Create Meeting
     db_meeting = Meeting(
         title=meeting_data.title,
         language=meeting_data.language,
-        template_name=meeting_data.template_name
+        template_name=meeting_data.template_name,
+        duration=meeting_data.duration,
+        custom_prompt=meeting_data.custom_context,
+        owner_upn=upn
     )
     db.add(db_meeting)
+    db.flush()
+    
+    # 3. Create Participant binding
+    db_participant = MeetingParticipant(
+        id=str(uuid.uuid4()),
+        meeting_id=db_meeting.id,
+        user_upn=upn,
+        role='owner',
+        access_source='upload'
+    )
+    db.add(db_participant)
+    
     db.commit()
     db.refresh(db_meeting) # Refresh to get ID and other defaults
     return MeetingRead.from_orm(db_meeting) # Return Pydantic model
@@ -1011,7 +1193,7 @@ async def regenerate_summary(
 ):
     """
     Regenerate summary for an existing meeting.
-    Clears existing summary and triggers re-generation.
+    Phase D: Saves existing summary as a version before re-generation.
     """
     # Check if meeting exists
     meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
@@ -1029,6 +1211,19 @@ async def regenerate_summary(
                 status_code=400, 
                 detail="Meeting has no transcript content to summarize"
             )
+    
+    # Phase D: Save existing summary as a version before overwriting
+    if meeting.summary_json:
+        from app.models import SummaryVersion
+        import uuid as _uuid
+        version = SummaryVersion(
+            id=str(_uuid.uuid4()),
+            meeting_id=meeting_id,
+            template_name=meeting.template_name or "general",
+            summary_json=meeting.summary_json,
+        )
+        db.add(version)
+        app_logger.info(f"Saved summary version for meeting {meeting_id} (template: {meeting.template_name})")
     
     # Clear existing summary and reset status to processing
     meeting.summary_json = None
@@ -1057,6 +1252,58 @@ async def regenerate_summary(
         },
         status_code=status.HTTP_200_OK
     )
+
+@app.get("/api/v1/meetings/{meeting_id}/summary-versions")
+async def list_summary_versions(meeting_id: str, db: Session = Depends(get_db)):
+    """Phase D: List all saved summary versions for a meeting."""
+    from app.models import SummaryVersion
+    versions = db.query(SummaryVersion).filter(
+        SummaryVersion.meeting_id == meeting_id
+    ).order_by(SummaryVersion.created_at.desc()).all()
+    
+    return [
+        {
+            "id": v.id,
+            "template_name": v.template_name,
+            "summary_json": v.summary_json,
+            "created_at": v.created_at.isoformat() if v.created_at else None,
+        }
+        for v in versions
+    ]
+
+@app.post("/api/v1/meetings/{meeting_id}/restore-summary-version/{version_id}")
+async def restore_summary_version(meeting_id: str, version_id: str, db: Session = Depends(get_db)):
+    """Phase D: Restore a specific summary version as the current summary."""
+    from app.models import SummaryVersion
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    version = db.query(SummaryVersion).filter(
+        SummaryVersion.id == version_id,
+        SummaryVersion.meeting_id == meeting_id,
+    ).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+    
+    # Save current as a version first
+    if meeting.summary_json:
+        import uuid as _uuid
+        current_version = SummaryVersion(
+            id=str(_uuid.uuid4()),
+            meeting_id=meeting_id,
+            template_name=meeting.template_name or "general",
+            summary_json=meeting.summary_json,
+        )
+        db.add(current_version)
+    
+    # Restore the selected version
+    meeting.summary_json = version.summary_json
+    meeting.template_name = version.template_name
+    meeting.updated_at = datetime.utcnow()
+    db.commit()
+    
+    return {"message": "Summary restored", "template_name": version.template_name}
 
 CORRECTIONS_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "corrections.json")
 
@@ -1104,6 +1351,36 @@ async def delete_meeting(meeting_id: str, db: Session = Depends(get_db)):
     db.commit()
     
     return None
+
+
+# --- Phase 8.1.3: Speaker Mappings API ---
+class SpeakerMappingEntry(BaseModel):
+    display_name: str
+    role: str
+    color: str
+
+class SpeakerMappingUpdate(BaseModel):
+    mappings: Dict[str, SpeakerMappingEntry]  # { "Speaker_0": { display_name, role, color } }
+
+@app.patch("/api/v1/meetings/{meeting_id}/speakers")
+async def update_speaker_mappings(
+    meeting_id: str,
+    update: SpeakerMappingUpdate,
+    db: Session = Depends(get_db)
+):
+    """Update speaker label mappings for a meeting (Phase 8.1.3)."""
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    meeting.speaker_mappings = json.dumps(
+        {k: v.dict() for k, v in update.mappings.items()},
+        ensure_ascii=False
+    )
+    meeting.updated_at = datetime.utcnow()
+    db.commit()
+    
+    return {"message": "Speaker mappings updated", "meeting_id": meeting_id}
 
 @app.post("/api/v1/summarize", response_model=SummarizeResponseModel)
 async def summarize_full_transcript(request_data: SummarizeRequestModel):
@@ -1233,12 +1510,10 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
     await websocket.accept()
     app_logger.info(f"WebSocket client {websocket.client.host}:{websocket.client.port} connected for transcription.")
 
-    # --- Audio Recording Setup (GCS Upload) ---
-    GCS_BUCKET_NAME = os.getenv("GCS_BUCKET", "")
-    audio_filename = f"{uuid.uuid4()}.wav"
-    audio_file_path = os.path.join(tempfile.gettempdir(), audio_filename)
-    wav_file = None 
+    # Audio is managed by frontend IndexedDB and uploaded via REST API.
+    # The WebSocket is strictly stateless for live transcription.
     
+
     # Store meeting_id received from frontend for associating audio
     current_meeting_id: Optional[str] = None
 
@@ -1271,12 +1546,11 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
     # Custom Initial Prompt from Frontend
     custom_initial_prompt = ""
     
-    
-    first_audio_time = None # Track time of first audio packet
-    
     operation_mode = "transcription" # Default mode
     script_aligner = MultiSpeakerScriptAligner() # Initialize Multi-Speaker Aligner
-    wav_chunks_received = 0  # Diagnostic counter for audio chunks
+
+    first_audio_time = None
+    current_meeting_id = None
 
     # --- WebSocket Heartbeat (prevents Cloud Run proxy idle timeout ~60s) ---
     WS_PING_INTERVAL = 25  # Send ping every 25s of no activity
@@ -1353,17 +1627,6 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
                     first_audio_time = time.time()
                     app_logger.info("First audio packet received. Starting forced speech window.")
                 
-                # --- Audio File Writing ---
-                if wav_file is None:
-                    wav_file = wave.open(audio_file_path, 'wb')
-                    wav_file.setnchannels(CHANNELS)
-                    wav_file.setsampwidth(SAMPLE_WIDTH)
-                    wav_file.setframerate(RATE)
-                    app_logger.info(f"Opened WAV file for writing: {audio_file_path}")
-                wav_file.writeframes(data) # Write raw bytes
-                wav_chunks_received += 1
-                # --- End Audio File Writing ---
-
             else:
                 continue # Should not happen if receive() returns correctly
             
@@ -1522,80 +1785,20 @@ async def websocket_transcribe(websocket: WebSocket, db: Session = Depends(get_d
         app_logger.error(f"WebSocket error: {e}", exc_info=True)
     finally:
         # Cancel heartbeat task
-        heartbeat_task.cancel()
-        if wav_file:
-            wav_file.close()
-            app_logger.info(f"Closed WAV file: {audio_file_path} ({wav_chunks_received} chunks received)")
-            
-            # Upload to GCS
-            gcs_url = ""
-            if GCS_BUCKET_NAME:
-                try:
-                    client = gcs_storage.Client()
-                    bucket = client.bucket(GCS_BUCKET_NAME)
-                    blob = bucket.blob(f"audio/{audio_filename}")
-                    blob.upload_from_filename(audio_file_path)
-                    gcs_url = f"gs://{GCS_BUCKET_NAME}/audio/{audio_filename}"
-                    app_logger.info(f"Uploaded audio to GCS: {gcs_url}")
-                except Exception as e:
-                    app_logger.error(f"Failed to upload audio to GCS: {e}")
-                    gcs_url = audio_file_path  # Fallback to local path
-                finally:
-                    # Clean up temp file
-                    if os.path.exists(audio_file_path):
-                        os.remove(audio_file_path)
-            else:
-                app_logger.warning("GCS_BUCKET not set, audio saved locally only")
-                gcs_url = audio_file_path
-            
-            # Update Meeting's audio_url
-            if current_meeting_id:
+        if heartbeat_task:
+            heartbeat_task.cancel()
+        
+        # Update Meeting's duration stat
+        if current_meeting_id:
+            try:
                 meeting_to_update = db.query(Meeting).filter(Meeting.id == current_meeting_id).first()
                 if meeting_to_update:
-                    meeting_to_update.audio_url = gcs_url
                     # Calculate and store recording duration
                     if first_audio_time is not None:
                         meeting_to_update.duration = time.time() - first_audio_time
-                        app_logger.info(f"Meeting {current_meeting_id} duration: {meeting_to_update.duration:.1f}s")
-                    # Mark meeting as completed (Gemini realtime transcript available)
-                    meeting_to_update.status = MeetingStatus.COMPLETED
+                        app_logger.info(f"Meeting {current_meeting_id} live duration updated: {meeting_to_update.duration:.1f}s")
                     db.commit()
-                    app_logger.info(f"Updated meeting {current_meeting_id} with audio_url: {gcs_url}, status: COMPLETED")
-                    
-                    # Plan B (Dual Service): Trigger GPU ASR Service via HTTP
-                    # CPU Service → HTTP POST → GPU Service (/asr/refine)
-                    # The user already has the Gemini realtime transcript available
-                    gpu_asr_url = os.getenv("GPU_ASR_SERVICE_URL")
-                    if gpu_asr_url:
-                        try:
-                            # Get ID token for service-to-service auth
-                            auth_req = google_auth_requests.Request()
-                            id_token = google_id_token.fetch_id_token(auth_req, gpu_asr_url)
-
-                            async def _trigger_gpu_asr():
-                                try:
-                                    async with httpx.AsyncClient(timeout=30.0) as client:
-                                        resp = await client.post(
-                                            f"{gpu_asr_url}/asr/refine",
-                                            json={
-                                                "meeting_id": current_meeting_id,
-                                                "audio_url": gcs_url,
-                                                "language": source_lang or "zh",
-                                            },
-                                            headers={"Authorization": f"Bearer {id_token}"},
-                                        )
-                                        if resp.status_code == 200:
-                                            app_logger.info(f"[Plan B] GPU ASR triggered: {resp.json()}")
-                                        else:
-                                            app_logger.warning(f"[Plan B] GPU ASR responded {resp.status_code}: {resp.text}")
-                                except Exception as e:
-                                    app_logger.warning(f"[Plan B] GPU ASR HTTP call failed: {e}")
-
-                            # Fire-and-forget: don't block WebSocket cleanup
-                            asyncio.ensure_future(_trigger_gpu_asr())
-                            app_logger.info(f"[Plan B] GPU ASR request dispatched for {current_meeting_id}")
-                        except Exception as e:
-                            app_logger.warning(f"[Plan B] Failed to trigger GPU ASR: {e}")
-                            # Non-fatal: Gemini transcript is still available
-                    else:
-                        app_logger.info("[Plan B] GPU_ASR_SERVICE_URL not set, keeping Gemini transcript only")
+            except Exception as e:
+                app_logger.error(f"Error updating meeting state on disconnect: {e}")
+        
+        app_logger.info("WebSocket disconnect cleanup finished.")

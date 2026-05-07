@@ -1,0 +1,13 @@
+{
+    "model": "mla",
+    "vad": "off",
+    "audio": "GCP_app_test_audio/Hermes Agent 完整使用教程_1080p.mp4",
+    "duration_sec": 0,
+    "load_time_sec": 0,
+    "infer_time_sec": 0,
+    "rtf": 0,
+    "base_vram_mb": 0,
+    "peak_vram_mb": 0,
+    "vram_delta_mb": 0,
+    "text_snippet": "Error: cannot import name 'load_audio' from 'whisper_mla.inference' (D:\\Side_project\\MeetChi\\whisper..."
+}

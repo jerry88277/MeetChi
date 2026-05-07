@@ -3,15 +3,16 @@
 import React from 'react';
 import { signOut } from 'next-auth/react';
 import {
-    Mic,
     FileText,
     Settings,
     X,
     LogOut,
     Shield,
     LayoutTemplate,
+    MessageSquare,
 } from 'lucide-react';
 import { API_BASE_URL } from '@/lib/api';
+import { ThemeToggle } from './ThemeToggle';
 
 interface SidebarProps {
     activeTab: string;
@@ -28,8 +29,8 @@ interface SidebarProps {
 
 export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen, isConnected, user }: SidebarProps) => {
     const menuItems = [
-        { id: 'record', icon: Mic, label: '開始錄音', primary: true },
-        { id: 'dashboard', icon: FileText, label: '所有會議' },
+        { id: 'dashboard', icon: FileText, label: '所有會議', primary: true },
+        { id: 'rag', icon: MessageSquare, label: '跨會議知識庫' },
         { id: 'templates', icon: LayoutTemplate, label: '模板管理' },
         { id: 'admin', icon: Shield, label: '管理' },
         { id: 'settings', icon: Settings, label: '系統設定' },
@@ -99,11 +100,12 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen
                         </div>
                         <button
                             onClick={() => signOut({ callbackUrl: '/login' })}
-                            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-white/50 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                            className="w-full flex items-center justify-center gap-2 px-3 py-2 mb-2 text-sm text-white/50 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
                         >
                             <LogOut size={16} />
                             <span>登出</span>
                         </button>
+                        <ThemeToggle />
                     </div>
                 )}
 

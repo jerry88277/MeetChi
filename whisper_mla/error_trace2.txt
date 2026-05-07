@@ -1,0 +1,114 @@
+2026-04-08 10:58:39,566 - INFO - Loading Whisper-MLA model for fine-tuning...
+2026-04-08 10:58:39,571 - INFO - Loading Whisper-MLA from .\whisper_mla\breeze-asr-mla
+2026-04-08 10:58:39,571 - INFO -   d_kp=80, d_kv=160, compression=9.4%
+
+Loading weights:   0%|          | 0/1259 [00:00<?, ?it/s]
+Loading weights:   6%|▌         | 70/1259 [00:00<00:01, 686.32it/s]
+Loading weights:  11%|█         | 139/1259 [00:00<00:01, 644.19it/s]
+Loading weights:  16%|█▌        | 204/1259 [00:00<00:01, 602.24it/s]
+Loading weights:  21%|██▏       | 269/1259 [00:00<00:01, 606.86it/s]
+Loading weights:  27%|██▋       | 341/1259 [00:00<00:01, 642.49it/s]
+Loading weights:  33%|███▎      | 412/1259 [00:00<00:01, 663.44it/s]
+Loading weights:  38%|███▊      | 479/1259 [00:00<00:01, 653.74it/s]
+Loading weights:  44%|████▍     | 552/1259 [00:00<00:01, 677.21it/s]
+Loading weights:  49%|████▉     | 620/1259 [00:00<00:01, 622.34it/s]
+Loading weights:  54%|█████▍    | 684/1259 [00:01<00:01, 499.33it/s]
+Loading weights:  59%|█████▊    | 739/1259 [00:01<00:01, 370.24it/s]
+Loading weights:  62%|██████▏   | 784/1259 [00:01<00:01, 249.73it/s]
+Loading weights:  65%|██████▌   | 819/1259 [00:01<00:01, 250.74it/s]
+Loading weights:  68%|██████▊   | 851/1259 [00:02<00:01, 243.23it/s]
+Loading weights:  70%|██████▉   | 880/1259 [00:02<00:01, 249.42it/s]
+Loading weights:  72%|███████▏  | 909/1259 [00:02<00:01, 255.30it/s]
+Loading weights:  75%|███████▍  | 938/1259 [00:02<00:01, 257.31it/s]
+Loading weights:  77%|███████▋  | 966/1259 [00:02<00:01, 257.78it/s]
+Loading weights:  79%|███████▉  | 994/1259 [00:02<00:01, 262.42it/s]
+Loading weights:  81%|████████  | 1022/1259 [00:02<00:00, 260.67it/s]
+Loading weights:  83%|████████▎ | 1051/1259 [00:02<00:00, 260.61it/s]
+Loading weights:  86%|████████▌ | 1078/1259 [00:02<00:00, 260.78it/s]
+Loading weights:  88%|████████▊ | 1111/1259 [00:03<00:00, 273.06it/s]
+Loading weights:  91%|█████████ | 1141/1259 [00:03<00:00, 277.02it/s]
+Loading weights:  93%|█████████▎| 1169/1259 [00:03<00:00, 272.29it/s]
+Loading weights:  95%|█████████▌| 1201/1259 [00:03<00:00, 274.07it/s]
+Loading weights:  98%|█████████▊| 1231/1259 [00:03<00:00, 275.40it/s]
+Loading weights: 100%|██████████| 1259/1259 [00:03<00:00, 355.45it/s]
+2026-04-08 10:58:47,473 - INFO - Whisper-MLA model loaded successfully (cuda, torch.float32)
+2026-04-08 10:58:48,572 - INFO - Loading AISHELL-1 (Offline Parquets)...
+2026-04-08 10:58:49,793 - INFO -   AISHELL-1: 120098 samples
+2026-04-08 10:58:49,796 - INFO - Loading LibriSpeech (Offline Parquets)...
+2026-04-08 10:58:49,865 - WARNING - Failed to load LibriSpeech: The directory at D:/Side_project/MeetChi/whisper_mla/data/librispeech_train100/clean/train.100 doesn't contain any data files
+2026-04-08 10:58:49,866 - INFO - Loading CommonVoice17 zh-TW (Offline Parquets)...
+2026-04-08 10:58:49,906 - WARNING - Failed to load CV17-zh-TW (skipping for offline): The directory at D:/Side_project/MeetChi/whisper_mla/data/cv17_zhtw doesn't contain any data files
+2026-04-08 10:58:49,907 - INFO - Loading NTUML2021 (Offline Parquets)...
+2026-04-08 10:58:50,311 - INFO -   NTUML2021: 17779 × 5 = 88895 samples
+2026-04-08 10:58:50,314 - INFO - Dataset composition:
+2026-04-08 10:58:50,315 - INFO -   aishell1: 120098 (57.5%)
+2026-04-08 10:58:50,315 - INFO -   ntuml2021: 88895 (42.5%)
+
+Map (num_proc=4):   0%|          | 0/208993 [00:00<?, ? examples/s]
+Map (num_proc=4):   0%|          | 0/208993 [00:26<?, ? examples/s]
+Map (num_proc=4):   0%|          | 0/208993 [00:26<?, ? examples/s]
+Map (num_proc=4):   0%|          | 0/208993 [00:28<?, ? examples/s]
+multiprocess.pool.RemoteTraceback: 
+"""
+Traceback (most recent call last):
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\multiprocess\pool.py", line 125, in worker
+    result = (True, func(*args, **kwds))
+                    ^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\datasets\utils\py_utils.py", line 585, in _write_generator_to_queue
+    for i, result in enumerate(func(**kwargs)):
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\datasets\arrow_dataset.py", line 3972, in _map_single
+    for i, example in iter_outputs(shard_iterable):
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\datasets\arrow_dataset.py", line 3950, in iter_outputs
+    yield i, apply_function(example, i, offset=offset)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\datasets\arrow_dataset.py", line 3871, in apply_function
+    processed_inputs = function(*fn_args, *additional_args, **fn_kwargs)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\train.py", line 118, in prepare_dataset
+    audio = batch["audio"]
+            ~~~~~^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\datasets\formatting\formatting.py", line 285, in __getitem__
+    value = self.format(key)
+            ^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\datasets\formatting\formatting.py", line 380, in format
+    return self.formatter.format_column(self.pa_table.select([key]))[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\datasets\formatting\formatting.py", line 465, in format_column
+    column = self.python_features_decoder.decode_column(column, pa_table.column_names[0])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\datasets\formatting\formatting.py", line 228, in decode_column
+    self.features.decode_column(column, column_name, token_per_repo_id=self.token_per_repo_id)
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\datasets\features\features.py", line 2228, in decode_column
+    decode_nested_example(self[column_name], value, token_per_repo_id=token_per_repo_id)
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\datasets\features\features.py", line 1508, in decode_nested_example
+    return schema.decode_example(obj, token_per_repo_id=token_per_repo_id) if obj is not None else None
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\datasets\features\audio.py", line 186, in decode_example
+    raise ImportError("To support decoding audio data, please install 'torchcodec'.")
+ImportError: To support decoding audio data, please install 'torchcodec'.
+"""
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\Side_project\MeetChi\whisper_mla\train.py", line 318, in <module>
+    train(args.model_path, args.output_dir, mla_config)
+  File "D:\Side_project\MeetChi\whisper_mla\train.py", line 199, in train
+    combined = combined.map(
+               ^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\datasets\arrow_dataset.py", line 574, in wrapper
+    out: Union["Dataset", "DatasetDict"] = func(self, *args, **kwargs)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\datasets\arrow_dataset.py", line 3623, in map
+    for rank, done, content in iflatmap_unordered(
+                               ^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\datasets\utils\py_utils.py", line 624, in iflatmap_unordered
+    [async_result.get(timeout=0.05) for async_result in async_results]
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\multiprocess\pool.py", line 774, in get
+    raise self._value
+ImportError: To support decoding audio data, please install 'torchcodec'.

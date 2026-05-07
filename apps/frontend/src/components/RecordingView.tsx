@@ -7,9 +7,12 @@ import {
     Loader2,
     AlertCircle,
     Square,
-    Volume2
+    Volume2,
+    UploadCloud,
+    Shield
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { set, get, del, keys } from 'idb-keyval';
 
 interface TranscriptEntry {
     id: string;
@@ -34,11 +37,15 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
     const [wsStatus, setWsStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [backendReady, setBackendReady] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const [customContext, setCustomContext] = useState('');
 
     const wsRef = useRef<WebSocket | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
     const processorRef = useRef<ScriptProcessorNode | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const transcriptEndRef = useRef<HTMLDivElement>(null);
@@ -120,6 +127,19 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
             // 3. Setup ScriptProcessor for PCM extraction
             const processor = audioContext.createScriptProcessor(4096, 1, 1);
             processorRef.current = processor;
+
+            // 3.5 Setup MediaRecorder for local full-quality backup
+            audioChunksRef.current = [];
+            let options = { mimeType: 'audio/webm;codecs=opus' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options = { mimeType: 'audio/webm' };
+            }
+            const mediaRecorder = new MediaRecorder(stream, options);
+            mediaRecorderRef.current = mediaRecorder;
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) audioChunksRef.current.push(e.data);
+            };
+            mediaRecorder.start(1000); // accumulate chunks every 1s
 
             // 4. Connect WebSocket
             const wsUrl = `${api.getWebSocketUrl()}/ws/transcribe`;
@@ -210,7 +230,7 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
                     source_lang: 'zh',
                     target_lang: 'en',
                     mode: 'transcription',
-                    initial_prompt: '',
+                    initial_prompt: customContext,
                 }));
             };
 
@@ -344,10 +364,6 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
             await audioContextRef.current.close();
             audioContextRef.current = null;
         }
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(t => t.stop());
-            streamRef.current = null;
-        }
 
         // Stop Web Speech API
         if (recognitionRef.current) {
@@ -356,7 +372,7 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
         }
         isRecordingRef.current = false;
 
-        // Close WebSocket (triggers backend WAV save)
+        // Close WebSocket (stateless backend will clean up)
         if (wsRef.current) {
             wsRef.current.close();
             wsRef.current = null;
@@ -365,14 +381,59 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
         setIsRecording(false);
         setVolumeLevel(0);
 
-        // Trigger summary generation & navigate to detail
-        if (meetingId) {
-            try {
-                await api.regenerateSummary(meetingId, 'general');
-            } catch (e) {
-                console.error('Failed to trigger summary:', e);
+        // Handle MediaRecorder completion, Upload and UI transition
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            setIsUploading(true);
+            mediaRecorderRef.current.onstop = async () => {
+                const blob = new Blob(audioChunksRef.current, { type: mediaRecorderRef.current?.mimeType || 'audio/webm' });
+                
+                if (streamRef.current) {
+                    streamRef.current.getTracks().forEach(t => t.stop());
+                    streamRef.current = null;
+                }
+                
+                if (meetingId) {
+                    try {
+                        // Phase 1: Backup locally
+                        await set(`meeting_audio_${meetingId}`, blob);
+                        console.log(`[MeetChi] Audio saved locally to IDB (meeting_audio_${meetingId})`);
+                        
+                        // Phase 2: Upload to GCS
+                        const file = new File([blob], 'audio.webm', { type: blob.type });
+                        const { uploadUrl } = await api.getUploadUrl(meetingId, 'audio.webm', blob.type);
+                        await api.uploadToGcs(uploadUrl, file);
+                        console.log(`[MeetChi] Audio uploaded safely to GCS`);
+                        
+                        // Phase 3: Trigger Background Summary Task
+                        await api.regenerateSummary(meetingId, 'general', customContext);
+                        console.log(`[MeetChi] Background summary task triggered`);
+                        
+                        // Cleanup
+                        await del(`meeting_audio_${meetingId}`);
+                        console.log(`[MeetChi] Local audio backup cleared`);
+                        
+                    } catch (e) {
+                        console.error('[MeetChi] Upload failed:', e);
+                        // We intentionally don't clear the `meeting_audio_${meetingId}` in IDB so Crash Recovery can find it.
+                        setErrorMsg('上傳過程中發生錯誤，將為您保留本地備份，稍後可於 Dashboard 重試。');
+                    } finally {
+                        setIsUploading(false);
+                        onFinish(meetingId);
+                    }
+                } else {
+                    setIsUploading(false);
+                    if (meetingId) onFinish(meetingId);
+                }
+            };
+            mediaRecorderRef.current.stop();
+        } else {
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(t => t.stop());
+                streamRef.current = null;
             }
-            onFinish(meetingId);
+            if (meetingId) {
+                onFinish(meetingId);
+            }
         }
     };
 
@@ -394,7 +455,16 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
     const currentPartial = transcriptEntries.find(e => e.type === 'partial');
 
     return (
-        <div className="h-full flex flex-col bg-white">
+        <div className="h-full flex flex-col bg-white relative">
+            {/* Overlay during upload */}
+            {isUploading && (
+                <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+                    <Loader2 className="w-12 h-12 text-indigo-600 animate-spin mb-4" />
+                    <h3 className="text-xl font-bold text-slate-800">音檔安穩上傳中...</h3>
+                    <p className="text-slate-500 mt-2">保障您的會議紀錄不遺失，請勿關閉視窗</p>
+                </div>
+            )}
+
             {/* Header */}
             <div className="border-b border-slate-200 px-6 py-4 flex items-center gap-4 bg-white sticky top-0 z-10">
                 <button onClick={() => { if (isRecording) { stopRecording(); } else { onBack(); } }}
@@ -402,8 +472,14 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
                     <ChevronRight size={24} className="rotate-180" />
                 </button>
                 <div className="flex-1">
-                    <h2 className="text-xl font-bold text-slate-900">{meetingTitle}</h2>
-                    <div className="flex items-center gap-3 text-sm text-slate-500">
+                    <div className="flex items-center gap-3">
+                        <h2 className="text-xl font-bold text-slate-900">{meetingTitle}</h2>
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-[10px] font-semibold border border-green-200">
+                            <Shield className="w-3 h-3" />
+                            <span>地端機密錄音</span>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
                         {isRecording && (
                             <>
                                 <span className="flex items-center gap-1.5">
@@ -428,7 +504,22 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
                             <Mic size={40} className="text-indigo-400" />
                         </div>
                         <h3 className="text-lg font-semibold text-slate-700 mb-2">準備開始錄音</h3>
-                        <p className="text-slate-500 max-w-sm">點擊下方按鈕開始錄音，系統將即時轉錄你的語音。</p>
+                        <p className="text-slate-500 max-w-sm mb-6">點擊下方按鈕開始錄音，系統將即時轉錄你的語音。</p>
+                        
+                        {/* Custom Context Input */}
+                        <div className="w-full max-w-sm text-left">
+                            <label className="text-sm font-medium text-slate-700 mb-2 block">
+                                專有名詞 / 背景資料 (可選)
+                            </label>
+                            <input 
+                                type="text"
+                                value={customContext}
+                                onChange={(e) => setCustomContext(e.target.value)}
+                                placeholder="例如: MeetChi, AI專案, Scrum..."
+                                className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all placeholder:text-slate-400 shadow-sm"
+                            />
+                            <p className="text-xs text-slate-500 mt-2">提供關鍵字能幫助 AI 更好辨識生僻名詞</p>
+                        </div>
                     </div>
                 )}
 

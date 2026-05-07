@@ -110,3 +110,10 @@ temp/
 
 # Large binaries
 *.exe
+
+# Whisper-MLA (large datasets, model weights, checkpoints)
+whisper_mla/data/
+whisper_mla/models/
+whisper_mla/.venv/
+breeze-asr-mla/
+breeze-asr-mla-finetuned/

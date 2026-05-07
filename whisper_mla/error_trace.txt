@@ -1,0 +1,39 @@
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\torchcodec\libtorchcodec_core6.dll
+
+FFmpeg version 5:
+Traceback (most recent call last):
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\torch\_ops.py", line 1442, in load_library
+    ctypes.CDLL(path)
+  File "D:\Python\Python312\Lib\ctypes\__init__.py", line 379, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: Could not find module 'D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\torchcodec\libtorchcodec_core5.dll' (or one of its dependencies). Try using the full path with constructor syntax.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\torchcodec\_core\ops.py", line 57, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\torch\_ops.py", line 1444, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\torchcodec\libtorchcodec_core5.dll
+
+FFmpeg version 4:
+Traceback (most recent call last):
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\torch\_ops.py", line 1442, in load_library
+    ctypes.CDLL(path)
+  File "D:\Python\Python312\Lib\ctypes\__init__.py", line 379, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: Could not find module 'D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\torchcodec\libtorchcodec_core4.dll' (or one of its dependencies). Try using the full path with constructor syntax.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\torchcodec\_core\ops.py", line 57, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\torch\_ops.py", line 1444, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: D:\Side_project\MeetChi\whisper_mla\.venv\Lib\site-packages\torchcodec\libtorchcodec_core4.dll
+[end of libtorchcodec loading traceback].

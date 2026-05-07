@@ -75,7 +75,7 @@ async def handle_asr_done(payload: ASRDonePayload, background_tasks: BackgroundT
     elif payload.status == "failed":
         logger.error(f"[Callback] Remote GPU ASR failed: {payload.error}")
         _update_task_status(db, meeting_id, "offline_asr", "FAILED", f"Remote error: {payload.error}")
-        meeting.status = MeetingStatus.COMPLETED # Fallback
+        meeting.status = MeetingStatus.FAILED  # ASR failed → FAILED (not COMPLETED)
         db.commit()
     elif payload.status == "skipped":
         logger.warning(f"[Callback] Remote GPU ASR skipped")

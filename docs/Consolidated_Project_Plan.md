@@ -415,6 +415,15 @@ GCP 部署工程師需構建以下基礎設施：
 - [ ] **優化任務 (前端)**: **RNNoise 降噪整合** - 在 `AudioWorklet` 中整合 `sapphi-red/web-noise-suppressor` 庫 (基於 RNNoise WASM)，實現客戶端即時降噪功能，有效過濾背景雜訊。
 - [ ] **測試任務**: 在高噪音環境下，測試前端降噪效果，並確認音訊延遲與 ASR 辨識準確度是否提升。同時，監控 CPU 資源佔用，確保不影響整體前端效能。
 
+### Sprint 4.8: Pure Web 邊緣推論與 VDI 資源保護降級實作 (Edge ASR & Fallback) - New!
+- [ ] **核心整合 (前端)**: 引入 `@huggingface/transformers.js` 或 `onnxruntime-web`，並於獨立 **Web Worker** 初始化量化 ASR 模型 (Whisper-tiny/base)，避免波及 React 渲染執行緒。
+- [ ] **環境嗅探與動態降級 (Frontend)**: 開發硬體降級路由（Fallback Router）：
+    - a. 優先偵測試圖拿取 `navigator.gpu`，啟動 WebGPU 極速推論。
+    - b. 若不支援，降級至 WebAssembly (Wasm) 執行。
+    - c. **[重要] VDI 資源防護鎖**：若進入 Wasm 模式，偵測 `navigator.hardwareConcurrency`。若低於等於 4 核，強制設定 `env.backends.onnx.wasm.numThreads = 3`，保留 1 顆核心給系統與 UI Event Loop，防止滑鼠游標與 VDI 崩潰。
+    - d. 若配備低於容錯下限，靜默降級至 WebSocket 全雲端推論。
+- [ ] **系統側錄擴充 (前端)**: 擴增 `navigator.mediaDevices.getDisplayMedia` 捕獲選項，支援擷取 YouTube 或直播之「系統音效 (System Audio)」轉錄。
+
 ---
 
 ### 第二階段：結構化智慧 (第 5-8 週)

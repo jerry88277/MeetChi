@@ -12,11 +12,11 @@ terraform {
     }
   }
 
-  # Backend for state storage (configure for team use)
-  # backend "gcs" {
-  #   bucket = "meetchi-terraform-state"
-  #   prefix = "terraform/state"
-  # }
+  # Backend for state storage (remote GCS — no longer local-only single point of failure)
+  backend "gcs" {
+    bucket = "meetchi-terraform-state"
+    prefix = "terraform/state"
+  }
 }
 
 provider "google" {

@@ -51,17 +51,18 @@ export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
             onClick={() => onClick(meeting)}
             className={`group bg-card border border-border rounded-xl p-5 cursor-pointer hover:shadow-lg hover:border-brand-cta/30 transition-all duration-300 border-l-4 ${config.border}`}
         >
-            <div className="flex justify-between items-start mb-3">
-                <div>
-                    <h3 className="font-bold text-foreground group-hover:text-brand-cta transition-colors">
+            <div className="flex justify-between items-start mb-3 gap-3">
+                <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-foreground group-hover:text-brand-cta transition-colors break-words">
                         {meeting.title}
                     </h3>
-                    <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground flex-wrap">
+                        <span className="flex items-center gap-1 font-mono text-[11px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded" title="Meeting ID">ID: {meeting.id}</span>
                         <span className="flex items-center gap-1"><Calendar size={14} /> {meeting.date}</span>
                         <span className="flex items-center gap-1"><Clock size={14} /> {meeting.duration}</span>
                     </div>
                 </div>
-                <div className="flex flex-col items-end">
+                <div className="flex flex-col items-end flex-shrink-0">
                     <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${config.color}`}>
                         {meeting.status === 'processing' && <Loader2 size={12} className="inline mr-1 animate-spin" />}
                         {config.label}

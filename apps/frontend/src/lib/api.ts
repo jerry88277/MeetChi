@@ -25,7 +25,7 @@ export interface TranscriptSegment {
 export interface Meeting {
     id: string;
     title: string;
-    status: "recording" | "processing" | "completed" | "failed";
+    status: "recording" | "processing" | "completed" | "failed" | "pending";
     created_at: string;
     updated_at: string;
     duration: number | null;
@@ -35,6 +35,7 @@ export interface Meeting {
     transcript_raw: string | null;
     transcript_polished: string | null;
     summary_json: string | null;
+    speaker_mappings: string | null;  // Phase 8.1.3
     transcript_segments: TranscriptSegment[];
 }
 
@@ -49,6 +50,9 @@ export interface MeetingCreate {
     title: string;
     language?: string;
     template_name?: string;
+    duration?: number;
+    custom_context?: string;
+    user_upn?: string;
 }
 
 export interface ApiError {
@@ -128,7 +132,26 @@ class ApiClient {
             if (!text) {
                 return undefined as T;
             }
-            return JSON.parse(text) as T;
+            const data = JSON.parse(text);
+
+            // L1 Boundary Normalization: status → lowercase at the source
+            // Prevents case mismatch bugs (Backend: "PROCESSING" vs Frontend: "processing")
+            // This has caused 3 incidents — normalize here so ALL consumers get lowercase.
+            if (data && typeof data === 'object') {
+                if ('status' in data && typeof data.status === 'string') {
+                    data.status = data.status.toLowerCase();
+                }
+                // Handle arrays (e.g., GET /meetings returns Meeting[])
+                if (Array.isArray(data)) {
+                    for (const item of data) {
+                        if (item && typeof item === 'object' && 'status' in item && typeof item.status === 'string') {
+                            item.status = item.status.toLowerCase();
+                        }
+                    }
+                }
+            }
+
+            return data as T;
         } catch (error) {
             if (error instanceof TypeError && error.message === 'Failed to fetch') {
                 throw new Error('無法連接到後端服務。請確認服務已啟動。');
@@ -234,6 +257,13 @@ class ApiClient {
     }
 
     /**
+     * Get a signed URL for audio playback
+     */
+    async getAudioPlaybackUrl(meetingId: string): Promise<{ audio_url: string }> {
+        return this.fetch(`/api/v1/meetings/${meetingId}/audio-url`);
+    }
+
+    /**
      * Trigger the background transcription and summarization task
      */
     async startTranscriptionTask(meetingId: string, templateType = 'general', context = '', length = 'medium', style = 'formal'): Promise<{ status: string }> {
@@ -254,11 +284,12 @@ class ApiClient {
      */
     async regenerateSummary(
         meetingId: string,
-        templateName = 'general'
+        templateName = 'general',
+        context = ''
     ): Promise<{ message: string }> {
-        return this.fetch(`/api/v1/meetings/${meetingId}/generate-summary`, {
+        return this.fetch(`/api/v1/meetings/${meetingId}/regenerate-summary`, {
             method: 'POST',
-            body: JSON.stringify({ template_name: templateName }),
+            body: JSON.stringify({ template_name: templateName, context }),
         });
     }
 
@@ -282,6 +313,152 @@ class ApiClient {
             body: JSON.stringify(corrections),
         });
     }
+
+    // --- Phase 8.2: Template API ---
+    
+    async getTemplates(): Promise<TemplateDTO[]> {
+        return this.fetch('/api/v1/templates');
+    }
+
+    async getTemplate(id: string): Promise<TemplateDTO> {
+        return this.fetch(`/api/v1/templates/${id}`);
+    }
+
+    async createTemplate(data: CreateTemplateDTO): Promise<TemplateDTO> {
+        return this.fetch('/api/v1/templates', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+    }
+
+    async updateTemplate(id: string, data: UpdateTemplateDTO): Promise<TemplateDTO> {
+        return this.fetch(`/api/v1/templates/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        });
+    }
+
+    async deleteTemplate(id: string): Promise<void> {
+        await this.fetch(`/api/v1/templates/${id}`, { method: 'DELETE' });
+    }
+
+    // --- Phase 8.1.3: Speaker Mapping Edit ---
+
+    async updateSpeakerMappings(meetingId: string, mappings: Record<string, SpeakerMappingDTO>): Promise<{ message: string }> {
+        return this.fetch(`/api/v1/meetings/${meetingId}/speakers`, {
+            method: 'PATCH',
+            body: JSON.stringify({ mappings }),
+        });
+    }
+
+    // --- Phase D: Summary Version History ---
+
+    async getSummaryVersions(meetingId: string): Promise<SummaryVersionDTO[]> {
+        return this.fetch(`/api/v1/meetings/${meetingId}/summary-versions`);
+    }
+
+    async restoreSummaryVersion(meetingId: string, versionId: string): Promise<{ message: string; template_name: string }> {
+        return this.fetch(`/api/v1/meetings/${meetingId}/restore-summary-version/${versionId}`, {
+            method: 'POST',
+        });
+    }
+
+    // --- RAG API ---
+    async askRag(question: string, userUpn: string = 'global_test@company.com', history?: RagChatMessage[], meetingIds?: string[]): Promise<RagResponse> {
+        return this.fetch('/api/v1/rag/ask', {
+            method: 'POST',
+            body: JSON.stringify({
+                question,
+                history: history || [],
+                user_upn: userUpn,
+                meeting_ids: meetingIds,
+                top_k: 10
+            }),
+        });
+    }
+}
+
+// Phase 8.2: Template types
+export interface TemplateSectionDTO {
+    title: string;
+    instruction: string;
+    output_key: string;
+    output_type: string;
+}
+
+export interface TemplateDTO {
+    id: string;
+    name: string;
+    display_name: string;
+    description: string;
+    category: string;
+    icon: string;
+    color: string;
+    sections: TemplateSectionDTO[];
+    tags: string[];
+    is_system: boolean;
+    is_active: boolean;
+}
+
+export interface CreateTemplateDTO {
+    name: string;
+    display_name: string;
+    description?: string;
+    category?: string;
+    icon?: string;
+    color?: string;
+    sections?: TemplateSectionDTO[];
+    tags?: string[];
+    fork_from?: string;
+}
+
+export interface UpdateTemplateDTO {
+    display_name?: string;
+    description?: string;
+    category?: string;
+    icon?: string;
+    color?: string;
+    sections?: TemplateSectionDTO[];
+    tags?: string[];
+    is_active?: boolean;
+}
+
+// Phase 8.1.3: Speaker mapping edit
+export interface SpeakerMappingDTO {
+    display_name: string;
+    role?: string;
+    color?: string;
+}
+
+// Phase D: Summary version history
+export interface SummaryVersionDTO {
+    id: string;
+    template_name: string;
+    summary_json: string | null;
+    created_at: string | null;
+}
+
+// RAG API Type definitions
+export interface RagCitation {
+    meeting_id: string;
+    meeting_title: string;
+    speaker: string | null;
+    start_time: number | null;
+    end_time: number | null;
+    content: string;
+    similarity: number;
+}
+
+export interface RagChatMessage {
+    role: string;
+    text: string;
+}
+
+export interface RagResponse {
+    answer: string;
+    citations: RagCitation[];
+    segments_searched: number;
+    question: string;
 }
 
 // Export singleton instance
