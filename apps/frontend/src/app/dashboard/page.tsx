@@ -29,8 +29,8 @@ import { DetailView } from '@/components/DetailView';
 import { RecordingView } from '@/components/RecordingView';
 import { SettingsView } from '@/components/SettingsView';
 import { TemplateGallery } from '@/components/TemplateGallery';
-import { RagWorkspace } from '@/components/chat/RagWorkspace';
-import { RagSidebar } from '@/components/chat/RagSidebar';
+import { RagWorkspace } from '@/components/rag/RagWorkspace';
+import { RagDrawer } from '@/components/rag/RagDrawer';
 import { useMeetings } from '@/hooks/useMeetings';
 import { useRecording } from '@/hooks/useRecording';
 import { useSummary } from '@/hooks/useSummary';
@@ -322,7 +322,7 @@ export default function DashboardPage() {
                 </span>
             </button>
             
-            <RagSidebar isOpen={isRagSidebarOpen} onClose={() => setIsRagSidebarOpen(false)} />
+            <RagDrawer isOpen={isRagSidebarOpen} onClose={() => setIsRagSidebarOpen(false)} />
             {currentView !== 'record' && currentView !== 'rag' && (
                 <Sidebar
                     activeTab={currentView === 'detail' ? 'dashboard' : currentView}

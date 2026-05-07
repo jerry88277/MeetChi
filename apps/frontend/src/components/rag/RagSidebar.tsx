@@ -3,6 +3,12 @@
 import React from "react";
 import { ChevronLeft, Plus, MessageSquare } from "lucide-react";
 
+/**
+ * RagSidebar — 全螢幕 RagWorkspace 左側邊欄
+ *
+ * 目前歷史紀錄為空狀態。後續若導入「對話 thread 持久化」API
+ * （後端 /api/v1/rag/conversations 尚未實作）再串接。
+ */
 export function RagSidebar({ onBack }: { onBack: () => void }) {
   return (
     <div className="flex flex-col h-full bg-brand-navy dark:bg-slate-950 text-white shadow-inner">
@@ -16,7 +22,11 @@ export function RagSidebar({ onBack }: { onBack: () => void }) {
       </div>
 
       <div className="p-4 flex-1 overflow-y-auto mt-2">
-        <button className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-brand-cta text-white rounded-xl shadow hover:bg-brand-cta/90 transition-all font-medium mb-6">
+        <button
+          disabled
+          title="多輪對話尚未持久化"
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-brand-cta/60 text-white rounded-xl shadow font-medium mb-6 cursor-not-allowed opacity-60"
+        >
           <Plus size={18} /> 新增知識庫對話
         </button>
 
@@ -24,17 +34,13 @@ export function RagSidebar({ onBack }: { onBack: () => void }) {
           歷史紀錄
         </h3>
 
-        <div className="space-y-1">
-          <button className="w-full flex flex-col text-left px-3 py-2 rounded-lg bg-white/10 text-white cursor-default">
-            <span className="text-sm font-medium flex items-center gap-2">
-               <MessageSquare size={14} className="text-brand-highlight" /> 產品架構規劃與討論
-            </span>
-            <span className="text-xs text-white/50 mt-1 pl-6">剛才</span>
-          </button>
-          <button className="w-full flex flex-col text-left px-3 py-2 rounded-lg hover:bg-white/5 text-white/70 transition-colors">
-            <span className="text-sm font-medium">關於行銷週會的重點提問</span>
-            <span className="text-xs text-white/40 mt-1 pl-6">昨天</span>
-          </button>
+        {/* 空狀態：尚未串接 conversation 持久化 API */}
+        <div className="px-3 py-6 text-center text-white/40 text-xs flex flex-col items-center gap-2">
+          <MessageSquare size={20} className="opacity-50" />
+          <span>尚無歷史對話</span>
+          <span className="text-white/30 leading-relaxed">
+            目前對話僅保留於本次階段
+          </span>
         </div>
       </div>
     </div>

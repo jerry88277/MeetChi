@@ -20,7 +20,6 @@ export function RagWorkspace({ onBack }: RagWorkspaceProps) {
         {/* Left Sidebar: 歷史紀錄與主控區 (20%) */}
         <Panel
           id="rag-sidebar"
-          order={1}
           defaultSize={20}
           minSize={15}
           maxSize={30}
@@ -33,7 +32,7 @@ export function RagWorkspace({ onBack }: RagWorkspaceProps) {
         <Separator id="rag-sep-1" className="w-1 bg-border/20 hover:bg-brand-cta transition-colors duration-200 cursor-col-resize active:bg-brand-cta z-30" />
 
         {/* Middle: 聊天交談室 (50% or 80%) */}
-        <Panel id="rag-chat" order={2} className="bg-surface h-full flex flex-col relative z-10" defaultSize={50} minSize={30}>
+        <Panel id="rag-chat" className="bg-surface h-full flex flex-col relative z-10" defaultSize={50} minSize={30}>
           <ChatPanel onCitationClick={(citation) => setActiveCitation(citation)} />
         </Panel>
 
@@ -43,7 +42,6 @@ export function RagWorkspace({ onBack }: RagWorkspaceProps) {
             <Separator id="rag-sep-2" className="w-1 bg-border/20 hover:bg-brand-cta transition-colors duration-200 cursor-col-resize active:bg-brand-cta z-30" />
             <Panel
               id="rag-reference"
-              order={3}
               defaultSize={30}
               minSize={20}
               collapsible
