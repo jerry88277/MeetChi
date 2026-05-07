@@ -9,6 +9,8 @@ from app.routes.cloud_tasks import router as cloud_tasks_router
 from app.routes.callbacks import router as callbacks_router
 from app.routes.templates import router as templates_router
 from app.routes.rag import router as rag_router
+from app.routes.websocket import router as websocket_router
+from app.routes.meetings import router as meetings_router
 
 # Main router that includes all sub-routers
 api_router = APIRouter()
@@ -18,4 +20,6 @@ api_router.include_router(cloud_tasks_router)
 api_router.include_router(callbacks_router)
 api_router.include_router(templates_router)
 api_router.include_router(rag_router)
+api_router.include_router(websocket_router)
+api_router.include_router(meetings_router)
 
