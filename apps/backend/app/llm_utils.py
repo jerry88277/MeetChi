@@ -66,40 +66,79 @@ class SpeakerRole(BaseModel):
     display_name: str  # e.g. "客戶/李經理"
     role: str  # e.g. "客戶"
 
+# Sprint 2c (PR21): 對齊 PR18 在 llm_service 的「改善 A」schema 升級
+# 設計目標：解決 user 反饋「太短 / 流水帳」兩種失敗模式
+#   1. tldr 100-200 字結論先行（金字塔原則）
+#   2. key_quotes 1-3 條原音引言（含 speaker）
+#   3. sub-structures（BANT.confidence、STAR.impact_score、etc）量化
+# Backward compatibility：所有新欄位皆為 Optional / 有 default，
+# 舊 LLM 回傳缺欄位時 Pydantic 不爆，frontend 也忽略不渲染。
+
+class KeyQuote(BaseModel):
+    """Original-audio quote preserved verbatim with speaker label."""
+    speaker: str  # e.g. "SPEAKER_00" 或真人姓名
+    text: str  # 原音引言，不改寫，≤ 150 字
+
+
 class GeneralSummary(BaseModel):
     speaker_roles: Optional[List[SpeakerRole]] = None
+    tldr: Optional[str] = None  # 100-200 字 TL;DR (新增)
     summary: str
     action_items: List[str]
     decisions: List[str]
     risks: List[str]
+    key_quotes: List[KeyQuote] = []  # 1-3 條原音引言 (新增)
 
 class BANTInfo(BaseModel):
+    """既有：value 直接是 str（向後相容）。新欄位設 Optional 不阻斷舊資料。"""
     Budget: str
     Authority: str
     Need: str
     Timeline: str
+    # 新增 sub-meta（每項 BANT 的 confidence / 引言）
+    Budget_confidence: Optional[str] = None  # "high" | "medium" | "low"
+    Authority_confidence: Optional[str] = None
+    Need_confidence: Optional[str] = None
+    Timeline_confidence: Optional[str] = None
+    Budget_evidence: Optional[str] = None  # 客戶原話引用
+    Authority_evidence: Optional[str] = None
+    Need_evidence: Optional[str] = None
+    Timeline_evidence: Optional[str] = None
 
 class SalesBANTSummary(BaseModel):
     speaker_roles: Optional[List[SpeakerRole]] = None
+    tldr: Optional[str] = None
     summary: str
     BANT: BANTInfo
     next_steps: List[str]
+    deal_signal: Optional[str] = None  # "hot" | "warm" | "cold"
+    objections: List[str] = []  # 客戶反對意見，常被忽略
+    key_quotes: List[KeyQuote] = []
 
 class STARStory(BaseModel):
     Situation: str
     Task: str
     Action: str
     Result: str
+    competency_tag: Optional[str] = None  # 對應職能標籤
+    impact_score: Optional[int] = None  # 1-5
+    quote: Optional[str] = None  # 候選人原話
 
 class HRSTARSummary(BaseModel):
     speaker_roles: Optional[List[SpeakerRole]] = None
+    tldr: Optional[str] = None
     candidate_summary: str
     STAR_stories: List[STARStory]
     key_strengths: List[str]
+    red_flags: List[str] = []  # ⚠️ 強制思考過
+    fit_score: Optional[int] = None  # 1-5 整體匹配度
+    key_quotes: List[KeyQuote] = []
 
 class TechnicalDecision(BaseModel):
     decision: str
     rationale: str
+    priority: Optional[str] = None  # "P0" | "P1" | "P2"
+    blocking: Optional[bool] = None  # 是否阻擋其他項
 
 class Challenge(BaseModel):
     challenge: str
@@ -113,14 +152,17 @@ class ActionItem(BaseModel):
     task: str
     owner: Optional[str] = None
     deadline: Optional[str] = None
+    dependencies: List[str] = []  # 依賴前置 task
 
 class RDSummary(BaseModel):
     speaker_roles: Optional[List[SpeakerRole]] = None
+    tldr: Optional[str] = None
     summary: str
     technical_decisions: List[TechnicalDecision]
     challenges: List[Challenge]
     risks: List[Risk]
     action_items: List[ActionItem]
+    key_quotes: List[KeyQuote] = []
 
 # Template to Schema mapping
 TEMPLATE_SCHEMAS = {
@@ -309,8 +351,14 @@ def generate_summary(
             result_json = json.loads(resp_text)
             
             # Normalize output structure to match frontend expectations
+            # PR21: 把 tldr / key_quotes / 各模板新欄位 (deal_signal/red_flags/etc)
+            # 帶到 normalized response，frontend 能讀新欄位但不破壞舊渲染
+            common_extras = {
+                "tldr": result_json.get("tldr"),
+                "key_quotes": result_json.get("key_quotes", []),
+            }
             if template_name == "general":
-                return result_json
+                return {**result_json, **common_extras}
             elif template_name == "sales_bant":
                 return {
                     "summary": result_json.get("summary", ""),
@@ -318,7 +366,10 @@ def generate_summary(
                     "decisions": [],
                     "risks": [],
                     "BANT": result_json.get("BANT", {}),
-                    "next_steps": result_json.get("next_steps", [])
+                    "next_steps": result_json.get("next_steps", []),
+                    "deal_signal": result_json.get("deal_signal"),
+                    "objections": result_json.get("objections", []),
+                    **common_extras,
                 }
             elif template_name == "hr_star":
                 # Frontend expects generic keys + specific ones
@@ -329,7 +380,10 @@ def generate_summary(
                     "risks": [],
                     "candidate_summary": result_json.get("candidate_summary", ""),
                     "STAR_stories": result_json.get("STAR_stories", []),
-                    "key_strengths": result_json.get("key_strengths", [])
+                    "key_strengths": result_json.get("key_strengths", []),
+                    "red_flags": result_json.get("red_flags", []),
+                    "fit_score": result_json.get("fit_score"),
+                    **common_extras,
                 }
             elif template_name == "rd":
                 return {
@@ -338,10 +392,11 @@ def generate_summary(
                     "decisions": [d.get("decision", "") if isinstance(d, dict) else str(d) for d in result_json.get("technical_decisions", [])],
                     "risks": [r.get("risk", "") if isinstance(r, dict) else str(r) for r in result_json.get("risks", [])],
                     "technical_decisions": result_json.get("technical_decisions", []),
-                    "challenges": result_json.get("challenges", [])
+                    "challenges": result_json.get("challenges", []),
+                    **common_extras,
                 }
             else:
-                return result_json
+                return {**result_json, **common_extras}
 
         except json.JSONDecodeError:
             # Layer 2: strip markdown code fences that Gemini sometimes adds
