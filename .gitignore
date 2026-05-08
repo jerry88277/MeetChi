@@ -173,3 +173,6 @@ apps/frontend/target_repo_iam.txt
 
 # Personal scratch directory (debug tools, not source code)
 scratch/
+
+# Personal notes (HackMD imports, reference materials, possibly 含版權內容 — never commit)
+.claude/notes/
