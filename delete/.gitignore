@@ -1,0 +1,4 @@
+# delete/ 是「待手動處理」的暫存區
+# 預設整個目錄不入 git，避免誤 commit；唯獨保留這份 .gitignore
+*
+!.gitignore

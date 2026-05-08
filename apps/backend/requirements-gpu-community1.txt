@@ -1,0 +1,43 @@
+# ============================================
+# MeetChi Backend - GPU Requirements (Community-1 Experimental)
+# EXPERIMENTAL: pyannote.audio v4.0 + community-1 diarization model
+# 命名規則：此檔案對應 offline_asr_community1.py 實驗版本
+# ============================================
+
+# PyTorch (GPU) — same constraints as stable version
+# IMPORTANT: PyTorch 2.6 changed torch.load default to weights_only=True,
+# which breaks pyannote.audio checkpoint loading.
+torch>=2.1.0,<2.6.0
+torchaudio>=2.1.0,<2.6.0
+
+# ASR Engine (CTranslate2-based Whisper) — unchanged
+faster-whisper>=1.0.0
+
+# WhisperX — ONLY for forced alignment (wav2vec2), NOT for diarization
+# community-1 uses pyannote v4.0 directly, bypassing whisperx.DiarizationPipeline
+whisperx>=3.1.0
+
+# Speaker Diarization — UPGRADED to v4.0 for community-1 model
+# WARNING: pyannote.audio 4.0 API changes:
+#   - Removed: use_auth_token parameter (use token= or session login)
+#   - Added: output.exclusive_speaker_diarization property
+#   - Incompatible with whisperx.DiarizationPipeline wrapper
+pyannote.audio>=4.0.0
+
+# HuggingFace Hub — required for token auth and model download
+huggingface_hub>=1.0.0
+
+# Audio/Numeric
+numpy>=1.24.0
+ffmpeg-python>=0.2.0
+
+# Cloud Storage
+google-cloud-storage>=2.14.0
+
+# HTTP requests for callbacks
+httpx>=0.24.0
+
+# FastAPI service
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+pydantic>=2.0.0
