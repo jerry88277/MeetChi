@@ -174,6 +174,24 @@ resource "google_cloud_run_v2_service" "backend" {
     type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
   }
 
+  lifecycle {
+    # Image lifecycle is owned by cloudbuild-backend.yaml + manual gcloud
+    # deploys; HCL var.backend_image is a default for first-time bootstrap
+    # only. Do NOT let Terraform downgrade the live image to whatever happens
+    # to be in HCL/var.
+    # Env order drift between HCL and live (positional comparison) creates
+    # false diffs whenever Cloud Run reorders env vars; ignore template-level
+    # changes including ad-hoc env additions like _FORCE_REVISION_TS.
+    # client / client_version are gcloud-stamped metadata Terraform can't
+    # manage.
+    ignore_changes = [
+      template[0].containers[0].image,
+      template[0].containers[0].env,
+      client,
+      client_version,
+    ]
+  }
+
   depends_on = [
     google_project_service.apis,
     google_cloud_tasks_queue.transcription,
