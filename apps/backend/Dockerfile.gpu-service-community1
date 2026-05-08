@@ -1,0 +1,117 @@
+# ============================================
+# MeetChi GPU ASR Microservice - Dockerfile (Community-1 Experimental)
+# EXPERIMENTAL: pyannote.audio v4.0 + community-1 diarization model
+# 命名規則：此 Dockerfile 對應 v13-community1 映像版本
+# ============================================
+
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    CUDA_VISIBLE_DEVICES=0 \
+    PORT=8080 \
+    DIARIZATION_MODEL=community-1
+
+WORKDIR /app
+
+# Install Python 3.10 + system dependencies (including patchelf for libctranslate2 fix)
+# pkg-config + ffmpeg dev headers required for PyAV (faster-whisper >= 1.0 dependency)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    python3.10-venv \
+    python3-pip \
+    build-essential \
+    git \
+    ffmpeg \
+    libsndfile1 \
+    curl \
+    patchelf \
+    pkg-config \
+    libavcodec-dev \
+    libavformat-dev \
+    libavutil-dev \
+    libswscale-dev \
+    libavdevice-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.10 /usr/bin/python \
+    && ln -sf /usr/bin/python3.10 /usr/bin/python3
+
+
+# Upgrade pip
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install Community-1 experimental dependencies (pyannote.audio v4.0)
+# Uses staged install to bypass pip resolver conflict between:
+#   - faster-whisper>=1.0.0 (pulls av==11.*)
+#   - pyannote.audio>=4.0.0 (may require different av version or other conflicts)
+COPY requirements-gpu-community1.txt .
+
+# Stage 1: Install PyTorch + core dependencies first (largest, cached separately)
+RUN pip install --no-cache-dir \
+    "torch>=2.1.0,<2.6.0" \
+    "torchaudio>=2.1.0,<2.6.0" \
+    "numpy>=1.24.0" \
+    "huggingface_hub>=1.0.0" \
+    "google-cloud-storage>=2.14.0" \
+    "httpx>=0.24.0" \
+    "fastapi>=0.100.0" \
+    "uvicorn[standard]>=0.23.0" \
+    "pydantic>=2.0.0"
+
+# Stage 2: Install pyannote.audio v4.0 (community-1 requirement)
+# Use --no-deps to avoid av version conflict, then install pyannote deps manually
+RUN pip install --no-cache-dir "pyannote.audio>=4.0.0"
+
+# Stage 3: Install faster-whisper with --no-deps to avoid av conflict with pyannote
+# Then install faster-whisper's deps manually (ctranslate2, tokenizers, etc.)
+RUN pip install --no-cache-dir --no-deps "faster-whisper>=1.0.0" && \
+    pip install --no-cache-dir \
+    "ctranslate2>=4.0.0" \
+    "tokenizers" \
+    "onnxruntime" || true
+
+# Stage 4: Install WhisperX (alignment only, not diarization)
+RUN pip install --no-cache-dir "whisperx>=3.1.0" || \
+    pip install --no-cache-dir --no-deps "whisperx>=3.1.0"
+
+# Stage 5: Install remaining audio utilities
+RUN pip install --no-cache-dir \
+    "ffmpeg-python>=0.2.0" \
+    "soundfile" \
+    "librosa" || true
+
+
+# Diagnostic: print installed versions for diarization-critical packages
+RUN python -c "\
+import pyannote.audio, huggingface_hub, whisperx; \
+print(f'[community1] pyannote.audio=={pyannote.audio.__version__}'); \
+print(f'[community1] huggingface_hub=={huggingface_hub.__version__}'); \
+print(f'[community1] whisperx=={whisperx.__version__}'); \
+v = tuple(int(x) for x in pyannote.audio.__version__.split('.')[:2]); \
+assert v >= (4, 0), f'pyannote.audio must be >= 4.0, got {pyannote.audio.__version__}'; \
+print('[community1] version assertion PASSED')" || true
+
+# Fix: libctranslate2 executable stack issue on Cloud Run GPU (glibc >= 2.41)
+RUN find /usr/local/lib/python3.10/dist-packages -name "libctranslate2*.so*" -exec patchelf --clear-execstack {} \; 2>/dev/null || \
+    find /usr/local/lib -name "libctranslate2*.so*" -exec patchelf --clear-execstack {} \; 2>/dev/null || true
+
+# Copy service files
+COPY app/offline_asr.py app/offline_asr.py
+COPY app/offline_asr_community1.py app/offline_asr_community1.py
+COPY app/models.py app/models.py
+COPY app/__init__.py app/__init__.py
+COPY gpu_service/ gpu_service/
+
+# Create necessary directories
+RUN mkdir -p /app/logs && chmod -R 777 /app/logs
+
+# Expose port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Run GPU ASR service (same entry point, DIARIZATION_MODEL env var controls which provider)
+CMD ["python", "-m", "uvicorn", "gpu_service.main:app", "--host", "0.0.0.0", "--port", "8080"]

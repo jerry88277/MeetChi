@@ -1,0 +1,47 @@
+# ============================================================
+# Enterprise GCP Deployment — terraform.tfvars (Example)
+# ============================================================
+# 用途：將 MeetChi 部署到企業內部 GCP project 的 tfvars 範本
+# 用法：
+#   1. cp terraform.tfvars.enterprise.example terraform.tfvars
+#   2. 將下方 <REPLACE_ME_*> 全部替換為企業實際值
+#   3. 執行 terraform init / plan / apply（步驟見 ENTERPRISE_SETUP.md）
+#
+# ⚠️ 安全紅線：terraform.tfvars 含密碼與 token，已在 .gitignore，切勿 commit。
+# ============================================================
+
+# ---- GCP Project ----
+project_id = "<REPLACE_ME_PROJECT_ID>"          # 例：enterprise-meetchi-prod
+region     = "asia-east1"                        # 企業內若可用 Taiwan region 優先；GPU 需求請改 asia-southeast1
+zone       = "asia-east1-b"
+
+# ---- Container Images（企業內部 Artifact Registry）----
+# 將 <REPO_HOST> 換成 <REGION>-docker.pkg.dev
+# 將 <PROJECT_ID> 換成上方 project_id
+backend_image     = "<REPO_HOST>/<PROJECT_ID>/meetchi/meetchi-backend:latest"
+gpu_asr_image     = "<REPO_HOST>/<PROJECT_ID>/meetchi/meetchi-gpu-asr:latest"
+llm_service_image = "<REPO_HOST>/<PROJECT_ID>/meetchi/meetchi-llm:latest"
+
+# ---- Cloud SQL ----
+# 留空字串會由 random_password 自動產生，並寫入 Secret Manager
+db_password = ""
+
+# ---- Cloud Run Scaling ----
+min_instances = 0
+max_instances = 3
+
+# ---- GPU 配置 ----
+# 注意：asia-east1 (Taiwan) 不支援 Cloud Run GPU；若 region 設為 asia-east1，須將 gpu_enabled 設為 false
+# 或改用 asia-southeast1 / us-central1
+gpu_enabled = true
+gpu_type    = "nvidia-l4"
+
+# ---- 敏感 Secrets ----
+hf_auth_token       = "<REPLACE_ME_HF_TOKEN>"        # Hugging Face token (pyannote / whisper 模型授權)
+secret_key          = "<REPLACE_ME_JWT_SECRET>"      # JWT 簽章金鑰；可用 openssl rand -hex 32 產生
+gemini_api_key      = "<REPLACE_ME_GEMINI_API_KEY>"  # Google Gemini API key
+discord_webhook_url = ""                              # 可留空（停用 Phase 9.2 Discord 通知）
+
+# ---- 服務串接（第二次 apply 才填回）----
+# 第一次 apply 後，從 outputs 取得 GPU ASR service URL，再填回此處重新 apply
+gpu_asr_service_url = ""
