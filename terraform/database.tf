@@ -10,12 +10,13 @@ resource "google_sql_database_instance" "meetchi_pg" {
 
   settings {
     tier = "db-f1-micro"
-    
-    database_flags {
-      name  = "cloudsql.enable_pgvector"
-      value = "on"
-    }
-    
+
+    # NOTE: cloudsql.enable_pgvector flag was historically required but is NOT
+    # a valid Cloud SQL flag anymore (apply returns 404 invalidFlagName).
+    # PostgreSQL 15+ on Cloud SQL has pgvector built-in; just `CREATE EXTENSION
+    # vector;` from inside the database. The extension is already created on
+    # this instance and used by app/embedding.py for RAG.
+
     ip_configuration {
       ipv4_enabled = true
     }
