@@ -69,37 +69,70 @@ if USE_GEMINI:
         logger.error(f"Failed to initialize Gemini client: {e}")
 
 # --- Pydantic Schemas for Structured Output ---
+# 模板改善 A (uplift)：對齊 HackMD-style 設計原則
+#   1. TL;DR (tldr) 100-200 字結論先行，避免「太短」與「流水帳」兩種失敗模式
+#   2. 強制保留 1-3 條原音引言 (key_quotes)
+#   3. 各 list 控制 max_length，避免 LLM 塞流水帳
+#   4. 加上重要度 / 評分 / 信心度等量化欄位，讓 user 一眼看密度
+
+class KeyQuote(BaseModel):
+    """A single original-audio quote, preserved verbatim with speaker label."""
+    speaker: str  # e.g. "SPEAKER_00" or 真人姓名
+    text: str  # 原音引言，不改寫，≤ 150 字
+
+
 class GeneralSummary(BaseModel):
-    summary: str
-    action_items: List[str]
-    decisions: List[str]
-    risks: List[str]
+    tldr: str  # 100-200 字白話結論先行 (新增)
+    summary: str  # 600 字以內結構化摘要
+    action_items: List[str]  # 每條 ≤ 50 字
+    decisions: List[str]  # 每條 ≤ 50 字
+    risks: List[str]  # 每條 ≤ 50 字
+    key_quotes: List[KeyQuote] = []  # 1-3 條原音引言 (新增)
 
 class BANTInfo(BaseModel):
-    Budget: str
-    Authority: str
-    Need: str
-    Timeline: str
+    """每個欄位含內容 + 信心度 + 證據引言"""
+    value: str  # ≤ 80 字 (新增 sub-structure)
+    confidence: str  # "high" | "medium" | "low" (新增)
+    evidence_quote: Optional[str] = None  # 原音引用（若逐字稿有）(新增)
+
+class BANTBlock(BaseModel):
+    Budget: BANTInfo
+    Authority: BANTInfo
+    Need: BANTInfo
+    Timeline: BANTInfo
 
 class SalesBANTSummary(BaseModel):
+    tldr: str  # 100-200 字 (新增)
     summary: str
-    BANT: BANTInfo
+    BANT: BANTBlock  # 升級為 sub-object 結構
     next_steps: List[str]
+    deal_signal: str = "warm"  # "hot" | "warm" | "cold" (新增)
+    objections: List[str] = []  # 客戶提出的反對意見，常被忽略 (新增)
+    key_quotes: List[KeyQuote] = []
 
 class STARStory(BaseModel):
     Situation: str
     Task: str
     Action: str
     Result: str
+    competency_tag: Optional[str] = None  # 對應職能標籤 (新增)
+    impact_score: Optional[int] = None  # 1-5 (新增)
+    quote: Optional[str] = None  # 候選人原話 (新增)
 
 class HRSTARSummary(BaseModel):
+    tldr: str  # 100-200 字 (新增)
     candidate_summary: str
     STAR_stories: List[STARStory]
     key_strengths: List[str]
+    red_flags: List[str] = []  # ⚠️ 強制思考過 (新增)
+    fit_score: Optional[int] = None  # 1-5 整體匹配度 (新增)
+    key_quotes: List[KeyQuote] = []
 
 class TechnicalDecision(BaseModel):
     decision: str
     rationale: str
+    priority: str = "P2"  # "P0" | "P1" | "P2" (新增)
+    blocking: bool = False  # 是否阻擋其他項 (新增)
 
 class Challenge(BaseModel):
     challenge: str
@@ -113,13 +146,16 @@ class ActionItem(BaseModel):
     task: str
     owner: Optional[str] = None
     deadline: Optional[str] = None
+    dependencies: List[str] = []  # 依賴哪些前置 task (新增)
 
 class RDSummary(BaseModel):
+    tldr: str  # 100-200 字 (新增)
     summary: str
     technical_decisions: List[TechnicalDecision]
     challenges: List[Challenge]
     risks: List[Risk]
     action_items: List[ActionItem]
+    key_quotes: List[KeyQuote] = []
 
 # Template to Schema mapping
 TEMPLATE_SCHEMAS = {
@@ -135,25 +171,77 @@ class SummaryTemplate:
         self.system_prompt = system_prompt
         self.user_prompt_suffix = user_prompt_suffix
 
+# 寫作紀律 — 4 個模板共用，注入到 system_prompt 開頭
+# 對應 HackMD podcast 範本的金字塔原則 + 反流水帳設計
+WRITING_DISCIPLINE = """【寫作紀律 — 必須嚴格遵守】
+1. 【金字塔原則】先寫結論再寫細節。tldr 欄位是「給沒時間看完整摘要的主管 30 秒讀完」，
+   100-200 字白話結論，不要寫「會議討論了 X」這種空話，必須有具體決策/數字/結果。
+2. 【反流水帳】禁止「A 說 X，B 回 Y，A 又補充 Z」逐句復述。提煉重點，不要復述對話。
+3. 【字數控制】每個 list 的 bullet ≤ 50 字；每個 str 欄位除非註明否則 ≤ 200 字。
+   超過字數的內容請拆解或濃縮，不要硬塞。
+4. 【強制原音引言】key_quotes 至少 1 條、最多 3 條，原文不改寫，標 speaker。
+   引言要有資訊量（含具體數字、決策、轉折），不要選寒暄與場面話。
+5. 【誠實拒答】找不到資訊的欄位填 "(逐字稿未提及)"，**禁止編造**。
+   list 類型若無資訊填空 list []，**禁止**強行湊數。
+6. 【重要度標記】list 內元素若有顯著重要度差異，前綴 🔑（核心）/ ⚡（急迫）/ ⚠️（風險）。
+7. 【純文字輸出】禁止 ** / # / * / > 等 markdown 符號，僅可用 \\n 換行。
+"""
+
 TEMPLATES = {
     "general": SummaryTemplate(
-        system_prompt="""你是專業的會議記錄助手。請根據以下會議逐字稿，生成結構化的會議摘要。
-請使用繁體中文撰寫回應，並以 JSON 格式輸出。""",
+        system_prompt=f"""你是專業的會議記錄助手。請根據以下會議逐字稿，生成結構化的會議摘要。
+請使用繁體中文撰寫回應，並以 JSON 格式輸出。
+
+{WRITING_DISCIPLINE}
+
+【模板特定要求】
+- tldr 必須包含「會議產出了什麼」（決議/結論/下一步），而非「討論了什麼話題」
+- decisions 是「已決定」的事；待決定事項放 risks 或 action_items
+- action_items 含負責人（若可從逐字稿推斷）
+""",
         user_prompt_suffix="請分析以下會議逐字稿並生成結構化摘要："
     ),
     "sales_bant": SummaryTemplate(
-        system_prompt="""你是資深業務分析師。請根據業務會議逐字稿，運用 BANT 框架分析客戶資訊。
-請使用繁體中文撰寫回應，並以 JSON 格式輸出。""",
+        system_prompt=f"""你是資深業務分析師。請根據業務會議逐字稿，運用 BANT 框架分析客戶資訊。
+請使用繁體中文撰寫回應，並以 JSON 格式輸出。
+
+{WRITING_DISCIPLINE}
+
+【模板特定要求】
+- BANT 4 項各 80 字內描述客戶實際說了什麼，不是你的推論
+- BANT 每項附 confidence（high/medium/low）與 evidence_quote（原音引言，若有）
+- deal_signal: hot（高意向、明確時程）/ warm（有預算需求但無 deadline）/ cold（探索）
+- objections: 客戶提出的反對意見、價格抗拒、競品比較等——這欄常被忽略但是 deal close 關鍵
+""",
         user_prompt_suffix="請運用 BANT 框架分析以下業務會議："
     ),
     "hr_star": SummaryTemplate(
-        system_prompt="""你是資深人資主管。請根據面試逐字稿，使用 STAR 方法評估候選人。
-請使用繁體中文撰寫回應，並以 JSON 格式輸出。""",
+        system_prompt=f"""你是資深人資主管。請根據面試逐字稿，使用 STAR 方法評估候選人。
+請使用繁體中文撰寫回應，並以 JSON 格式輸出。
+
+{WRITING_DISCIPLINE}
+
+【模板特定要求】
+- STAR_stories 每個故事附 competency_tag（對應職能：問題解決 / 溝通 / 領導 / 技術深度 等）
+- impact_score 1-5：1=陳述案例 / 3=有量化結果 / 5=有規模/成本/時間多維度量化
+- quote: 候選人原話（評委可作為紀錄供 follow-up 確認）
+- red_flags: 觀察到的疑慮/不一致/迴避（**強制思考過**，無則填 []）
+- fit_score 1-5: 候選人 vs 該職位整體匹配度
+""",
         user_prompt_suffix="請使用 STAR 方法分析以下面試記錄："
     ),
     "rd": SummaryTemplate(
-        system_prompt="""你是資深技術專案經理。請根據研發會議逐字稿，整理技術決策與待辦事項。
-請使用繁體中文撰寫回應，並以 JSON 格式輸出。""",
+        system_prompt=f"""你是資深技術專案經理。請根據研發會議逐字稿，整理技術決策與待辦事項。
+請使用繁體中文撰寫回應，並以 JSON 格式輸出。
+
+{WRITING_DISCIPLINE}
+
+【模板特定要求】
+- technical_decisions 每項附 priority（P0 阻擋上線 / P1 本週要 / P2 規劃中）與 blocking（是否阻擋其他項）
+- challenges 是「目前卡住的技術問題」，含 proposed_solution（會議產出的解法，若無則 "(逐字稿未提及)"）
+- risks 是「未來可能爆的問題」（區別於 challenges）
+- action_items 含 dependencies（依賴哪些前置 task）以避免併行衝突
+""",
         user_prompt_suffix="請整理以下研發會議的技術決策與待辦事項："
     ),
 }
