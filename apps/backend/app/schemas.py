@@ -6,7 +6,8 @@ re-importing from a 1.8k-line module.
 """
 
 from datetime import datetime
-from typing import List, Optional, Dict
+from typing import Any, Dict, List, Literal, Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -117,3 +118,87 @@ class IntentClassifyRequest(BaseModel):
         max_length=100000,
         description="逐字稿純文字 (前 4000 字會送 Gemini)",
     )
+
+
+# ============================================
+# Feedback Report (Sprint 2d / PR22)
+# ============================================
+# 設計：階段 1 必填 3 項（issue_type / summary / severity）+ 階段 2 可選細節 +
+# auto-attached metadata。enum 用 Literal 約束讓 Pydantic validate。
+
+# 5 種 issue_type，使用者非專業用語以白話呈現（前端 label 處理）
+IssueType = Literal[
+    "transcript_inaccurate",  # 轉錄不準確
+    "summary_wrong",          # 摘要內容不對
+    "ui_clunky",              # 介面操作不順
+    "system_error",           # 系統錯誤 / 卡住
+    "other",                  # 其他
+]
+
+Severity = Literal["minor", "workaround", "blocker"]
+Frequency = Literal["first", "rare", "common", "always"]
+FeedbackStatus = Literal["open", "in_progress", "fixed", "wontfix", "duplicate"]
+
+
+class FeedbackCreate(BaseModel):
+    """POST /api/v1/feedback body — 階段 1 必填 + 階段 2 可選。"""
+    # 階段 1 必填
+    user_upn: str = Field(..., min_length=1, max_length=255)
+    issue_type: IssueType
+    summary: str = Field(..., min_length=5, max_length=200, description="一句話描述")
+    severity: Severity
+
+    # 階段 2 可選
+    expected: Optional[str] = Field(None, max_length=2000, description="使用者期待的結果")
+    actual: Optional[str] = Field(None, max_length=2000, description="使用者實際看到的結果")
+    repro_steps: Optional[str] = Field(None, max_length=5000, description="重現步驟")
+    frequency: Optional[Frequency] = None
+    attachment_url: Optional[str] = Field(None, max_length=500)
+
+    # Auto-attached metadata（前端送）
+    meeting_id: Optional[str] = Field(None, max_length=36)
+    page_url: Optional[str] = Field(None, max_length=500)
+    browser_info: Optional[str] = Field(None, max_length=500)
+    session_id: Optional[str] = Field(None, max_length=64)
+    frontend_version: Optional[str] = Field(None, max_length=20)
+    backend_version: Optional[str] = Field(None, max_length=20)
+    # console_errors 用 List[Dict] 避免 Pydantic 嚴格驗證 — 各 browser 結構不一
+    console_errors: Optional[List[Dict[str, Any]]] = None
+
+
+class FeedbackRead(BaseModel):
+    """GET response — admin / user 看 feedback 詳情。"""
+    id: str
+    user_upn: str
+    issue_type: str
+    summary: str
+    severity: str
+
+    expected: Optional[str] = None
+    actual: Optional[str] = None
+    repro_steps: Optional[str] = None
+    frequency: Optional[str] = None
+    attachment_url: Optional[str] = None
+
+    meeting_id: Optional[str] = None
+    page_url: Optional[str] = None
+    browser_info: Optional[str] = None
+
+    status: str
+    assigned_to: Optional[str] = None
+    resolved_at: Optional[datetime] = None
+    admin_notes: Optional[str] = None
+
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class FeedbackPatch(BaseModel):
+    """PATCH /api/v1/feedback/{id} — admin 改 status / assignee / notes。"""
+    status: Optional[FeedbackStatus] = None
+    assigned_to: Optional[str] = Field(None, max_length=255)
+    admin_notes: Optional[str] = Field(None, max_length=5000)
+    notify_user: Optional[bool] = None
