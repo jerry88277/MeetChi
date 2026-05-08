@@ -30,7 +30,6 @@ interface DashboardViewProps {
     onCreateMeeting: () => void;
     onUploadClick?: () => void;
     onRefresh: () => void;
-    toastMessage?: string | null;
     // Phase C: Template selection for upload
     availableTemplates?: TemplateDTO[];
     selectedTemplateName?: string;
@@ -40,7 +39,7 @@ interface DashboardViewProps {
     onUploadContextChange?: (context: string) => void;
 }
 
-export const DashboardView = ({ meetings, isLoading, isUploading = false, uploadState = 'idle', error, successMessage, onSelectMeeting, onCreateMeeting, onUploadClick, onRefresh, toastMessage, availableTemplates = [], selectedTemplateName = 'general', onTemplateChange, uploadContext = '', onUploadContextChange }: DashboardViewProps) => {
+export const DashboardView = ({ meetings, isLoading, isUploading = false, uploadState = 'idle', error, successMessage, onSelectMeeting, onCreateMeeting, onUploadClick, onRefresh, availableTemplates = [], selectedTemplateName = 'general', onTemplateChange, uploadContext = '', onUploadContextChange }: DashboardViewProps) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
@@ -200,13 +199,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                 </div>
             </div>
 
-            {/* Phase 9.1: Toast Notification — polling completion */}
-            <div className={`transition-all duration-500 ease-in-out overflow-hidden ${toastMessage ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'}`}>
-                <div className="bg-brand-cta/10 border border-brand-cta/30 rounded-xl p-4 flex items-center gap-3 mb-0">
-                    <CheckCircle2 className="text-brand-cta flex-shrink-0" size={20} />
-                    <p className="font-medium text-brand-cta">{toastMessage}</p>
-                </div>
-            </div>
+            {/* PR19: 移除手寫 inline toast banner，全改 sonner Toaster (mounted in providers.tsx) */}
 
             {/* Search Bar */}
             <div className="relative">

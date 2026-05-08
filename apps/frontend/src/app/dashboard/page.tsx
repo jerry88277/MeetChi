@@ -31,11 +31,13 @@ import { SettingsView } from '@/components/SettingsView';
 import { TemplateGallery } from '@/components/TemplateGallery';
 import { RagWorkspace } from '@/components/rag/RagWorkspace';
 import { RagDrawer } from '@/components/rag/RagDrawer';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useMeetings } from '@/hooks/useMeetings';
 import { useRecording } from '@/hooks/useRecording';
 import { useSummary } from '@/hooks/useSummary';
 import { useMeetingPolling } from '@/hooks/useMeetingPolling';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 // --- Main App Component ---
 export default function DashboardPage() {
@@ -88,13 +90,10 @@ export default function DashboardPage() {
         }
     }, [currentView, checkOrphanedBackups]);
 
-    // Phase 9.1: Toast message for polling completion
-    const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-    const showToast = useCallback((msg: string) => {
-        setToastMessage(msg);
-        setTimeout(() => setToastMessage(null), 6000);
-    }, []);
+    // PR19: Toast 改用 sonner 統一管理；移除舊 inline banner
+    // Confirm dialog state — 取代 confirm() / window.confirm()
+    const [pendingDelete, setPendingDelete] = useState<{ meetingId: string } | null>(null);
+    const [pendingDiscard, setPendingDiscard] = useState<{ key: string } | null>(null);
 
     // Phase 9.1: Polling hook — watches lastUploadedMeetingId
     // Root fix: enabled driven by ACTUAL meeting data state, not just UI state
@@ -102,11 +101,27 @@ export default function DashboardPage() {
         m => m.status === 'processing' || m.status === 'pending'
     );
 
-    const handlePollingStatusChange = useCallback(async () => {
+    const handlePollingStatusChange = useCallback(async (completedMeeting: { id: string; title?: string | null }) => {
         await fetchMeetings();
         resetUploadState();
-        showToast('✅ 會議摘要已生成完成！');
-    }, [fetchMeetings, resetUploadState, showToast]);
+        // PR19: 帶「查看」action 讓 user 可一鍵跳到 detail
+        const completedId = completedMeeting?.id;
+        toast.success('會議摘要已生成完成！', {
+            description: completedId ? '點選「查看」即可進入詳情頁。' : undefined,
+            action: completedId
+                ? {
+                      label: '查看',
+                      onClick: () => {
+                          const m = meetings.find((x) => x.id === completedId);
+                          if (m) {
+                              setSelectedMeeting(m);
+                              setCurrentView('detail');
+                          }
+                      },
+                  }
+                : undefined,
+        });
+    }, [fetchMeetings, resetUploadState, meetings]);
 
     useMeetingPolling(
         lastUploadedMeetingId,
@@ -258,7 +273,12 @@ export default function DashboardPage() {
         setCurrentView('dashboard');
     };
 
-    const handleDeleteMeeting = async (meetingId: string) => {
+    const handleDeleteMeeting = (meetingId: string) => {
+        // PR19: 取代 useMeetings 內已移除的 confirm()，改 ConfirmDialog
+        setPendingDelete({ meetingId });
+    };
+
+    const executeDeleteMeeting = async (meetingId: string) => {
         const success = await deleteMeeting(meetingId);
         if (success) handleBackToDashboard();
     };
@@ -269,7 +289,7 @@ export default function DashboardPage() {
             const blob = await get(key);
             if (blob) {
                 const meetingId = key.replace('meeting_audio_', '');
-                showToast('開始恢復音檔上傳，請稍候...');
+                toast.info('開始恢復音檔上傳，請稍候...');
                 const file = new File([blob], 'audio.webm', { type: blob.type || 'audio/webm' });
                 const { uploadUrl } = await api.getUploadUrl(meetingId, 'audio.webm', blob.type || 'audio/webm');
                 await api.uploadToGcs(uploadUrl, file);
@@ -287,11 +307,15 @@ export default function DashboardPage() {
         }
     };
 
-    const handleDiscardBackup = async (key: string) => {
-        if (confirm('確定要放棄此未完成的音檔嗎？（清除後無法復原）')) {
-            await del(key);
-            checkOrphanedBackups();
-        }
+    const handleDiscardBackup = (key: string) => {
+        // PR19: 改用 ConfirmDialog 取代瀏覽器原生 confirm()
+        setPendingDiscard({ key });
+    };
+
+    const executeDiscardBackup = async (key: string) => {
+        await del(key);
+        checkOrphanedBackups();
+        toast.success('未完成音檔已清除');
     };
 
     const handleTabChange = (tab: string) => {
@@ -322,7 +346,14 @@ export default function DashboardPage() {
                 </span>
             </button>
             
-            <RagDrawer isOpen={isRagSidebarOpen} onClose={() => setIsRagSidebarOpen(false)} />
+            <RagDrawer
+                isOpen={isRagSidebarOpen}
+                onClose={() => setIsRagSidebarOpen(false)}
+                onExpand={() => {
+                    setIsRagSidebarOpen(false);
+                    setCurrentView('rag');
+                }}
+            />
             {currentView !== 'record' && currentView !== 'rag' && (
                 <Sidebar
                     activeTab={currentView === 'detail' ? 'dashboard' : currentView}
@@ -415,7 +446,6 @@ export default function DashboardPage() {
                                 onCreateMeeting={handleStartRecord}
                                 onUploadClick={triggerFileInput}
                                 onRefresh={fetchMeetings}
-                                toastMessage={toastMessage}
                                 availableTemplates={availableTemplates}
                                 selectedTemplateName={uploadTemplateName}
                                 onTemplateChange={setUploadTemplateName}
@@ -590,6 +620,39 @@ export default function DashboardPage() {
                     </div>
                 )}
             </main>
+
+            {/* PR19: ConfirmDialog 取代瀏覽器原生 confirm() */}
+            <ConfirmDialog
+                open={!!pendingDelete}
+                title="確定要刪除這個會議記錄嗎？"
+                description="此操作將同時移除音檔、逐字稿與摘要，且無法復原。"
+                confirmText="刪除"
+                cancelText="取消"
+                variant="destructive"
+                onConfirm={async () => {
+                    if (pendingDelete) {
+                        await executeDeleteMeeting(pendingDelete.meetingId);
+                        setPendingDelete(null);
+                    }
+                }}
+                onCancel={() => setPendingDelete(null)}
+            />
+
+            <ConfirmDialog
+                open={!!pendingDiscard}
+                title="確定要放棄此未完成的音檔嗎？"
+                description="清除後將永久刪除尚未上傳的本機備份，無法復原。"
+                confirmText="放棄音檔"
+                cancelText="保留"
+                variant="destructive"
+                onConfirm={async () => {
+                    if (pendingDiscard) {
+                        await executeDiscardBackup(pendingDiscard.key);
+                        setPendingDiscard(null);
+                    }
+                }}
+                onCancel={() => setPendingDiscard(null)}
+            />
         </div>
     );
 }
