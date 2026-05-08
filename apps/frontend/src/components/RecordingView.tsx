@@ -109,12 +109,19 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
 
         try {
             // 1. Get microphone
+            // Audio constraints — Stage 1 of recording pipeline uplift:
+            //   - sampleRate ideal=48000: 讓 OS 給原始品質 (iOS/macOS VPIO 內建處理)，
+            //     後續 AudioContext 16k pipeline 由 browser 重採樣，保留 dynamic range
+            //   - autoGainControl=true: **Windows 主戰場**——iOS/macOS 有 OS 級 VPIO，
+            //     Windows 沒等價 voice-processing pipeline，必須補軟體 AGC
+            //   - echoCancellation/noiseSuppression: Chrome WebRTC 軟體 NS（master switch）
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
-                    sampleRate: { ideal: 16000 },
+                    sampleRate: { ideal: 48000 },
                     channelCount: 1,
                     echoCancellation: true,
                     noiseSuppression: true,
+                    autoGainControl: true,
                 }
             });
             streamRef.current = stream;
