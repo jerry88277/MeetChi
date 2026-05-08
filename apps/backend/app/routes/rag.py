@@ -24,6 +24,11 @@ from app.database import get_db
 from app.models import Meeting, TranscriptSegment, MeetingParticipant
 from app.llm_utils import get_gemini_client, GEMINI_MODEL
 from app.embedding import embed_single_text, backfill_all_embeddings
+from app.rag import (
+    build_grounded_prompt,
+    expand_with_context,
+    CONFIDENCE_LEVELS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +76,10 @@ class RAGResponse(BaseModel):
     citations: List[Citation]
     segments_searched: int = Field(description="共搜索了多少個 embedding 段落")
     question: str
+    confidence: str = Field(
+        default="no_answer",
+        description="LLM 自我評估的回答信心: high / medium / low / no_answer (見 app.rag.prompt)",
+    )
 
 
 # ============================================
@@ -364,10 +373,23 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
             citations=[],
             segments_searched=total_searched,
             question=request.question,
+            confidence="no_answer",
         )
-    
-    # Build citations from results
-    citations = []
+
+    # Step 2.5: Sentence-window expansion (劇本 2 - app.rag.chunker)
+    # 對 top-K 命中段各自取前後 2 個 segments，提供 LLM 完整上下文
+    try:
+        expanded_rows = expand_with_context(db, results, window=2)
+    except Exception as e:
+        logger.warning(
+            f"[RAG] expand_with_context failed: {e}; falling back to raw rows"
+        )
+        expanded_rows = results  # graceful fallback
+
+    # Build citations from expanded rows (送 LLM) 與 raw rows (回 frontend)
+    # frontend 仍拿原命中段 content (與 audio 時間戳對齊)，
+    # 但 prompt 給 LLM 看的是 expanded content
+    citations: List[Citation] = []
     for row in results:
         content = row.content_polished or row.content_raw or ""
         similarity = 1.0 - float(row.distance)  # Convert distance to similarity
@@ -380,10 +402,26 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
             content=content,
             similarity=round(similarity, 4),
         ))
-    
-    # Step 3: Generate answer with Gemini
-    rag_prompt = _build_rag_prompt(request.question, citations, request.history)
-    
+
+    # 用 expanded content 組 prompt（讓 LLM 看到更完整上下文）
+    prompt_citations = []
+    for er in expanded_rows:
+        prompt_citations.append(Citation(
+            meeting_id=getattr(er, "meeting_id", ""),
+            meeting_title=getattr(er, "meeting_title", None) or "未命名會議",
+            speaker=getattr(er, "speaker", None),
+            start_time=getattr(er, "start_time", None),
+            end_time=getattr(er, "end_time", None),
+            content=getattr(er, "content", "") or "",
+            similarity=1.0 - float(getattr(er, "distance", 0.0)),
+        ))
+
+    # Step 3: Generate answer with Gemini using app.rag.prompt.build_grounded_prompt
+    # 取代既有 _build_rag_prompt（軟規則） → grounded 5 條硬規則 + 4 級 confidence
+    rag_prompt = build_grounded_prompt(request.question, prompt_citations, request.history)
+
+    answer = "無法生成回答。"
+    confidence = "no_answer"
     try:
         response = client.models.generate_content(
             model=GEMINI_MODEL,
@@ -395,24 +433,27 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
             },
         )
         try:
-            import json
             data = json.loads(response.text)
             answer = data.get("answer", "無法生成回答")
-            used_citations_list = data.get("used_citations", [])
-            # You can optionally use `used_citations_list` to filter returned citations if you want,
-            # but returning and showing all citations initially passed gives full context.
-        except Exception:
+            # confidence 必須是 4 級之一，否則 fallback no_answer
+            raw_conf = str(data.get("confidence", "no_answer")).lower()
+            confidence = raw_conf if raw_conf in CONFIDENCE_LEVELS else "no_answer"
+            # used_citations_list 暫不主動過濾，frontend 仍拿到全 citations
+        except Exception as parse_err:
+            logger.warning(f"[RAG] LLM JSON parse fail: {parse_err}; raw={response.text[:200]!r}")
             answer = response.text or "無法生成回答。"
+            confidence = "no_answer"
     except Exception as e:
         logger.error(f"[RAG] Gemini generation failed: {e}")
-        # Return citations without generated answer
         answer = f"（回答生成失敗，但以下是最相關的會議段落供參考）\n\n錯誤: {str(e)}"
-    
+        confidence = "no_answer"
+
     return RAGResponse(
         answer=answer,
         citations=citations,
         segments_searched=total_searched,
         question=request.question,
+        confidence=confidence,
     )
 
 
