@@ -142,6 +142,12 @@ resource "google_secret_manager_secret" "db_password" {
 resource "google_secret_manager_secret_version" "db_password" {
   secret      = google_secret_manager_secret.db_password.id
   secret_data = random_password.db_password.result
+
+  lifecycle {
+    # secret_data 由首次 apply 寫入；後續輪替走 gcloud secrets versions add，
+    # 由 GCP 端管理。Terraform 不重寫 (避免重複 destroy/create 切換期失效)。
+    ignore_changes = [secret_data]
+  }
 }
 
 resource "google_secret_manager_secret" "hf_token" {
@@ -155,6 +161,13 @@ resource "google_secret_manager_secret" "hf_token" {
 resource "google_secret_manager_secret_version" "hf_token" {
   secret      = google_secret_manager_secret.hf_token.id
   secret_data = var.hf_auth_token
+
+  lifecycle {
+    # HF token 輪替走 gcloud secrets versions add (避免 PowerShell stdin
+    # 編碼污染 + Terraform var.hf_auth_token 不易維持與 GCP 一致)。
+    # gpu-asr 透過 version=latest 自動讀新版本。
+    ignore_changes = [secret_data]
+  }
 }
 
 resource "google_secret_manager_secret" "secret_key" {
@@ -168,6 +181,10 @@ resource "google_secret_manager_secret" "secret_key" {
 resource "google_secret_manager_secret_version" "secret_key" {
   secret      = google_secret_manager_secret.secret_key.id
   secret_data = var.secret_key
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
 }
 
 # Gemini API Key for LLM summarization
@@ -182,4 +199,8 @@ resource "google_secret_manager_secret" "gemini_api_key" {
 resource "google_secret_manager_secret_version" "gemini_api_key" {
   secret      = google_secret_manager_secret.gemini_api_key.id
   secret_data = var.gemini_api_key
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
 }
