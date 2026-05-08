@@ -105,3 +105,15 @@ class SpeakerMappingEntry(BaseModel):
 
 class SpeakerMappingUpdate(BaseModel):
     mappings: Dict[str, SpeakerMappingEntry]  # { "Speaker_0": { display_name, role, color } }
+
+
+# ============================================
+# Intent classification
+# ============================================
+class IntentClassifyRequest(BaseModel):
+    text: str = Field(
+        ...,
+        min_length=1,
+        max_length=100000,
+        description="逐字稿純文字 (前 4000 字會送 Gemini)",
+    )
