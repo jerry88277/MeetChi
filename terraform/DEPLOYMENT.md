@@ -1,9 +1,13 @@
-# MeetChi GCP 部署指南
+# MeetChi GCP 部署指南（Terraform Quick Reference）
+
+> 📖 **完整企業部署 SOP** 見 [`docs/operations/GCP_DEPLOYMENT_SOP.md`](../docs/operations/GCP_DEPLOYMENT_SOP.md)（含 IT 申請、本機工具安裝、GCP 專案初始化、Service Account 建立等 14 章流程）。
+>
+> **本文件聚焦：已有 GCP 專案 + Service Account 後，怎麼用 Terraform 跑起來。**
 
 ## 📋 前置需求
 
-- GCP 專案已建立
-- `gcloud` CLI 已安裝並授權
+- GCP 專案已建立（流程見上方 SOP §2~§3）
+- `gcloud` CLI 已安裝並授權（流程見上方 SOP §1）
 - Terraform >= 1.0
 - Docker 已安裝
 
