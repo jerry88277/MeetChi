@@ -416,7 +416,21 @@ _provider_instance: Optional[OfflineASRProvider] = None
 def get_offline_asr_provider() -> Optional[OfflineASRProvider]:
     """
     Get or create the offline ASR provider singleton.
-    
+
+    DIARIZATION_MODEL env var controls which provider is used:
+      - "community-1"  → BreezeASRCommunity1Provider (pyannote v4.0 API)
+      - else / unset   → BreezeASRProvider (pyannote v3.x API, default)
+
+    Why this matters (speaker diarization bug 修補):
+      gpu-asr v15-community1 image 安裝 pyannote.audio>=4.0.0，但
+      BreezeASRProvider._try_diarization() 用的是 v3.x API
+      `DiarizationPipeline(use_auth_token=...)`，在 v4.0 環境下會丟
+      `TypeError: __init__() got an unexpected keyword argument 'use_auth_token'`
+      被 except 吞掉，segment.speaker 全為 None → DB 寫空字串 → 前端
+      看到「逐字稿全合一個 speaker」。
+      此 factory 補上 DIARIZATION_MODEL 條件分支，讓 community-1 模式
+      正確走 v4.0-API provider。
+
     Returns None if no provider is available (e.g., CPU-only deployment).
     """
     global _provider_instance
@@ -424,7 +438,32 @@ def get_offline_asr_provider() -> Optional[OfflineASRProvider]:
     if _provider_instance is not None:
         return _provider_instance
 
-    # Try Breeze ASR (GPU preferred)
+    # Check if community-1 mode is enabled (uses v4.0 pyannote API)
+    diarization_model = os.getenv("DIARIZATION_MODEL", "").lower()
+
+    if diarization_model == "community-1":
+        try:
+            from app.offline_asr_community1 import BreezeASRCommunity1Provider
+            provider = BreezeASRCommunity1Provider()
+            if provider.is_available():
+                _provider_instance = provider
+                logger.info(
+                    f"Offline ASR provider: {provider.provider_name} "
+                    f"(DIARIZATION_MODEL=community-1)"
+                )
+                return _provider_instance
+            else:
+                logger.warning(
+                    "[ASR Factory] community-1 provider not available; "
+                    "falling back to default BreezeASRProvider"
+                )
+        except ImportError as e:
+            logger.warning(
+                f"[ASR Factory] failed to import BreezeASRCommunity1Provider: {e}; "
+                f"falling back to default BreezeASRProvider"
+            )
+
+    # Default: BreezeASRProvider (pyannote v3.x API)
     provider = BreezeASRProvider()
     if provider.is_available():
         _provider_instance = provider
