@@ -12,6 +12,7 @@ from app.routes.rag import router as rag_router
 from app.routes.websocket import router as websocket_router
 from app.routes.meetings import router as meetings_router
 from app.routes.intent import router as intent_router
+from app.routes.feedback import router as feedback_router
 
 # Main router that includes all sub-routers
 api_router = APIRouter()
@@ -24,4 +25,5 @@ api_router.include_router(rag_router)
 api_router.include_router(websocket_router)
 api_router.include_router(meetings_router)
 api_router.include_router(intent_router)
+api_router.include_router(feedback_router)
 

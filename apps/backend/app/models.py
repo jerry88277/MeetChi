@@ -259,3 +259,71 @@ class SummaryVersion(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     meeting = relationship("Meeting", backref="summary_versions")
+
+
+# ============================================
+# Feedback Report (Sprint 2d / PR22)
+# ============================================
+# user 在前端任何頁面點「回報問題」 → POST /api/v1/feedback 寫進這個表。
+# 設計依先前訪談結果：階段 1 必填 3 項，階段 2 可選；auto-attached metadata
+# 由前端送出（測試環境收集無顧慮）。
+class FeedbackReport(Base):
+    """User feedback 回報記錄。"""
+    __tablename__ = "feedback_reports"
+
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+
+    # 階段 1 必填
+    user_upn = Column(String(255), nullable=False, index=True)
+    issue_type = Column(
+        String(50), nullable=False, index=True,
+        comment="transcript_inaccurate / summary_wrong / ui_clunky / system_error / other",
+    )
+    summary = Column(Text, nullable=False, comment="一句話描述（10-100 字）")
+    severity = Column(
+        String(20), nullable=False,
+        comment="minor (繞得過) / workaround (有解) / blocker (完全擋住)",
+    )
+
+    # 階段 2 可選（補充細節，讓工程師更快重現）
+    expected = Column(Text, nullable=True, comment="使用者期待的結果")
+    actual = Column(Text, nullable=True, comment="使用者實際看到的結果")
+    repro_steps = Column(Text, nullable=True, comment="重現步驟")
+    frequency = Column(
+        String(20), nullable=True,
+        comment="first / rare (10%-) / common (10-50%) / always",
+    )
+    attachment_url = Column(Text, nullable=True, comment="GCS 路徑 or null")
+
+    # Auto-attached metadata（前端送）
+    meeting_id = Column(String(36), ForeignKey("meetings.id"), nullable=True, index=True)
+    page_url = Column(Text, nullable=True)
+    browser_info = Column(Text, nullable=True)
+    session_id = Column(String(64), nullable=True)
+    frontend_version = Column(String(20), nullable=True)
+    backend_version = Column(String(20), nullable=True)
+    console_errors = Column(JSON, nullable=True)
+
+    # 後續追蹤狀態（admin 用）
+    status = Column(
+        String(20), nullable=False, default="open", index=True,
+        comment="open / in_progress / fixed / wontfix / duplicate",
+    )
+    assigned_to = Column(String(255), nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    notify_user = Column(Boolean, nullable=False, default=True)
+    admin_notes = Column(Text, nullable=True)
+
+    # 時間軸
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    meeting = relationship("Meeting", foreign_keys=[meeting_id])
+
+    __table_args__ = (
+        Index("idx_feedback_user_upn", "user_upn"),
+        Index("idx_feedback_status", "status"),
+        Index("idx_feedback_created", "created_at"),
+        Index("idx_feedback_issue_type_status", "issue_type", "status"),
+    )
