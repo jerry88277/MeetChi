@@ -2,25 +2,51 @@
 
 /* ===============================
    MeetChi Brand Theme System
-   奇美品牌色彩 + Light/Dark Mode
+   依 user 訪談決策（Sprint 2a / PR20）：
+     Q1=c 工業×人文 (DDG 奇美承接)
+     Q2=b DDG 8 色活力
+     Q3=b 螢光青換 DDG 之一 (移除 #5BFAE6)
+     Q4=c 思源黑體 (中文字體 fallback chain)
+     Q5=c 折衷密度
+     Q6=b 微動效現狀 (200-300ms cubic-bezier(.2,.0,.0,1))
+     Q7=c 單欄垂直 (DetailView IA 重排)
+     Q8 winner: Granola，借用 calm/單欄/真實截圖 hero
    =============================== */
 
 @theme {
-  /* --- Brand Colors (奇美色彩指南) --- */
+  /* --- Brand Colors —— 既有奇美深藍體系（保留） --- */
   --color-brand-navy: #041E42;
   --color-brand-cta: #2D428B;
-  --color-brand-accent: #7C3AED;
-  --color-brand-highlight: #5BFAE6;
+
+  /* --- DDG 8 色活力延伸（Q2=b）---
+     主色 brand-cta 為「單一深藍」起點，DDG 重塑由其延伸 8 色活力。
+     色票暫定（DDG 案例頁未公開精確 HEX，agent 研究後合理推測 +
+     對齊「工業×人文×永續」tone）。
+     上 staging 後可微調，優先取得 DDG 公開設計指南再校色。
+  */
+  --color-brand-orange:  #FF6B35;  /* 暖橙：能量、行動 */
+  --color-brand-green:   #06D6A0;  /* 亮綠：永續、清新 */
+  --color-brand-forest:  #1E5128;  /* 深綠：材料、自然 */
+  --color-brand-amber:   #F2C14E;  /* 暖黃：溫度、人文 */
+  --color-brand-violet:  #4D5CB7;  /* 靛紫：科技延伸（取代舊 #7C3AED） */
+  --color-brand-coral:   #C5283D;  /* 莓紅：重要、警示性 */
+  --color-brand-azure:   #4A90E2;  /* 海藍：流動、資訊 */
+
+  /* 既有 alias（向後相容；逐步遷移現有 components 後可移除） */
+  --color-brand-accent:    #4D5CB7;  /* 舊 brand-accent 紫色映射到 brand-violet */
+  --color-brand-highlight: #06D6A0;  /* 移除螢光青 #5BFAE6（Q3=b），改 brand-green */
 
   /* --- Status Colors --- */
   --color-status-success: #48B070;
   --color-status-warning: #E4831A;
   --color-status-error: #D2343D;
 
-  /* --- Semantic Colors (Light Mode Default) --- */
+  /* --- Semantic Colors (Light Mode Default) ---
+     對齊 Granola 的 calm 設計 — 中性灰白為底，給 DDG 8 色點綴空間
+  */
   --color-background: #ffffff;
   --color-foreground: #0f172a;
-  --color-surface: #f8fafc;
+  --color-surface: #FAFAF8;        /* 微暖中性灰白（取代 #f8fafc 純冷灰） */
   --color-card: #ffffff;
   --color-muted: #f1f5f9;
   --color-muted-foreground: #64748b;
@@ -29,13 +55,44 @@
   --color-primary: #2D428B;
   --color-primary-foreground: #ffffff;
 
-  /* Radius */
+  /* Radius — 維持中圓角，不追工業感銳角 */
   --radius-lg: 0.75rem;
   --radius-md: 0.5rem;
   --radius-sm: 0.25rem;
 
-  /* Fonts */
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  /* --- Fonts (Q4=c 思源黑體 + 完整 fallback chain) ---
+     優先序：
+       1. Inter (var(--font-inter)) - 拉丁字 numeric 與英文最佳
+       2. 思源黑體 / Noto Sans TC (var(--font-noto-sans-tc) 由 next/font 注入)
+          兩者同字符表，Adobe + Google 開源
+       3. Source Han Sans TC - 本地若安裝可直接用
+       4. PingFang TC - macOS / iOS 系統字
+       5. Microsoft JhengHei - Windows 系統字
+       6. 系統 fallback (ui-sans-serif, system-ui)
+     為何中英文都掛在 var() 而非 src URL：next/font 在 build 時 self-host，
+     避免 prod 對 fonts.googleapis.com runtime 依賴（GFW 友善）。
+  */
+  --font-sans:
+    var(--font-inter),
+    var(--font-noto-sans-tc),
+    "Source Han Sans TC", "Noto Sans CJK TC",
+    "PingFang TC", "Microsoft JhengHei", "微軟正黑體",
+    ui-sans-serif, system-ui, sans-serif;
+
+  /* --- Motion Tokens (Q6=b 微動效) ---
+     對應 Granola calm productivity 氣質：
+       - duration-base: 200ms 是按鈕 / hover / fade 的基準
+       - duration-slow: 300ms 用於 modal slide / drawer
+       - ease-standard: cubic-bezier(.2, 0, 0, 1) — 人因工程偏好（IBM Carbon 標準）
+     禁止 hover scale > 1.02（Granola 原則 anti-AI-slop）
+  */
+  --duration-fast:   100ms;
+  --duration-base:   200ms;
+  --duration-slow:   300ms;
+  --duration-slower: 500ms;
+  --ease-standard:   cubic-bezier(.2, 0, 0, 1);
+  --ease-enter:      cubic-bezier(0, 0, .2, 1);
+  --ease-exit:       cubic-bezier(.4, 0, 1, 1);
 }
 
 /* ===============================
@@ -50,7 +107,8 @@
   --color-muted: #334155;
   --color-muted-foreground: #94a3b8;
   --color-border: #334155;
-  --color-ring: #5BFAE6;
+  /* 移除 dark mode 的螢光青 ring（Q3=b），改 brand-green 較柔和 */
+  --color-ring: #06D6A0;
 }
 
 /* ===============================
