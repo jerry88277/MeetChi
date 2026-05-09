@@ -39,11 +39,35 @@ export interface Meeting {
     transcript_segments: TranscriptSegment[];
 }
 
+// Sprint 2c (PR21) extended: backend summary_json 加新欄位後，frontend 對齊。
+// 舊摘要缺欄位也不會爆 — 全 optional。
+export interface KeyQuote {
+    speaker: string;
+    text: string;
+}
+
 export interface MeetingSummary {
     summary: string;
     action_items: string[];
     decisions: string[];
     risks: string[];
+    // PR21 新欄位（皆 optional 給 backward compat）
+    tldr?: string;                // 100-200 字 TL;DR 結論先行
+    key_quotes?: KeyQuote[];      // 1-3 條原音引言（含 speaker）
+    // sales_bant 額外
+    deal_signal?: string;
+    objections?: string[];
+    BANT?: Record<string, unknown>;
+    next_steps?: string[];
+    // hr_star 額外
+    candidate_summary?: string;
+    STAR_stories?: unknown[];
+    key_strengths?: string[];
+    red_flags?: string[];
+    fit_score?: number | null;
+    // rd 額外
+    technical_decisions?: unknown[];
+    challenges?: unknown[];
 }
 
 export interface MeetingCreate {

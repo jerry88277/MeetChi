@@ -1,5 +1,5 @@
-import { Meeting as ApiMeeting, MeetingSummary } from '@/lib/api';
-import type { Meeting, ActionItem, TranscriptLine, SpeakerMappings } from '@/types/meeting';
+import { Meeting as ApiMeeting, MeetingSummary, KeyQuote as ApiKeyQuote } from '@/lib/api';
+import type { Meeting, ActionItem, TranscriptLine, SpeakerMappings, KeyQuote } from '@/types/meeting';
 
 export function formatSeconds(seconds: number): string {
     const mins = Math.floor(seconds / 60);
@@ -7,11 +7,37 @@ export function formatSeconds(seconds: number): string {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
+/**
+ * PR23 fallback：舊摘要沒 tldr 欄位時，從 summary 抓首句作 TL;DR。
+ * 中英混合句末標點 (。！？.!?) 取首句並 cap 200 字。
+ */
+function extractFirstSentence(text: string, maxLen = 200): string {
+    if (!text) return "";
+    const trimmed = text.trim();
+    const match = trimmed.match(/^[\s\S]+?[。！？.!?]/);
+    const first = match ? match[0] : trimmed;
+    return first.length > maxLen ? first.slice(0, maxLen).trim() + "…" : first.trim();
+}
+
+/** 用 transcript_segments 算 distinct speaker 數量 */
+function countDistinctSpeakers(apiMeeting: ApiMeeting): number {
+    const segments = apiMeeting.transcript_segments || [];
+    const speakers = new Set<string>();
+    for (const s of segments) {
+        if (s.speaker && s.speaker.trim()) speakers.add(s.speaker);
+    }
+    return speakers.size;
+}
+
 // Transform API meeting to UI format
 export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
     // Parse summary JSON if available
     let summary = "";
     let actionItems: ActionItem[] = [];
+    let tldr: string | undefined;
+    let decisions: string[] = [];
+    let risks: string[] = [];
+    let keyQuotes: KeyQuote[] = [];
 
     if (apiMeeting.summary_json) {
         try {
@@ -23,9 +49,22 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
                 assignee: "待分配",
                 due: "待定"
             }));
+            // PR21 backend 新欄位
+            tldr = summaryData.tldr || undefined;
+            decisions = summaryData.decisions || [];
+            risks = summaryData.risks || [];
+            keyQuotes = (summaryData.key_quotes || []).map((q: ApiKeyQuote) => ({
+                speaker: q.speaker,
+                text: q.text,
+            }));
         } catch {
             summary = apiMeeting.summary_json;
         }
+    }
+
+    // PR23 fallback：舊摘要沒 tldr → 取 summary 首句
+    if (!tldr && summary) {
+        tldr = extractFirstSentence(summary);
     }
 
     // Transform transcript segments
@@ -63,6 +102,14 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
         summary,
         actionItems,
         transcript,
-        speakerMappings
+        speakerMappings,
+        audio_url: apiMeeting.audio_url ?? null,
+        // PR23 新欄位
+        tldr,
+        decisions,
+        risks,
+        keyQuotes,
+        templateName: apiMeeting.template_name,
+        speakerCount: countDistinctSpeakers(apiMeeting),
     };
 }
