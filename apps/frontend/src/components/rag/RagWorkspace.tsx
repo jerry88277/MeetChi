@@ -6,6 +6,7 @@ import { RagSidebar } from "./RagSidebar";
 import { ChatPanel } from "./ChatPanel";
 import { ReferencePanel } from "./ReferencePanel";
 import { RagCitation } from "@/lib/api";
+import { useEscape } from "@/hooks/useEscape";
 
 interface RagWorkspaceProps {
   onBack: () => void;
@@ -13,6 +14,11 @@ interface RagWorkspaceProps {
 
 export function RagWorkspace({ onBack }: RagWorkspaceProps) {
   const [activeCitation, setActiveCitation] = useState<RagCitation | null>(null);
+  // Esc 在沒選中 citation 時退出 workspace；有選中時先收 reference panel
+  useEscape(() => {
+    if (activeCitation) setActiveCitation(null);
+    else onBack();
+  });
 
   return (
     <div className="w-full h-full bg-surface text-foreground font-sans flex overflow-hidden">

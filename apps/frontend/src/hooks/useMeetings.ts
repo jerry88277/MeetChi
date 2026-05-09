@@ -42,8 +42,11 @@ export function useMeetings() {
         setTimeout(() => setSuccessMessage(null), 5000);
     }, []);
 
+    /**
+     * 真正執行刪除（不再內含 confirm()）。
+     * Caller 須先用 <ConfirmDialog> 取得使用者確認，再呼叫此函式。
+     */
     const deleteMeeting = useCallback(async (meetingId: string) => {
-        if (!confirm('確定要刪除這個會議記錄嗎？此操作無法復原。')) return;
         try {
             await api.deleteMeeting(meetingId);
             await fetchMeetings();
