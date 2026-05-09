@@ -10,9 +10,11 @@ import {
     Shield,
     LayoutTemplate,
     MessageSquare,
+    MessageSquareWarning,
 } from 'lucide-react';
 import { API_BASE_URL } from '@/lib/api';
 import { ThemeToggle } from './ThemeToggle';
+import { FeedbackModal } from './FeedbackModal';
 
 interface SidebarProps {
     activeTab: string;
@@ -28,6 +30,7 @@ interface SidebarProps {
 }
 
 export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen, isConnected, user }: SidebarProps) => {
+    const [showFeedback, setShowFeedback] = React.useState(false);
     const menuItems = [
         { id: 'dashboard', icon: FileText, label: '所有會議', primary: true },
         { id: 'rag', icon: MessageSquare, label: '跨會議知識庫' },
@@ -82,6 +85,19 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen
                     ))}
                 </nav>
 
+                {/* PR24: 回報問題入口 */}
+                <div className="px-4 pb-2">
+                    <button
+                        onClick={() => setShowFeedback(true)}
+                        className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-white/60 hover:text-white hover:bg-white/5 border border-white/10 hover:border-brand-orange/40 rounded-lg transition-colors"
+                        title="回報問題或建議"
+                    >
+                        <MessageSquareWarning size={16} />
+                        <span className="font-medium">回報問題</span>
+                        <span className="ml-auto text-[10px] text-white/30">Beta</span>
+                    </button>
+                </div>
+
                 {/* User Profile Section */}
                 {user && (
                     <div className="p-4 border-t border-white/10">
@@ -125,6 +141,12 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen
                     </div>
                 </div>
             </div>
+
+            <FeedbackModal
+                isOpen={showFeedback}
+                onClose={() => setShowFeedback(false)}
+                userUpn={user?.email || 'anonymous@meetchi.test'}
+            />
         </>
     );
 };

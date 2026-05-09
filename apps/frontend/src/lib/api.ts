@@ -83,6 +83,66 @@ export interface ApiError {
     detail: string;
 }
 
+// PR24 — Sprint 2d frontend: Feedback intake
+export type FeedbackIssueType =
+    | "transcript_inaccurate"
+    | "summary_wrong"
+    | "ui_clunky"
+    | "system_error"
+    | "other";
+
+export type FeedbackSeverity = "minor" | "workaround" | "blocker";
+
+export type FeedbackFrequency = "first" | "rare" | "common" | "always";
+
+export type FeedbackStatus =
+    | "open"
+    | "in_progress"
+    | "fixed"
+    | "wontfix"
+    | "duplicate";
+
+export interface FeedbackCreate {
+    user_upn: string;
+    issue_type: FeedbackIssueType;
+    summary: string;
+    severity: FeedbackSeverity;
+    expected?: string;
+    actual?: string;
+    repro_steps?: string;
+    frequency?: FeedbackFrequency;
+    attachment_url?: string;
+    meeting_id?: string;
+    page_url?: string;
+    browser_info?: string;
+    session_id?: string;
+    frontend_version?: string;
+    backend_version?: string;
+    console_errors?: Array<Record<string, unknown>>;
+}
+
+export interface FeedbackRead {
+    id: string;
+    user_upn: string;
+    issue_type: string;
+    summary: string;
+    severity: string;
+    expected?: string | null;
+    actual?: string | null;
+    repro_steps?: string | null;
+    frequency?: string | null;
+    attachment_url?: string | null;
+    meeting_id?: string | null;
+    page_url?: string | null;
+    browser_info?: string | null;
+    status: string;
+    assigned_to?: string | null;
+    resolved_at?: string | null;
+    admin_notes?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
 // ==========================================
 // API Client
 // ==========================================
@@ -385,6 +445,19 @@ class ApiClient {
         return this.fetch(`/api/v1/meetings/${meetingId}/restore-summary-version/${versionId}`, {
             method: 'POST',
         });
+    }
+
+    // --- Feedback API (PR24) ---
+    async createFeedback(payload: FeedbackCreate): Promise<FeedbackRead> {
+        return this.fetch('/api/v1/feedback', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        });
+    }
+
+    async listMyFeedback(userUpn: string, skip = 0, limit = 50): Promise<FeedbackRead[]> {
+        const q = new URLSearchParams({ user_upn: userUpn, skip: String(skip), limit: String(limit) });
+        return this.fetch(`/api/v1/feedback?${q.toString()}`);
     }
 
     // --- RAG API ---

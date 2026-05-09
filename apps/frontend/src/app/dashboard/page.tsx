@@ -36,6 +36,7 @@ import { useMeetings } from '@/hooks/useMeetings';
 import { useRecording } from '@/hooks/useRecording';
 import { useSummary } from '@/hooks/useSummary';
 import { useMeetingPolling } from '@/hooks/useMeetingPolling';
+import { installConsoleErrorHook } from '@/lib/feedback-metadata';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -68,6 +69,8 @@ export default function DashboardPage() {
         api.getTemplates()
             .then(setAvailableTemplates)
             .catch(() => {/* graceful degradation */});
+        // PR24: 啟動 console.error / unhandledrejection 緩衝，給 feedback modal 用
+        installConsoleErrorHook();
     }, []);
 
     // Phase 3: Crash Recovery — Check for stranded recordings in IndexedDB
