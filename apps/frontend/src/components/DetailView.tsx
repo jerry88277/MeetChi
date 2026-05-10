@@ -58,6 +58,8 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     const [showVersions, setShowVersions] = useState(false);
     // PR23：逐字稿預設折疊
     const [showTranscript, setShowTranscript] = useState(false);
+    // P1 a11y：export dropdown state-driven 讓鍵盤可存取（取代 group:hover）
+    const [showExportMenu, setShowExportMenu] = useState(false);
 
     // Phase 8.1.3: Speaker editing state
     const [editingSpeakerId, setEditingSpeakerId] = useState<string | null>(null);
@@ -245,27 +247,55 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                         </button>
                     </div>
                 )}
-                {/* Export */}
-                <div className="relative group">
+                {/* Export — state-driven menu，鍵盤 + click outside 可關 */}
+                <div className="relative">
                     <button
+                        type="button"
+                        onClick={() => setShowExportMenu(v => !v)}
+                        aria-haspopup="menu"
+                        aria-expanded={showExportMenu}
+                        aria-label="匯出選單"
                         className="flex items-center gap-1 px-3 py-2 text-sm text-muted-foreground hover:text-brand-cta hover:bg-brand-cta/10 rounded-lg transition-colors"
                         title="匯出"
                     >
                         <Download size={18} />
                         <span className="hidden sm:inline">匯出</span>
-                        <ChevronDown size={14} />
+                        <ChevronDown size={14} className={`transition-transform ${showExportMenu ? 'rotate-180' : ''}`} />
                     </button>
-                    <div className="absolute right-0 top-full mt-1 w-40 bg-card border border-border rounded-xl shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-20">
-                        <button onClick={() => exportAsTxt(meeting)} className="w-full px-4 py-2.5 text-sm text-left text-foreground/70 hover:bg-brand-cta/10 hover:text-brand-cta rounded-t-xl transition-colors">
-                            📄 TXT 純文字
-                        </button>
-                        <button onClick={() => exportAsSrt(meeting)} disabled={meeting.transcript.length === 0} className="w-full px-4 py-2.5 text-sm text-left text-foreground/70 hover:bg-brand-cta/10 hover:text-brand-cta transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                            🎬 SRT 字幕
-                        </button>
-                        <button onClick={() => exportAsJson(meeting)} className="w-full px-4 py-2.5 text-sm text-left text-foreground/70 hover:bg-brand-cta/10 hover:text-brand-cta rounded-b-xl transition-colors">
-                            📋 JSON 結構化
-                        </button>
-                    </div>
+                    {showExportMenu && (
+                        <>
+                            {/* click outside backdrop */}
+                            <div
+                                aria-hidden="true"
+                                onClick={() => setShowExportMenu(false)}
+                                className="fixed inset-0 z-10"
+                            />
+                            <div role="menu" className="absolute right-0 top-full mt-1 w-40 bg-card border border-border rounded-xl shadow-lg z-20">
+                                <button
+                                    role="menuitem"
+                                    onClick={() => { exportAsTxt(meeting); setShowExportMenu(false); }}
+                                    className="w-full px-4 py-2.5 text-sm text-left text-foreground/70 hover:bg-brand-cta/10 hover:text-brand-cta rounded-t-xl transition-colors"
+                                >
+                                    📄 TXT 純文字
+                                </button>
+                                <button
+                                    role="menuitem"
+                                    onClick={() => { exportAsSrt(meeting); setShowExportMenu(false); }}
+                                    disabled={meeting.transcript.length === 0}
+                                    className="w-full px-4 py-2.5 text-sm text-left text-foreground/70 hover:bg-brand-cta/10 hover:text-brand-cta transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    🎬 SRT 字幕
+                                </button>
+                                <button
+                                    role="menuitem"
+                                    onClick={() => { exportAsJson(meeting); setShowExportMenu(false); }}
+                                    className="w-full px-4 py-2.5 text-sm text-left text-foreground/70 hover:bg-brand-cta/10 hover:text-brand-cta rounded-b-xl transition-colors"
+                                >
+                                    📋 JSON 結構化
+                                </button>
+                            </div>
+                        </>
+                    )}
                 </div>
                 {onDelete && (
                     <button

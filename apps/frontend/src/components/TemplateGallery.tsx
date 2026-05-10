@@ -194,16 +194,18 @@ export const TemplateGallery = ({ onBack }: TemplateGalleryProps) => {
                                                 <span key={tag} className="px-2 py-0.5 text-xs bg-muted text-muted-foreground rounded">{tag}</span>
                                             ))}
                                         </div>
-                                        {/* Actions */}
-                                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        {/* Actions — opacity-0 群組改 group-hover/group-focus-within 才能鍵盤可達 */}
+                                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                                             <button
                                                 onClick={() => setPreviewTemplate(tpl)}
+                                                aria-label={`預覽模板：${tpl.display_name}`}
                                                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-muted rounded-lg hover:bg-muted/80 text-muted-foreground transition-colors"
                                             >
                                                 <Eye size={14} /> 預覽
                                             </button>
                                             <button
                                                 onClick={() => handleFork(tpl)}
+                                                aria-label={`Fork 模板：${tpl.display_name}`}
                                                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-brand-cta/10 rounded-lg hover:bg-brand-cta/20 text-brand-cta transition-colors"
                                             >
                                                 <Copy size={14} /> Fork
@@ -212,12 +214,14 @@ export const TemplateGallery = ({ onBack }: TemplateGalleryProps) => {
                                                 <>
                                                     <button
                                                         onClick={() => setEditingTemplate(tpl)}
+                                                        aria-label={`編輯模板：${tpl.display_name}`}
                                                         className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-muted rounded-lg hover:bg-muted/80 text-muted-foreground transition-colors"
                                                     >
                                                         <Pencil size={14} /> 編輯
                                                     </button>
                                                     <button
                                                         onClick={() => setShowDeleteConfirm(tpl.id)}
+                                                        aria-label={`刪除模板：${tpl.display_name}`}
                                                         className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-status-error/10 rounded-lg hover:bg-status-error/20 text-status-error transition-colors"
                                                     >
                                                         <Trash2 size={14} />
@@ -246,7 +250,7 @@ export const TemplateGallery = ({ onBack }: TemplateGalleryProps) => {
                     <div className="bg-card rounded-2xl border border-border max-w-lg w-full max-h-[80vh] overflow-auto p-6" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between mb-4">
                             <h2 className="text-lg font-bold text-foreground">{previewTemplate.display_name}</h2>
-                            <button onClick={() => setPreviewTemplate(null)} className="p-2 hover:bg-muted rounded-lg text-muted-foreground">
+                            <button onClick={() => setPreviewTemplate(null)} aria-label="關閉預覽" className="p-2 hover:bg-muted rounded-lg text-muted-foreground">
                                 <X size={20} />
                             </button>
                         </div>
@@ -393,13 +397,13 @@ const TemplateEditor = ({ template, onSave, onCancel, onDelete }: TemplateEditor
                         <div className="flex items-center gap-2 mb-3">
                             <span className="text-xs text-muted-foreground">#{i + 1}</span>
                             <div className="flex gap-1 ml-auto">
-                                <button onClick={() => moveSection(i, -1)} disabled={i === 0} className="p-1 hover:bg-muted rounded disabled:opacity-30">
+                                <button onClick={() => moveSection(i, -1)} disabled={i === 0} aria-label="上移此段" title="上移" className="p-1 hover:bg-muted rounded disabled:opacity-30">
                                     <ChevronUp size={14} />
                                 </button>
-                                <button onClick={() => moveSection(i, 1)} disabled={i === sections.length - 1} className="p-1 hover:bg-muted rounded disabled:opacity-30">
+                                <button onClick={() => moveSection(i, 1)} disabled={i === sections.length - 1} aria-label="下移此段" title="下移" className="p-1 hover:bg-muted rounded disabled:opacity-30">
                                     <ChevronDown size={14} />
                                 </button>
-                                <button onClick={() => removeSection(i)} className="p-1 hover:bg-status-error/10 text-status-error rounded">
+                                <button onClick={() => removeSection(i)} aria-label="刪除此段" title="刪除" className="p-1 hover:bg-status-error/10 text-status-error rounded">
                                     <Trash2 size={14} />
                                 </button>
                             </div>

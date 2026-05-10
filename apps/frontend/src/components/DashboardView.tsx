@@ -80,6 +80,8 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                 <div className="flex gap-3">
                     <button
                         onClick={onRefresh}
+                        aria-label="重新整理會議列表"
+                        title="重新整理會議列表"
                         className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-foreground/70 hover:bg-muted font-medium transition-colors"
                         disabled={isLoading}
                     >
@@ -92,6 +94,10 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                         <button
                             onClick={() => !isProcessing && setIsMenuOpen(!isMenuOpen)}
                             disabled={isProcessing}
+                            aria-haspopup="menu"
+                            aria-expanded={isMenuOpen}
+                            aria-label="新增會議記錄"
+                            title="新增會議記錄"
                             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-brand-cta to-brand-cta/80 text-white rounded-lg hover:shadow-lg hover:shadow-brand-cta/30 font-medium transition-all disabled:opacity-70"
                         >
                             {isProcessing ? (

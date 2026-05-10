@@ -76,11 +76,15 @@ export const SettingsView = ({ onBack, isConnected }: { onBack: () => void; isCo
                                 </div>
                             </div>
                             <button
+                                type="button"
+                                role="switch"
+                                aria-checked={theme === 'dark'}
+                                aria-label={theme === 'dark' ? '切換為淺色模式' : '切換為深色模式'}
                                 onClick={toggleTheme}
                                 className={`w-12 h-6 rounded-full relative transition-colors cursor-pointer ${theme === 'dark' ? 'bg-brand-highlight' : 'bg-muted-foreground/30'
                                     }`}
                             >
-                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${theme === 'dark' ? 'right-1' : 'left-1'
+                                <div aria-hidden="true" className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${theme === 'dark' ? 'right-1' : 'left-1'
                                     }`}></div>
                             </button>
                         </div>
