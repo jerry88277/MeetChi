@@ -10,6 +10,7 @@ Lightweight FastAPI service that:
 Designed to run on Cloud Run with L4 GPU, scale-to-zero capable.
 """
 
+import asyncio
 import os
 import sys
 import logging
@@ -207,21 +208,61 @@ async def asr_refine(request: ASRRefineRequest):
     # Run ASR synchronously (this is the key fix!)
     response_payload = await _run_asr_processing(request, start_time)
     
-    # Send callback after processing completes (still within the HTTP request)
+    # Send callback after processing completes (still within the HTTP request).
+    #
+    # 2026-05-11 (incident): empty exception 訊息讓 root cause 看不出來；
+    #   payload 含 2138 segments ~ 數 MB，30s timeout 對 cold-start backend 偏短。
+    # 修法：
+    #   1. timeout 30s → 120s（容忍 backend cold start + 大 payload 寫入）
+    #   2. 失敗 retry 3 次，指數退避 5s/15s/45s（總 ~80s 上限）
+    #   3. log exc_info=True 把 traceback 整段印出來，下次出事不再瞎猜
+    #   4. payload 體積實測印出來，方便日後評估是否 chunked send
     if request.callback_url and response_payload:
-        logger.info(f"[ASR Refine] Sending callback to {request.callback_url}")
+        payload_dict = response_payload.model_dump()
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(
-                    request.callback_url,
-                    json=response_payload.model_dump()
-                )
+            payload_size_kb = len(json.dumps(payload_dict)) / 1024
+            logger.info(
+                f"[ASR Refine] Sending callback to {request.callback_url} "
+                f"(payload {payload_size_kb:.1f} KB)"
+            )
+        except Exception:
+            logger.info(f"[ASR Refine] Sending callback to {request.callback_url}")
+
+        backoff_s = [0, 5, 15]  # 第 1 次立刻；失敗後等 5s；再失敗等 15s；總 3 次
+        callback_ok = False
+        for attempt, wait_s in enumerate(backoff_s, start=1):
+            if wait_s > 0:
+                await asyncio.sleep(wait_s)
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    resp = await client.post(request.callback_url, json=payload_dict)
                 if resp.status_code >= 400:
-                    logger.warning(f"[ASR Refine] Callback failed with status {resp.status_code}: {resp.text}")
-                else:
-                    logger.info(f"[ASR Refine] Callback successful status {resp.status_code}")
-        except Exception as e:
-            logger.error(f"[ASR Refine] Failed to send callback for {meeting_id}: {e}")
+                    logger.warning(
+                        f"[ASR Refine] Callback attempt {attempt}/3 failed "
+                        f"with status {resp.status_code}: {resp.text[:300]}"
+                    )
+                    if 400 <= resp.status_code < 500:
+                        # 4xx 不重試（payload 本身有問題，retry 沒意義）
+                        break
+                    continue  # 5xx 重試
+                logger.info(
+                    f"[ASR Refine] Callback successful (attempt {attempt}/3, "
+                    f"status {resp.status_code})"
+                )
+                callback_ok = True
+                break
+            except Exception as e:
+                logger.warning(
+                    f"[ASR Refine] Callback attempt {attempt}/3 raised {type(e).__name__}: {e!r}",
+                    exc_info=True,
+                )
+
+        if not callback_ok:
+            logger.error(
+                f"[ASR Refine] Callback failed after 3 attempts for {meeting_id}; "
+                f"backend will not learn this meeting is done. "
+                f"Manual recovery: POST {request.callback_url} with this meeting's segments."
+            )
 
     return response_payload
 
