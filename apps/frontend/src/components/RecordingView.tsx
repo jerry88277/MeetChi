@@ -5,7 +5,6 @@ import {
     Mic,
     ChevronRight,
     Loader2,
-    AlertCircle,
     Square,
     Volume2,
     UploadCloud,
@@ -13,6 +12,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { set, get, del, keys } from 'idb-keyval';
+import { ErrorState } from './ui/error-state';
 
 interface TranscriptEntry {
     id: string;
@@ -548,10 +548,7 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
                 )}
 
                 {errorMsg && (
-                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
-                        <AlertCircle className="text-red-500 flex-shrink-0" size={20} />
-                        <p className="text-red-800">{errorMsg}</p>
-                    </div>
+                    <ErrorState title="錄音問題" message={errorMsg} />
                 )}
 
                 {finalizedEntries.map(entry => (

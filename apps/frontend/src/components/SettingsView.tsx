@@ -7,11 +7,19 @@ import {
     WifiOff,
     Moon,
     Sun,
+    Loader2,
 } from 'lucide-react';
 import { API_BASE_URL } from '@/lib/api';
 import { useTheme } from '@/hooks/useTheme';
 
-export const SettingsView = ({ onBack, isConnected }: { onBack: () => void; isConnected: boolean }) => {
+interface SettingsViewProps {
+    onBack: () => void;
+    isConnected: boolean;
+    /** P1 (audit 2026-05-10)：父層尚未完成 health check 時為 true，避免顯示假 Offline */
+    isLoadingConnection?: boolean;
+}
+
+export const SettingsView = ({ onBack, isConnected, isLoadingConnection = false }: SettingsViewProps) => {
     const { theme, toggleTheme } = useTheme();
 
     return (
@@ -24,31 +32,46 @@ export const SettingsView = ({ onBack, isConnected }: { onBack: () => void; isCo
             </div>
 
             <div className="space-y-6">
-                {/* API Connection */}
+                {/* API Connection — P1：補 loading skeleton 避免假 Offline 閃爍 */}
                 <div className="bg-card rounded-xl border border-border p-6">
                     <h3 className="font-bold text-foreground mb-4">API 連線狀態</h3>
                     <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                {isConnected ? (
-                                    <Wifi className="text-status-success" size={24} />
-                                ) : (
-                                    <WifiOff className="text-status-error" size={24} />
-                                )}
-                                <div>
-                                    <p className="font-medium text-foreground">
-                                        {isConnected ? '已連線到後端服務' : '無法連線到後端服務'}
-                                    </p>
-                                    <p className="text-sm text-muted-foreground">
-                                        {isConnected ? '所有功能正常運作' : '請檢查網路連線或後端服務狀態'}
-                                    </p>
+                        {isLoadingConnection ? (
+                            <div className="flex items-center justify-between" aria-busy="true" aria-live="polite">
+                                <div className="flex items-center gap-3">
+                                    <Loader2 className="text-muted-foreground animate-spin" size={24} />
+                                    <div className="flex-1">
+                                        <div className="h-4 w-44 bg-muted rounded animate-pulse mb-2" />
+                                        <div className="h-3 w-32 bg-muted/70 rounded animate-pulse" />
+                                    </div>
                                 </div>
+                                <span className="px-3 py-1 rounded-full text-sm font-medium bg-muted text-muted-foreground">
+                                    檢查中...
+                                </span>
                             </div>
-                            <span className={`px-3 py-1 rounded-full text-sm font-medium ${isConnected ? 'bg-status-success/15 text-status-success' : 'bg-status-error/15 text-status-error'
-                                }`}>
-                                {isConnected ? 'Online' : 'Offline'}
-                            </span>
-                        </div>
+                        ) : (
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    {isConnected ? (
+                                        <Wifi className="text-status-success" size={24} />
+                                    ) : (
+                                        <WifiOff className="text-status-error" size={24} />
+                                    )}
+                                    <div>
+                                        <p className="font-medium text-foreground">
+                                            {isConnected ? '已連線到後端服務' : '無法連線到後端服務'}
+                                        </p>
+                                        <p className="text-sm text-muted-foreground">
+                                            {isConnected ? '所有功能正常運作' : '請檢查網路連線或後端服務狀態'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <span className={`px-3 py-1 rounded-full text-sm font-medium ${isConnected ? 'bg-status-success/15 text-status-success' : 'bg-status-error/15 text-status-error'
+                                    }`}>
+                                    {isConnected ? 'Online' : 'Offline'}
+                                </span>
+                            </div>
+                        )}
                         <div>
                             <label className="block text-sm font-medium text-foreground/70 mb-1">Backend URL</label>
                             <input

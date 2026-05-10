@@ -517,6 +517,7 @@ export default function DashboardPage() {
                         <SettingsView
                             onBack={handleBackToDashboard}
                             isConnected={isConnected}
+                            isLoadingConnection={isLoading}
                         />
                     )}
 
