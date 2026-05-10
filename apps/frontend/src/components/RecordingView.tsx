@@ -342,7 +342,12 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
         } catch (err) {
             setIsPreparing(false);
             if (err instanceof DOMException && err.name === 'NotAllowedError') {
-                setErrorMsg('請允許麥克風權限後再試');
+                // 區分權限被拒：給可操作步驟，避免使用者只看到通用錯誤訊息
+                setErrorMsg('麥克風權限被拒絕。請點擊網址列左側的鎖頭圖示 → 麥克風 → 允許，或到瀏覽器設定（chrome://settings/content/microphone）開啟，再重新整理本頁。');
+            } else if (err instanceof DOMException && err.name === 'NotFoundError') {
+                setErrorMsg('找不到麥克風裝置。請確認麥克風已連接並被作業系統識別。');
+            } else if (err instanceof DOMException && err.name === 'NotReadableError') {
+                setErrorMsg('麥克風被其他應用程式佔用。請關閉 Zoom / Teams / Google Meet 等正在使用麥克風的程式後再試。');
             } else {
                 setErrorMsg(`錄音啟動失敗: ${err instanceof Error ? err.message : '未知錯誤'}`);
             }
@@ -456,6 +461,18 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
             isRecordingRef.current = false;
         };
     }, []);
+
+    // P0 safety: 錄音/上傳中關閉 tab 或重整頁面時跳警告，避免使用者誤觸丟失資料
+    useEffect(() => {
+        if (!isRecording && !isUploading) return;
+        const handler = (e: BeforeUnloadEvent) => {
+            // 現代瀏覽器不再顯示自定義訊息，但 returnValue 必須設才會觸發確認對話框
+            e.preventDefault();
+            e.returnValue = '';
+        };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [isRecording, isUploading]);
 
     // Finalized entries only (raw or polished)
     const finalizedEntries = transcriptEntries.filter(e => e.type !== 'partial');
