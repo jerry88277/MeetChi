@@ -32,9 +32,9 @@
   --color-brand-coral:   #C5283D;  /* 莓紅：重要、警示性 */
   --color-brand-azure:   #4A90E2;  /* 海藍：流動、資訊 */
 
-  /* 既有 alias（向後相容；逐步遷移現有 components 後可移除） */
-  --color-brand-accent:    #4D5CB7;  /* 舊 brand-accent 紫色映射到 brand-violet */
-  --color-brand-highlight: #06D6A0;  /* 移除螢光青 #5BFAE6（Q3=b），改 brand-green */
+  /* (alias brand-accent → brand-violet 與 brand-highlight → brand-green
+     已於 PR-X4 完成全 codebase migration，此處不再保留 alias。
+     歷史紀錄見 docs/design/DDG-CHIMEI.md §3.1。) */
 
   /* --- Status Colors --- */
   --color-status-success: #48B070;

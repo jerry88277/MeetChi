@@ -75,7 +75,7 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen
                             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${item.primary
                                     ? 'bg-gradient-to-r from-brand-cta to-brand-cta/80 text-white shadow-lg shadow-brand-cta/30 hover:shadow-brand-cta/50'
                                     : activeTab === item.id
-                                        ? 'bg-white/10 text-brand-highlight'
+                                        ? 'bg-white/10 text-brand-green'
                                         : 'text-white/50 hover:bg-white/5 hover:text-white/80'
                                 }`}
                         >

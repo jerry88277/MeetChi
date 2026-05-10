@@ -60,8 +60,10 @@ PR20 (Sprint 2a, commit `7b22cf0`) 與使用者進行 8 題結構化訪談確認
 
 | Alias | 實際指向 | 為何保留 |
 |---|---|---|
-| `brand-accent` | `brand-violet` | 舊代碼 hardcoded `bg-brand-accent`，未一次遷移 |
-| `brand-highlight` | `brand-green` | 取代被移除的 `#5BFAE6` 螢光青（Q3=b） |
+| ~~`brand-accent`~~ | `brand-violet` | **已於 PR-X4 (2026-05-10) 全 codebase 移除**；用 `brand-violet` |
+| ~~`brand-highlight`~~ | `brand-green` | **同上**；移除螢光青 #5BFAE6 後該 alias 失去語意 |
+
+> 後續代碼若再用 `bg-brand-accent` / `bg-brand-highlight` 會 Tailwind build error（找不到 token）。請改用正名。
 
 ### 3.2 狀態色 (Status Colors)
 

@@ -131,7 +131,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                                         onClick={() => { setIsMenuOpen(false); onUploadClick(); }}
                                         className="w-full flex items-center gap-3 px-4 py-3 text-sm text-foreground hover:bg-muted transition-colors border-t border-border"
                                     >
-                                        <Upload size={16} className="text-brand-accent" />
+                                        <Upload size={16} className="text-brand-violet" />
                                         <span>上傳音檔</span>
                                     </button>
                                 )}
