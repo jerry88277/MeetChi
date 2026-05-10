@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     FileText, DollarSign, Users, Code, Target, Lightbulb,
     Clock, RotateCcw, ClipboardList, GraduationCap,
-    Eye, Copy, Pencil, Trash2, X, Plus, ChevronDown, ChevronUp,
+    Eye, Copy, Pencil, Trash2, X, Plus, ChevronDown, ChevronUp, ChevronRight,
     Loader2, AlertCircle, Search,
 } from 'lucide-react';
 import { api, TemplateDTO, TemplateSectionDTO, CreateTemplateDTO, UpdateTemplateDTO } from '@/lib/api';
@@ -119,9 +119,21 @@ export const TemplateGallery = ({ onBack }: TemplateGalleryProps) => {
 
     return (
         <div className="p-6 md:p-8 max-w-5xl mx-auto overflow-auto">
-            {/* Header */}
+            {/* Header — P1 補 back 按鈕（audit 反映主視圖無返回入口） */}
             <div className="mb-8">
-                <h1 className="text-2xl font-bold text-foreground mb-2">模板管理</h1>
+                <div className="flex items-center gap-3 mb-2">
+                    {onBack && (
+                        <button
+                            onClick={onBack}
+                            aria-label="返回 Dashboard"
+                            title="返回"
+                            className="p-2 hover:bg-muted rounded-full text-muted-foreground transition-colors"
+                        >
+                            <ChevronRight size={20} className="rotate-180" />
+                        </button>
+                    )}
+                    <h1 className="text-2xl font-bold text-foreground">模板管理</h1>
+                </div>
                 <p className="text-muted-foreground">選擇適合會議類型的摘要模板，或 Fork 建立客製版本</p>
             </div>
 
