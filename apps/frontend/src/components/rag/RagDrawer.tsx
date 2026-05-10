@@ -44,20 +44,20 @@ export function RagDrawer({ isOpen, onClose, onExpand }: RagDrawerProps) {
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-40 transition-opacity"
+        className="fixed inset-0 bg-foreground/20 backdrop-blur-sm z-40 transition-opacity"
         onClick={onClose}
         aria-label="關閉助理"
       />
 
       {/* Drawer */}
       <div
-        className="fixed inset-y-0 right-0 w-[440px] max-w-[90vw] bg-white dark:bg-slate-950 shadow-2xl flex flex-col z-50 animate-in slide-in-from-right duration-300"
+        className="fixed inset-y-0 right-0 w-[440px] max-w-[90vw] bg-card shadow-2xl flex flex-col z-50 animate-in slide-in-from-right duration-300"
         role="dialog"
         aria-modal="true"
         aria-labelledby="rag-drawer-title"
       >
         {/* Header — 補標題避免 user 看不出 drawer 用途 */}
-        <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-background/80 backdrop-blur-sm">
+        <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-card/95 backdrop-blur-sm">
           <div className="flex items-center gap-2 min-w-0">
             <MessageSquare className="w-5 h-5 text-brand-cta shrink-0" />
             <div className="min-w-0">
@@ -74,7 +74,7 @@ export function RagDrawer({ isOpen, onClose, onExpand }: RagDrawerProps) {
                 onClick={onExpand}
                 aria-label="展開全頁"
                 title="展開全頁（看完整原文引用）"
-                className="p-1.5 rounded-md text-muted-foreground hover:bg-surface dark:hover:bg-slate-800 transition-colors active:scale-95"
+                className="p-1.5 rounded-md text-muted-foreground hover:bg-muted transition-colors active:scale-95"
               >
                 <Maximize2 size={16} />
               </button>
@@ -83,7 +83,7 @@ export function RagDrawer({ isOpen, onClose, onExpand }: RagDrawerProps) {
               onClick={onClose}
               aria-label="關閉助理 (Esc)"
               title="關閉 (Esc)"
-              className="p-1.5 rounded-md text-muted-foreground hover:bg-surface dark:hover:bg-slate-800 transition-colors active:scale-95"
+              className="p-1.5 rounded-md text-muted-foreground hover:bg-muted transition-colors active:scale-95"
             >
               <X size={18} />
             </button>
