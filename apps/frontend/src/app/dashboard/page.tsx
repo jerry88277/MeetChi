@@ -354,11 +354,12 @@ export default function DashboardPage() {
 
     return (
         <div className="flex h-screen bg-surface font-sans text-foreground overflow-hidden relative">
-            {/* Global FAB for RagSidebar */}
-            <button 
+            {/* Global FAB for RagSidebar — DDG token */}
+            <button
                 onClick={() => setIsRagSidebarOpen(true)}
-                className="fixed bottom-6 right-6 z-40 bg-[#0052cc] text-white p-4 rounded-full shadow-[0_8px_32px_rgba(0,82,204,0.3)] hover:scale-105 hover:bg-[#0040a2] transition-transform flex items-center justify-center group"
+                className="fixed bottom-6 right-6 z-40 bg-brand-cta text-white p-4 rounded-full shadow-lg hover:bg-brand-cta/90 hover:scale-[1.02] transition-all flex items-center justify-center group"
                 title="召喚智能助理"
+                aria-label="召喚智能助理"
             >
                 <MessageSquare className="w-6 h-6" />
                 <span className="max-w-0 overflow-hidden whitespace-nowrap group-hover:max-w-xs group-hover:ml-3 transition-all duration-300 font-medium text-sm">
@@ -416,34 +417,34 @@ export default function DashboardPage() {
                                 onChange={handleFileUpload}
                             />
                             
-                            {/* Crash Recovery UI */}
+                            {/* Crash Recovery UI — DDG token：用 status-warning 而不是 raw amber */}
                             {orphanedBackups.length > 0 && (
-                                <div className="mx-6 mt-6 mb-2 bg-amber-50 border border-amber-200 rounded-xl p-4 shadow-sm">
+                                <div className="mx-6 mt-6 mb-2 bg-status-warning/10 border border-status-warning/30 rounded-xl p-4 shadow-sm">
                                     <div className="flex items-start gap-4">
-                                        <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0 text-amber-600">
+                                        <div className="w-10 h-10 bg-status-warning/20 rounded-full flex items-center justify-center flex-shrink-0 text-status-warning">
                                             <AlertTriangle size={24} />
                                         </div>
                                         <div className="flex-1">
-                                            <h3 className="text-amber-800 font-bold text-lg">發現未完成的錄音檔</h3>
-                                            <p className="text-amber-700 text-sm mt-1">
+                                            <h3 className="text-foreground font-bold text-lg">發現未完成的錄音檔</h3>
+                                            <p className="text-muted-foreground text-sm mt-1">
                                                 您的裝置上保留了以防中斷而暫存的會議音檔（共 {orphanedBackups.length} 筆）。您可以嘗試手動重傳，或將其放棄。
                                             </p>
                                             <div className="mt-4 flex flex-col gap-3">
                                                 {orphanedBackups.map(key => (
-                                                    <div key={key} className="flex items-center gap-3 bg-white/50 rounded-lg p-3 border border-amber-200/50">
-                                                        <UploadCloud size={16} className="text-amber-600" />
-                                                        <span className="text-sm font-medium text-amber-800 flex-1 truncate">{key.replace('meeting_audio_', '')}</span>
-                                                        <button 
+                                                    <div key={key} className="flex items-center gap-3 bg-card rounded-lg p-3 border border-border">
+                                                        <UploadCloud size={16} className="text-status-warning" />
+                                                        <span className="text-sm font-medium text-foreground flex-1 truncate">{key.replace('meeting_audio_', '')}</span>
+                                                        <button
                                                             onClick={() => handleRecovery(key)}
                                                             disabled={isRecovering}
-                                                            className="px-3 py-1.5 text-xs font-semibold bg-amber-600 text-white rounded hover:bg-amber-700 transition"
+                                                            className="px-3 py-1.5 text-xs font-semibold bg-status-warning text-white rounded hover:bg-status-warning/90 transition"
                                                         >
                                                             {isRecovering ? '恢復中...' : '恢復並上傳'}
                                                         </button>
-                                                        <button 
+                                                        <button
                                                             onClick={() => handleDiscardBackup(key)}
                                                             disabled={isRecovering}
-                                                            className="px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 rounded transition"
+                                                            className="px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-muted rounded transition"
                                                         >
                                                             放棄
                                                         </button>

@@ -70,7 +70,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                 <div>
                     <div className="flex items-center gap-3 mb-1">
                         <h1 className="text-2xl font-bold text-foreground">我的會議記錄</h1>
-                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded-full text-xs font-medium border border-green-200 dark:border-green-800" title="此平台的錄音與摘要處理完全在本地端或私有網路的 GPU 上運行，不會將機密對話外洩至任何第三方雲端服務。">
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-status-success/10 text-status-success border border-status-success/30 rounded-full text-xs font-medium" title="此平台的錄音與摘要處理完全在本地端或私有網路的 GPU 上運行，不會將機密對話外洩至任何第三方雲端服務。">
                             <Shield className="w-3.5 h-3.5" />
                             <span>地端機密處理</span>
                         </div>
