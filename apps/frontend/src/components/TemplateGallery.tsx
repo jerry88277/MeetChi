@@ -5,9 +5,10 @@ import {
     FileText, DollarSign, Users, Code, Target, Lightbulb,
     Clock, RotateCcw, ClipboardList, GraduationCap,
     Eye, Copy, Pencil, Trash2, X, Plus, ChevronDown, ChevronUp, ChevronRight,
-    Loader2, AlertCircle, Search,
+    Loader2, Search,
 } from 'lucide-react';
 import { api, TemplateDTO, TemplateSectionDTO, CreateTemplateDTO, UpdateTemplateDTO } from '@/lib/api';
+import { ErrorState } from './ui/error-state';
 
 // Icon mapping from string to component
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -166,11 +167,10 @@ export const TemplateGallery = ({ onBack }: TemplateGalleryProps) => {
                 ))}
             </div>
 
-            {/* Error */}
+            {/* Error — 統一 <ErrorState> */}
             {error && (
-                <div className="bg-status-error/10 border border-status-error/30 rounded-xl p-4 flex items-center gap-3 mb-6">
-                    <AlertCircle className="text-status-error flex-shrink-0" size={20} />
-                    <p className="text-sm text-status-error">{error}</p>
+                <div className="mb-6">
+                    <ErrorState title="模板載入失敗" message={error} onRetry={fetchTemplates} />
                 </div>
             )}
 

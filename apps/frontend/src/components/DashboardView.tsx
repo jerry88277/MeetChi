@@ -9,7 +9,6 @@ import {
     FileText,
     CheckCircle2,
     Loader2,
-    AlertCircle,
     RefreshCw,
     ChevronDown,
     Shield,
@@ -18,6 +17,7 @@ import type { Meeting } from '@/types/meeting';
 import type { UploadState } from '@/hooks/useRecording';
 import type { TemplateDTO } from '@/lib/api';
 import { MeetingCard } from './MeetingCard';
+import { ErrorState } from './ui/error-state';
 
 interface DashboardViewProps {
     meetings: Meeting[];
@@ -186,15 +186,13 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                 </div>
             </div>
 
-            {/* Error Banner */}
+            {/* Error Banner — 用統一 <ErrorState> 元件 */}
             {error && (
-                <div className="bg-status-error/10 border border-status-error/30 rounded-xl p-4 flex items-start gap-3">
-                    <AlertCircle className="text-status-error flex-shrink-0 mt-0.5" size={20} />
-                    <div>
-                        <p className="font-medium text-status-error">無法載入會議列表</p>
-                        <p className="text-sm text-status-error/70 mt-1">{error}</p>
-                    </div>
-                </div>
+                <ErrorState
+                    title="無法載入會議列表"
+                    message={error}
+                    onRetry={onRefresh}
+                />
             )}
 
             {/* Success Banner */}
