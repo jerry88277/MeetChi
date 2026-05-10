@@ -67,7 +67,7 @@ export const SettingsView = ({ onBack, isConnected }: { onBack: () => void; isCo
                     <div className="space-y-4">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                {theme === 'dark' ? <Moon className="text-brand-highlight" size={24} /> : <Sun className="text-status-warning" size={24} />}
+                                {theme === 'dark' ? <Moon className="text-brand-green" size={24} /> : <Sun className="text-status-warning" size={24} />}
                                 <div>
                                     <p className="font-medium text-foreground">深色模式</p>
                                     <p className="text-sm text-muted-foreground">
@@ -81,7 +81,7 @@ export const SettingsView = ({ onBack, isConnected }: { onBack: () => void; isCo
                                 aria-checked={theme === 'dark'}
                                 aria-label={theme === 'dark' ? '切換為淺色模式' : '切換為深色模式'}
                                 onClick={toggleTheme}
-                                className={`w-12 h-6 rounded-full relative transition-colors cursor-pointer ${theme === 'dark' ? 'bg-brand-highlight' : 'bg-muted-foreground/30'
+                                className={`w-12 h-6 rounded-full relative transition-colors cursor-pointer ${theme === 'dark' ? 'bg-brand-green' : 'bg-muted-foreground/30'
                                     }`}
                             >
                                 <div aria-hidden="true" className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${theme === 'dark' ? 'right-1' : 'left-1'

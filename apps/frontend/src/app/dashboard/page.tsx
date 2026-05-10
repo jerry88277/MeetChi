@@ -545,7 +545,7 @@ export default function DashboardPage() {
                                             className="w-16 h-16 rounded-full"
                                         />
                                     ) : (
-                                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-brand-cta to-brand-accent flex items-center justify-center text-white text-2xl font-bold">
+                                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-brand-cta to-brand-violet flex items-center justify-center text-white text-2xl font-bold">
                                             {session?.user?.name?.charAt(0) || '?'}
                                         </div>
                                     )}
@@ -603,7 +603,7 @@ export default function DashboardPage() {
                                 <div className="space-y-3">
                                     {[
                                         { icon: Shield, label: 'Entra ID 整合', desc: '企業 SSO 認證', color: 'status-warning' },
-                                        { icon: Settings, label: '用戶管理', desc: '角色權限設定', color: 'brand-accent' },
+                                        { icon: Settings, label: '用戶管理', desc: '角色權限設定', color: 'brand-violet' },
                                         { icon: Calendar, label: '會議分析', desc: '統計報表、趨勢分析', color: 'brand-cta' },
                                     ].map((item, i) => (
                                         <div key={i} className="flex items-center gap-3 p-3 bg-muted rounded-lg">

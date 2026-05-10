@@ -274,7 +274,7 @@ export const TemplateGallery = ({ onBack }: TemplateGalleryProps) => {
                                     <div className="flex items-center gap-2 mb-1">
                                         <span className="text-sm font-medium text-foreground">{s.title}</span>
                                         <span className="px-1.5 py-0.5 text-xs bg-card border border-border rounded text-muted-foreground font-mono">{s.output_key}</span>
-                                        <span className="px-1.5 py-0.5 text-xs bg-brand-accent/10 text-brand-accent rounded">{s.output_type}</span>
+                                        <span className="px-1.5 py-0.5 text-xs bg-brand-violet/10 text-brand-violet rounded">{s.output_type}</span>
                                     </div>
                                     <p className="text-xs text-muted-foreground">{s.instruction}</p>
                                 </div>
