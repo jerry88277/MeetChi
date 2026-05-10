@@ -248,9 +248,26 @@ export default function DashboardPage() {
         }
     };
 
-    const handleViewDetail = (meeting: Meeting) => {
+    const handleViewDetail = async (meeting: Meeting) => {
+        // 立即切換到 detail 頁顯示 list 帶來的 metadata (status/title/summary/decisions/risks/keyQuotes)
         setSelectedMeeting(meeting);
         setCurrentView('detail');
+
+        // 背景補拉完整 transcript_segments — list endpoint 為了效能不回 segments (PR #26)
+        // 使用者會先看到 TL;DR 與結論摘要，逐字稿在 1~2s 後到位
+        if (meeting.status === 'completed') {
+            try {
+                const full = await api.getMeeting(meeting.id);
+                const fullTransformed = transformMeeting(full);
+                // 期間 user 若已點別的會議，避免覆蓋
+                setSelectedMeeting(prev =>
+                    prev?.id === fullTransformed.id ? fullTransformed : prev
+                );
+            } catch (err) {
+                console.error('Failed to fetch full meeting detail:', err);
+                // graceful — list metadata 已顯示，逐字稿區塊保持空狀態提示
+            }
+        }
     };
 
     const handleRegenerateSummary = async (meetingId: string, templateName?: string) => {
