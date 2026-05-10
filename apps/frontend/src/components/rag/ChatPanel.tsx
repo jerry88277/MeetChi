@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Send, FileText, Sparkles, Loader2 } from "lucide-react";
+import { Send, FileText, Loader2 } from "lucide-react";
 import { api, RagCitation } from "@/lib/api";
 
 interface ChatPanelProps {
@@ -105,21 +105,11 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-surface dark:bg-slate-950">
-      <div className="p-5 border-b border-border bg-white dark:bg-slate-900 shadow-sm z-10 flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-foreground">跨會議知識庫</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">AI 正在涵蓋您的所有會議紀錄...</p>
-        </div>
-        <div className="flex items-center gap-1.5 px-3 py-1 bg-brand-highlight/20 text-brand-highlight rounded-full text-xs font-medium border border-brand-highlight/30 shadow-sm">
-           <Sparkles size={14} /> AI 模式啟用
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 bg-slate-50 dark:bg-slate-950/50">
+    <div className="flex flex-col h-full bg-surface">
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`max-w-[85%] md:max-w-[75%] rounded-2xl p-4 md:p-5 ${msg.role === "user" ? "bg-brand-cta text-white rounded-br-none shadow-md" : "bg-white dark:bg-slate-800 text-foreground rounded-bl-none shadow border border-border"}`}>
+            <div className={`max-w-[85%] md:max-w-[75%] rounded-2xl p-4 md:p-5 ${msg.role === "user" ? "bg-brand-cta text-white rounded-br-none shadow-md" : "bg-card text-foreground rounded-bl-none shadow-sm border border-border"}`}>
               <div className="leading-relaxed text-[15px]">
                 {msg.role === "user" ? (
                    <span className="whitespace-pre-wrap">{msg.text}</span>
@@ -127,19 +117,19 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
                    renderMessageTextWithCitations(msg.text, msg.citations)
                 )}
               </div>
-              
-              {/* Optional block for citations array display below text */}
+
+              {/* Citations array */}
               {msg.citations && msg.citations.length > 0 && msg.role === "ai" && (
-                <div className="mt-4 flex flex-wrap gap-2 pt-3 border-t border-border/40 dark:border-white/10">
+                <div className="mt-4 flex flex-wrap gap-2 pt-3 border-t border-border">
                   {msg.citations.map((cite, index) => (
                     <button
                       key={`${cite.meeting_id}-${index}`}
                       onClick={() => onCitationClick(cite)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full bg-brand-navy/5 text-brand-navy dark:bg-brand-highlight/20 dark:text-brand-highlight hover:bg-brand-cta hover:text-white transition-colors border border-brand-navy/10 dark:border-brand-highlight/30 shadow-sm"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full bg-brand-cta/10 text-brand-cta hover:bg-brand-cta hover:text-white transition-colors border border-brand-cta/20 shadow-sm"
                     >
                       <FileText size={12} />
-                      [{index + 1}] {cite.meeting_title} 
-                      {cite.similarity && <span className="opacity-50 ml-1">{(cite.similarity * 100).toFixed(0)}%</span>}
+                      [{index + 1}] {cite.meeting_title}
+                      {cite.similarity && <span className="opacity-60 ml-1">{(cite.similarity * 100).toFixed(0)}%</span>}
                     </button>
                   ))}
                 </div>
@@ -149,32 +139,31 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
         ))}
         {isLoading && (
           <div className="flex justify-start">
-            <div className="bg-white dark:bg-slate-800 text-foreground rounded-2xl rounded-bl-none p-4 shadow border border-border flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="bg-card text-foreground rounded-2xl rounded-bl-none p-4 shadow-sm border border-border flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 size={16} className="animate-spin" /> 正在搜尋文獻並生成回答...
             </div>
           </div>
         )}
       </div>
 
-      <div className="p-4 bg-white dark:bg-slate-900 border-t border-border shadow-[0_-10px_40px_rgba(0,0,0,0.03)] dark:shadow-none">
-        {/* Suggested Questions */}
+      <div className="p-4 bg-card border-t border-border">
         <div className="flex flex-wrap gap-2 mb-3">
-          <button 
+          <button
             type="button"
             onClick={() => handleSuggestedClick("總結最近所有會議對於產品推廣的提案與進度")}
-            className="text-xs px-3 py-1.5 rounded-full border border-border bg-surface dark:bg-slate-800 hover:bg-brand-cta/10 hover:border-brand-cta hover:text-brand-cta transition-colors text-muted-foreground whitespace-nowrap shadow-sm"
+            className="text-xs px-3 py-1.5 rounded-full border border-border bg-surface hover:bg-brand-cta/10 hover:border-brand-cta hover:text-brand-cta transition-colors text-muted-foreground whitespace-nowrap"
           >
             總結產品推廣提案與進度
           </button>
-          <button 
+          <button
             type="button"
             onClick={() => handleSuggestedClick("有誰提到關於 RAG 架構的事？")}
-            className="text-xs px-3 py-1.5 rounded-full border border-border bg-surface dark:bg-slate-800 hover:bg-brand-cta/10 hover:border-brand-cta hover:text-brand-cta transition-colors text-muted-foreground whitespace-nowrap shadow-sm"
+            className="text-xs px-3 py-1.5 rounded-full border border-border bg-surface hover:bg-brand-cta/10 hover:border-brand-cta hover:text-brand-cta transition-colors text-muted-foreground whitespace-nowrap"
           >
             誰提過 RAG 架構？
           </button>
         </div>
-        
+
         <form onSubmit={handleSend} className="relative flex items-center">
           <input
             type="text"
@@ -182,14 +171,15 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
             onChange={(e) => setInput(e.target.value)}
             disabled={isLoading}
             placeholder="請輸入您的問題，例如：回顧昨天的行銷週會討論了什麼？"
-            className="w-full bg-slate-100 dark:bg-slate-800 text-foreground border border-border/50 rounded-2xl pl-5 pr-14 py-4 focus:outline-none focus:ring-2 focus:ring-brand-cta/50 transition-all shadow-inner disabled:opacity-50"
+            className="w-full bg-muted text-foreground border border-border rounded-2xl pl-5 pr-14 py-4 focus:outline-none focus:ring-2 focus:ring-brand-cta/50 transition-all disabled:opacity-50"
           />
           <button
             type="submit"
             disabled={!input.trim() || isLoading}
             className="absolute right-2 p-2.5 bg-brand-cta text-white rounded-xl hover:bg-brand-cta/90 disabled:opacity-50 disabled:hover:bg-brand-cta transition-colors shadow-sm"
+            aria-label="送出問題"
           >
-            {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} className={input.trim() ? "translate-x-0.5" : ""} />}
+            {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
           </button>
         </form>
       </div>

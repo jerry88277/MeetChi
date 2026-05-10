@@ -18,16 +18,25 @@ const formatTime = (seconds?: number | null) => {
 
 export function ReferencePanel({ citation, onClose }: ReferencePanelProps) {
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-slate-900 shadow-[-10px_0_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[-5px_0_20px_rgba(0,0,0,0.5)]">
-      <div className="p-4 border-b border-border flex items-center justify-between sticky top-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm z-10">
+    <div className="flex flex-col h-full bg-card">
+      <div className="p-4 border-b border-border flex items-center justify-between sticky top-0 bg-card/95 backdrop-blur-sm z-10">
         <h3 className="font-bold text-foreground flex items-center gap-2">
           <FileType size={18} className="text-brand-cta" /> 原文對照區
         </h3>
         <div className="flex items-center gap-1">
-          <button className="p-1.5 text-muted-foreground hover:bg-surface dark:hover:bg-slate-800 rounded-md transition-colors" title="此功能即將推出">
+          <button
+            className="p-1.5 text-muted-foreground hover:bg-muted rounded-md transition-colors"
+            title="此功能即將推出"
+            aria-label="開啟新分頁"
+          >
             <ExternalLink size={16} />
           </button>
-          <button onClick={onClose} className="p-1.5 text-muted-foreground hover:bg-surface dark:hover:bg-slate-800 rounded-md transition-colors" title="關閉面板">
+          <button
+            onClick={onClose}
+            className="p-1.5 text-muted-foreground hover:bg-muted rounded-md transition-colors"
+            title="關閉面板"
+            aria-label="關閉面板"
+          >
             <X size={18} />
           </button>
         </div>
@@ -48,19 +57,19 @@ export function ReferencePanel({ citation, onClose }: ReferencePanelProps) {
           </div>
         </div>
 
-        <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-loose">
-          <h3 className="flex items-center gap-2 text-brand-navy dark:text-white mt-4 mb-4">
+        <div>
+          <h3 className="flex items-center gap-2 text-foreground mt-4 mb-4 font-bold">
             <Quote size={16} className="text-brand-cta" /> 搜尋到的相關段落
           </h3>
-          
+
           <div className="space-y-4">
-            <div className="bg-brand-cta/5 dark:bg-brand-cta/10 p-4 rounded-xl border border-brand-cta/20 shadow-sm relative overflow-hidden">
+            <div className="bg-brand-cta/5 p-4 rounded-xl border border-brand-cta/20 shadow-sm relative overflow-hidden">
               <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-cta rounded-l-xl"></div>
-              <div className="flex items-baseline gap-2 mb-1.5">
-                <span className="font-bold text-brand-cta dark:text-brand-highlight text-sm">{citation.speaker || "片段"}</span>
+              <div className="flex items-baseline gap-2 mb-1.5 pl-3">
+                <span className="font-bold text-brand-cta text-sm">{citation.speaker || "片段"}</span>
                 <span className="text-xs text-muted-foreground">{formatTime(citation.start_time)} - {formatTime(citation.end_time)}</span>
               </div>
-              <p className="text-foreground/90 text-[15px] leading-relaxed relative whitespace-pre-wrap">
+              <p className="text-foreground/90 text-[15px] leading-relaxed pl-3 whitespace-pre-wrap">
                 {citation.content}
               </p>
             </div>

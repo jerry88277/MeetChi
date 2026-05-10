@@ -279,9 +279,12 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                 )}
             </div>
 
-            {/* Single-column scroll body */}
+            {/* Single-column scroll body — RWD widening:
+                  mobile/md: max-w-3xl 保持 reading layout（行長 60-80 字符最佳）
+                  xl (≥1280): max-w-5xl  — 1920×1080 的 sweet spot
+                  2xl (≥1536): max-w-6xl — 4K / ultrawide 也能填滿但不貼邊 */}
             <div className="flex-1 overflow-y-auto bg-surface">
-                <div className="max-w-3xl mx-auto px-4 sm:px-6 md:px-8 py-6 md:py-8 space-y-6 pb-32">
+                <div className="max-w-3xl xl:max-w-5xl 2xl:max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-6 md:py-8 space-y-6 pb-32">
 
                     {/* === Non-completed states (pending / processing / failed) === */}
                     {meeting.status === 'pending' && (
@@ -656,10 +659,10 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                 </div>
             </div>
 
-            {/* Sticky audio player at bottom */}
+            {/* Sticky audio player at bottom — 對齊上方內容寬度 */}
             {audioUrl && (
                 <div className="border-t border-border bg-card shadow-[0_-4px_10px_rgba(0,0,0,0.05)] z-10 shrink-0 px-4 py-3">
-                    <div className="max-w-3xl mx-auto">
+                    <div className="max-w-3xl xl:max-w-5xl 2xl:max-w-6xl mx-auto">
                         <audio
                             ref={audioRef}
                             src={audioUrl}

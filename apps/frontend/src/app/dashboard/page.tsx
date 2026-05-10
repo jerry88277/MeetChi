@@ -374,7 +374,7 @@ export default function DashboardPage() {
                     setCurrentView('rag');
                 }}
             />
-            {currentView !== 'record' && currentView !== 'rag' && (
+            {currentView !== 'record' && (
                 <Sidebar
                     activeTab={currentView === 'detail' ? 'dashboard' : currentView}
                     setActiveTab={handleTabChange}
@@ -386,7 +386,7 @@ export default function DashboardPage() {
             )}
 
             <main className="flex-1 flex flex-col relative overflow-hidden">
-                {currentView !== 'record' && currentView !== 'rag' && (
+                {currentView !== 'record' && (
                     <div className="md:hidden bg-background border-b border-border p-4 flex items-center justify-between z-20">
                         <div className="flex items-center gap-2">
                             <div className="w-6 h-6 bg-brand-cta rounded flex items-center justify-center">
