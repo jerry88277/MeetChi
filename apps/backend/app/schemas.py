@@ -65,6 +65,27 @@ class MeetingRead(BaseModel):
         from_attributes = True
 
 
+# 輕量化版本給 list endpoint：
+#   排除 transcript_segments / transcript_raw / transcript_polished 三個重欄位
+#   原本 list 一個 2.3 小時會議要拉幾千 segments lazy-load N+1，造成 worker block
+#   保留 summary_json 給 MeetingCard 顯示決策/待辦/風險計數
+class MeetingListItem(BaseModel):
+    id: str
+    title: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    duration: Optional[float]
+    audio_url: Optional[str]
+    language: str
+    template_name: str
+    summary_json: Optional[str]
+    speaker_mappings: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class MeetingCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     language: str = Field("zh", min_length=2, max_length=10)

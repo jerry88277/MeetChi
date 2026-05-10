@@ -34,6 +34,7 @@ from app.models import (
 )
 from app.schemas import (
     MeetingRead,
+    MeetingListItem,
     MeetingCreate,
     TranscriptSegmentCreate,
     RegenerateSummaryRequest,
@@ -95,9 +96,14 @@ async def create_meeting(meeting_data: MeetingCreate, db: Session = Depends(get_
     return MeetingRead.from_orm(db_meeting)
 
 
-@router.get("/api/v1/meetings", response_model=List[MeetingRead])
+@router.get("/api/v1/meetings", response_model=List[MeetingListItem])
 async def list_meetings(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """List historical meetings."""
+    """List historical meetings (lightweight — no transcript_segments).
+
+    Detail view 仍會用 GET /api/v1/meetings/{id} 拿完整 segments；
+    list 端不回 segments 是為了避免 N+1 lazy-load 把 worker pool 拖垮
+    （見 prod 503 incident 2026-05-09：limit=100 的 list 要 74s 並 503）。
+    """
     meetings = (
         db.query(Meeting)
         .order_by(desc(Meeting.created_at))
@@ -105,7 +111,7 @@ async def list_meetings(skip: int = 0, limit: int = 100, db: Session = Depends(g
         .limit(limit)
         .all()
     )
-    return [MeetingRead.from_orm(m) for m in meetings]
+    return [MeetingListItem.from_orm(m) for m in meetings]
 
 
 @router.get("/api/v1/meetings/{meeting_id}", response_model=MeetingRead)
