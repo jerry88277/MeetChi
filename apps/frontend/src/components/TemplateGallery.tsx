@@ -182,14 +182,15 @@ export const TemplateGallery = ({ onBack }: TemplateGalleryProps) => {
                 </div>
             )}
 
-            {/* Template Grid */}
+            {/* Template Grid — P2: items-stretch 讓同列卡片高度一致；
+                  內部 flex column 把 actions 推到底部對齊 */}
             {!isLoading && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
                     {filteredTemplates.map(tpl => {
                         const IconComp = ICON_MAP[tpl.icon] || FileText;
                         return (
-                            <div key={tpl.id} className="bg-card rounded-xl border border-border p-5 hover:shadow-lg transition-all group">
-                                <div className="flex items-start gap-4">
+                            <div key={tpl.id} className="bg-card rounded-xl border border-border p-5 hover:shadow-lg transition-all group flex w-full">
+                                <div className="flex items-start gap-4 w-full">
                                     <div className={`w-11 h-11 bg-${tpl.color}/15 rounded-xl flex items-center justify-center text-${tpl.color} flex-shrink-0`}>
                                         <IconComp size={22} />
                                     </div>

@@ -631,7 +631,11 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                     )}
 
                                     {/* Transcript lines */}
-                                    <div className="p-4 sm:p-5 space-y-5 max-h-[60vh] overflow-y-auto">
+                                    {/* P2 RWD：mobile portrait 60vh 太矮、桌機則太擠
+                                          mobile/sm: 75vh（手機螢幕窄但長，多給空間）
+                                          md+: 60vh（桌機橫向有空間，較緊湊讓使用者
+                                          看到下方音訊播放器） */}
+                                    <div className="p-4 sm:p-5 space-y-5 max-h-[75vh] md:max-h-[60vh] overflow-y-auto">
                                         {meeting.transcript && meeting.transcript.length > 0 ? (
                                             meeting.transcript.map((line, idx) => {
                                                 const speaker = getSpeakerDisplay(line.speaker);

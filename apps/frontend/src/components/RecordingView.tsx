@@ -530,10 +530,11 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
                         <h3 className="text-lg font-semibold text-slate-700 mb-2">準備開始錄音</h3>
                         <p className="text-slate-500 max-w-sm mb-6">點擊下方按鈕開始錄音，系統將即時轉錄你的語音。</p>
                         
-                        {/* Custom Context Input */}
+                        {/* Custom Context Input — P2: 視覺強調可選；optional badge 直接放 label 旁 */}
                         <div className="w-full max-w-sm text-left">
-                            <label className="text-sm font-medium text-slate-700 mb-2 block">
-                                專有名詞 / 背景資料 (可選)
+                            <label className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                                <span>專有名詞 / 背景資料</span>
+                                <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 bg-muted text-muted-foreground rounded font-normal">可選</span>
                             </label>
                             <input 
                                 type="text"
