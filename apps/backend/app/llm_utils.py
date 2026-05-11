@@ -405,6 +405,11 @@ def generate_summary(
         schema_class = legacy_schema
     
     try:
+        # 2026-05-11 fix: 8192 對 V2 schema (chapters + sub_chapters + bullets + quotes)
+        # 嚴重不足。2h16m 會議實測在 8K 截斷導致 JSON parse fail。
+        # Gemini 2.5 Flash 支援上限 65536 — 給足夠 headroom 給長會議。
+        MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "65536"))
+
         response = client.models.generate_content(
             model=GEMINI_MODEL,
             contents=full_prompt,
@@ -412,16 +417,31 @@ def generate_summary(
                 "response_mime_type": "application/json",
                 "response_schema": schema_class,
                 "temperature": 0.2,
-                "max_output_tokens": 8192
+                "max_output_tokens": MAX_OUTPUT_TOKENS
             }
         )
-        
+
         # Debug: log response metadata
         resp_text = response.text
         logger.info(f"Gemini response type: {type(resp_text)}, length: {len(resp_text) if resp_text else 'None'}")
         if resp_text:
             logger.info(f"Gemini response preview: {resp_text[:200]}")
-        
+
+        # 檢查 finish_reason 偵測 truncation（max_output_tokens 達到上限）
+        try:
+            finish_reason = response.candidates[0].finish_reason
+            finish_reason_str = str(finish_reason) if finish_reason else "unknown"
+            logger.info(f"Gemini finish_reason: {finish_reason_str}")
+            if "MAX_TOKENS" in finish_reason_str.upper():
+                logger.error(
+                    f"Gemini response TRUNCATED — hit max_output_tokens={MAX_OUTPUT_TOKENS}. "
+                    f"Resulting JSON will be incomplete. "
+                    f"Consider further increasing GEMINI_MAX_OUTPUT_TOKENS env var "
+                    f"or splitting transcript before summary."
+                )
+        except (IndexError, AttributeError):
+            pass  # finish_reason 取不到也不擋
+
         # Handle None response.text (happens with some SDK versions in JSON mode)
         if not resp_text:
             # Try to extract from candidates
