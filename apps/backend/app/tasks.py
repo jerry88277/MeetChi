@@ -6,6 +6,7 @@ import os
 import json
 import subprocess
 import sys
+import uuid
 from sqlalchemy.orm import Session
 from app.models import Meeting, TranscriptSegment, MeetingStatus, TaskStatus as TaskStatusModel
 from sqlalchemy import create_engine
@@ -49,6 +50,175 @@ def _update_task_status(db: Session, meeting_id: str, task_name: str, status: st
         )
         db.add(task)
     db.commit()
+
+
+def _process_split_audio_sync(
+    meeting_id: str,
+    audio_url: str,
+    gpu_asr_url: str,
+    language: str,
+    db: Session,
+    suppress_fail_notification: bool,
+):
+    """Phase A (2026-05-11)：duration > 1200s 走拆解 + 平行 GPU ASR path.
+
+    流程：
+      1. 拆 audio_url → N 個 chunks 上 GCS (audio_split.split_audio_to_chunks)
+      2. asyncio.gather POST 給 GPU service N 次（不掛 callback，直接拿 response）
+      3. 各 chunk segments 套 offset 合併
+      4. 全部寫進 TranscriptSegment table
+      5. 觸發 generate_summary_core(skip_asr=True) 跑 summary
+      6. 清理 GCS chunks
+
+    與 single-audio path 不同處：
+      - 不依賴 GPU service 的 callback（callback_url=None）
+      - 全部 round-trip 在 backend 內完成，最後一次寫 DB + trigger summary
+
+    Returns dict {status, meeting_id, ...}; 與 single-audio path 同格式
+    """
+    import asyncio
+    from app.audio_split import split_audio_to_chunks, cleanup_chunks
+    from app.models import TranscriptSegment
+
+    try:
+        # 1. Split audio → upload chunks
+        logger.info(f"[ParallelASR] splitting audio for {meeting_id}")
+        chunks = split_audio_to_chunks(audio_url, meeting_id)
+        n_chunks = len(chunks)
+        logger.info(f"[ParallelASR] {meeting_id} split into {n_chunks} chunks")
+
+        # 2. asyncio.gather POST to GPU N times in parallel
+        async def call_gpu(chunk_url: str, offset: float, idx: int) -> dict:
+            import httpx
+            async with httpx.AsyncClient(timeout=3600.0) as client:
+                logger.info(f"[ParallelASR] chunk {idx+1}/{n_chunks} → GPU (offset={offset:.0f}s)")
+                resp = await client.post(
+                    f"{gpu_asr_url.rstrip('/')}/asr/refine",
+                    json={
+                        "meeting_id": f"{meeting_id}__chunk_{idx:03d}",  # GPU 不需要真實 ID
+                        "audio_url": chunk_url,
+                        "language": language,
+                        "callback_url": None,  # 不要 callback，sync return
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                data["_chunk_offset"] = offset
+                data["_chunk_idx"] = idx
+                logger.info(
+                    f"[ParallelASR] chunk {idx+1}/{n_chunks} done: "
+                    f"{len(data.get('segments', []))} segments"
+                )
+                return data
+
+        async def run_all_chunks():
+            tasks = [call_gpu(url, off, i) for i, (url, off) in enumerate(chunks)]
+            return await asyncio.gather(*tasks, return_exceptions=True)
+
+        results = asyncio.run(run_all_chunks())
+
+        # Check for chunk-level failures
+        failed_chunks = [i for i, r in enumerate(results) if isinstance(r, Exception)]
+        if failed_chunks:
+            err_msgs = "; ".join(
+                f"chunk_{i}: {type(results[i]).__name__}: {results[i]}"
+                for i in failed_chunks[:3]
+            )
+            raise RuntimeError(f"[ParallelASR] {len(failed_chunks)}/{n_chunks} chunks failed: {err_msgs}")
+
+        # 3. Merge segments with time offset
+        all_segments = []
+        order_counter = 0
+        for result in results:
+            offset = result["_chunk_offset"]
+            chunk_idx = result["_chunk_idx"]
+            for seg in result.get("segments", []):
+                all_segments.append({
+                    "start_time": seg["start"] + offset,
+                    "end_time": seg["end"] + offset,
+                    "speaker": seg.get("speaker", "") or "",
+                    # Phase A 限制：speaker ID 跨 chunk 不連貫，加 chunk 後綴避免合併
+                    # 例：SPEAKER_00 in chunk_0 → SPEAKER_00_c0；chunk_1 → SPEAKER_00_c1
+                    "_chunk_idx": chunk_idx,
+                    "content_raw": seg.get("text", ""),
+                    "content_polished": None,
+                })
+                order_counter += 1
+
+        # 重新編碼 speaker IDs 以反映「跨 chunk 不連貫」(Phase A)
+        # 後續 user 可在 frontend 手動合併同一人的不同 chunk 標籤
+        for seg in all_segments:
+            spk = seg["speaker"]
+            cidx = seg["_chunk_idx"]
+            if spk:
+                seg["speaker"] = f"{spk}_c{cidx}"
+            del seg["_chunk_idx"]
+
+        # Sort by start_time then by chunk_idx (stable)
+        all_segments.sort(key=lambda s: s["start_time"])
+
+        # 4. Write all segments to DB
+        meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+        if not meeting:
+            raise RuntimeError(f"Meeting {meeting_id} disappeared during processing")
+
+        # Clear existing segments (Phase A 接受全量覆蓋)
+        db.query(TranscriptSegment).filter(TranscriptSegment.meeting_id == meeting_id).delete()
+
+        from app.models import TranscriptSegment as TS
+        for order, seg_data in enumerate(all_segments):
+            db.add(TS(
+                id=str(uuid.uuid4()),
+                meeting_id=meeting_id,
+                order=order,
+                start_time=seg_data["start_time"],
+                end_time=seg_data["end_time"],
+                speaker=seg_data["speaker"],
+                content_raw=seg_data["content_raw"],
+                content_polished=seg_data["content_polished"],
+                is_final=True,
+            ))
+        db.commit()
+        logger.info(
+            f"[ParallelASR] {meeting_id}: wrote {len(all_segments)} merged segments to DB "
+            f"(from {n_chunks} chunks)"
+        )
+
+        # 5. Cleanup chunks from GCS
+        cleanup_chunks(audio_url, meeting_id)
+
+        # 6. Trigger summary generation (synchronously continue)
+        _update_task_status(
+            db, meeting_id, "offline_asr", "COMPLETED",
+            f"Parallel ASR complete ({n_chunks} chunks)"
+        )
+
+        logger.info(f"[ParallelASR] {meeting_id}: invoking summary generation (skip_asr=True)")
+        return generate_summary_core(
+            meeting_id,
+            template_type=meeting.template_name or "general",
+            skip_asr=True,
+            suppress_fail_notification=suppress_fail_notification,
+        )
+
+    except Exception as e:
+        logger.error(f"[ParallelASR] {meeting_id} failed: {e}", exc_info=True)
+        if not suppress_fail_notification:
+            try:
+                meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+                if meeting:
+                    meeting.status = MeetingStatus.FAILED
+                    db.commit()
+            except Exception:
+                pass
+        _update_task_status(db, meeting_id, "offline_asr", "FAILED", f"ParallelASR error: {str(e)}")
+        # cleanup chunks even on failure
+        try:
+            from app.audio_split import cleanup_chunks
+            cleanup_chunks(audio_url, meeting_id)
+        except Exception:
+            pass
+        return {"status": "failed", "error": f"Parallel ASR failed: {str(e)}"}
 
 
 def run_offline_asr_refinement(meeting_id: str, audio_path: str, language: str = "zh"):
@@ -187,19 +357,30 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
             logger.info(f"[DEBUG] GPU_ASR_SERVICE_URL env value: '{gpu_asr_url}'")
             if gpu_asr_url:
                 logger.info(f"GPU_ASR_SERVICE_URL is set ({gpu_asr_url}). Triggering remote GPU ASR refinement...")
-                
+
                 # Set status to PROCESSING immediately so frontend can track
                 meeting.status = MeetingStatus.PROCESSING
                 db.commit()
                 logger.info(f"Set meeting {meeting_id} status to PROCESSING")
-                
+
+                # 2026-05-11 Phase A：duration > 20 min 走 parallel split path
+                from app.audio_split import should_use_parallel_split
+
+                if should_use_parallel_split(meeting.duration):
+                    logger.info(
+                        f"[ParallelASR] meeting {meeting_id} duration={meeting.duration:.0f}s, "
+                        f"using audio split + parallel GPU ASR"
+                    )
+                    return _process_split_audio_sync(meeting_id, meeting.audio_url, gpu_asr_url, meeting.language or "zh", db, suppress_fail_notification)
+
+                # Short audio：original single-call path
                 try:
                     import httpx
-                    
+
                     # Generate public callback URL for GPU to hit back
                     backend_public_url = os.getenv("BACKEND_PUBLIC_URL", "http://localhost:8000")
                     callback_url = f"{backend_public_url.rstrip('/')}/api/v1/callbacks/asr-done"
-                    
+
                     # GPU ASR timeout must match Cloud Run Service timeout (3600s)
                     # GPU processes audio synchronously and returns result + hits callback
                     with httpx.Client(timeout=3600.0) as client:
@@ -215,13 +396,13 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
                         response.raise_for_status()
                         result_data = response.json()
                         logger.info(f"Triggered remote GPU ASR: status {result_data.get('status')}")
-                        
-                        _update_task_status(db, meeting_id, "offline_asr", "IN_PROGRESS", 
+
+                        _update_task_status(db, meeting_id, "offline_asr", "IN_PROGRESS",
                                             f"Triggered remote GPU ASR. Awaiting callback at {callback_url}")
-                        
+
                         # Return 'accepted' so Cloud Tasks/Background Tasks can finish the current worker
                         return {"status": "accepted", "meeting_id": meeting_id, "message": "GPU ASR Refinement started in background"}
-                        
+
                 except Exception as e:
                     logger.error(f"Remote GPU ASR trigger failed for meeting {meeting_id}: {e}")
                     if not suppress_fail_notification:
