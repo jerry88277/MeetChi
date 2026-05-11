@@ -241,13 +241,69 @@ def get_all_system_templates() -> List[TemplateSchema]:
     return SYSTEM_TEMPLATES
 
 
+# ============================================
+# 摘要規格 V2 (SUMMARY_FINAL_SPEC.md, 2026-05-11)
+# Q1+Q2 章節 + 時序子段；Q3 結論視情況才列；Q4 引言要帶 time；Q7 三個新欄位
+# ============================================
+SUMMARY_V2_REQUIREMENTS = """
+## 摘要規格 V2 — 新增結構化欄位
+
+除了既有的 summary/decisions/risks 等，以下欄位**必須**輸出：
+
+### 1. tldr (100-150 字)
+一句話結論，讓使用者讀完就 grab 全會議 30-40% 重點。BLUF 原則（Bottom Line Up Front）：
+最重要的決策/結論/警訊放在第一句。
+
+### 2. chapters (8-12 個主題章節，按議題聚類**非時序**)
+不要按發言順序切，要按「主題」分。每章節：
+- title: 主題名稱（不是流水號）
+- summary: 100-150 字摘要
+- bullets: 3-5 條重點，每條 20-30 字
+- key_quotes: 0-2 條原音引言，含 time（秒數）
+- sub_chapters: 該主題在逐字稿中對應的時序子段（按發言時間排序，30-90 秒一段）：
+  - time_start / time_end: 秒
+  - summary: 30-50 字
+  - bullets: 2-3 條
+  - key_quotes: 0-1 條（極關鍵才列）
+
+### 3. speaker_contributions (與會者貢獻度)
+每位講者一筆：
+- speaker: SPEAKER_xx
+- role: 主持人 / 講者 / 客戶 ...
+- speak_time_pct: 0-100，發言時長占比（估算）
+- main_topics: 該講者主導的 2-4 個議題
+- key_contribution: 一句話描述貢獻
+
+### 4. next_steps (會議**之後**該追蹤的事項；與 action_items 區隔)
+action_items 是會議中當下決定的待辦；next_steps 是會議之後的後續追蹤。
+每筆：
+- task: 任務描述
+- assignee: 負責人（可空）
+- due: ISO date "YYYY-MM-DD"（可空）
+- follow_up_meeting: 若需開後續會議的提示（可空）
+
+### 5. 引言（key_quotes）規範
+- 每條引言 **必須含 time**（從原始逐字稿的時間區間取首秒）
+- speaker 保留 SPEAKER_xx 格式（前端會 transform 為 display_name）
+- 文字 ≤ 150 字，逐字保留不潤稿
+
+### 6. 結論三欄（decisions / risks / action_items）— 視情況才列
+- 若會議**明確**討論決策/風險/待辦，才列出
+- 若會議性質不涉及（如純講座、分享會），decisions/risks 可空陣列
+- **嚴禁瞎掰**強行湊條目，會稀釋資訊價值
+
+### 7. cross_meeting_refs
+**不要 LLM 生成此欄位**。Backend 會在 summary 產生後自己用 pgvector 查補。
+"""
+
+
 def build_prompt_from_template(
     template: TemplateSchema,
     transcript: str,
     user_instruction: str = "",
 ) -> tuple:
     """Build system_prompt and user_prompt from a TemplateSchema.
-    
+
     Returns (system_prompt, user_prompt_suffix) tuple.
     """
     # Build section instructions
@@ -255,19 +311,25 @@ def build_prompt_from_template(
         f"- **{s.title}** (output_key: `{s.output_key}`, type: {s.output_type}): {s.instruction}"
         for s in template.sections
     )
-    
+
     system_prompt = f"""你是專業的會議記錄助手。請根據以下會議逐字稿，生成結構化的會議摘要。
 請使用繁體中文撰寫回應，並以 JSON 格式輸出。
 {COT_ROLE_INFERENCE_BLOCK}
 
-## 輸出段落要求
-以下是必須包含的 JSON 欄位：
+## 模板原有段落要求
+以下是模板「{template.display_name}」要求的 JSON 欄位：
 {section_instructions}
 
-請確保輸出的 JSON 包含所有上述欄位。"""
+{SUMMARY_V2_REQUIREMENTS}
 
-    user_prompt_suffix = f"請分析以下會議逐字稿並生成結構化摘要（模板：{template.display_name}）："
-    
+請確保輸出的 JSON 包含所有上述欄位（模板原欄位 + V2 結構化欄位）。
+"""
+
+    user_prompt_suffix = (
+        f"請分析以下會議逐字稿並生成結構化摘要（模板：{template.display_name}）。"
+        "務必輸出 chapters / speaker_contributions / next_steps / 含 time 的 key_quotes 等 V2 欄位。"
+    )
+
     return system_prompt, user_prompt_suffix
 
 
