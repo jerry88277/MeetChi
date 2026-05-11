@@ -37,9 +37,12 @@ interface DashboardViewProps {
     // Phase C: Context input
     uploadContext?: string;
     onUploadContextChange?: (context: string) => void;
+    // Sprint 2e Phase 1 (2026-05-11): 機密會議旗標
+    uploadConfidential?: boolean;
+    onUploadConfidentialChange?: (confidential: boolean) => void;
 }
 
-export const DashboardView = ({ meetings, isLoading, isUploading = false, uploadState = 'idle', error, successMessage, onSelectMeeting, onCreateMeeting, onUploadClick, onRefresh, availableTemplates = [], selectedTemplateName = 'general', onTemplateChange, uploadContext = '', onUploadContextChange }: DashboardViewProps) => {
+export const DashboardView = ({ meetings, isLoading, isUploading = false, uploadState = 'idle', error, successMessage, onSelectMeeting, onCreateMeeting, onUploadClick, onRefresh, availableTemplates = [], selectedTemplateName = 'general', onTemplateChange, uploadContext = '', onUploadContextChange, uploadConfidential = false, onUploadConfidentialChange }: DashboardViewProps) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
@@ -149,6 +152,27 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                                             ))}
                                         </select>
                                         
+                                        {/* Sprint 2e Phase 1: 機密會議 toggle */}
+                                        {onUploadConfidentialChange && (
+                                            <div className="mt-3 px-3 py-2 rounded-lg bg-status-error/5 border border-status-error/20">
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={uploadConfidential}
+                                                        onChange={(e) => onUploadConfidentialChange(e.target.checked)}
+                                                        className="w-4 h-4 accent-status-error cursor-pointer"
+                                                    />
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-xs font-semibold text-status-error">
+                                                            🔒 標記為機密會議
+                                                        </p>
+                                                        <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
+                                                            機密會議將鎖定複製、顯示浮水印，並由 IT 受控管。可上傳後在會議詳情頁切換。
+                                                        </p>
+                                                    </div>
+                                                </label>
+                                            </div>
+                                        )}
                                         {/* Phase C: Context Input */}
                                         {onUploadContextChange && (
                                             <div className="mt-3">

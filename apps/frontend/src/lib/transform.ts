@@ -111,5 +111,6 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
         keyQuotes,
         templateName: apiMeeting.template_name,
         speakerCount: countDistinctSpeakers(apiMeeting),
+        isConfidential: apiMeeting.is_confidential ?? false,
     };
 }

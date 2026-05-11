@@ -129,6 +129,11 @@ export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
                                 {tpl.label}
                             </span>
                         )}
+                        {meeting.isConfidential && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-status-error/10 text-status-error border border-status-error/20" title="機密會議">
+                                🔒 機密
+                            </span>
+                        )}
                         <h3 className="font-bold text-foreground group-hover:text-brand-cta transition-colors break-words">
                             {meeting.title}
                         </h3>

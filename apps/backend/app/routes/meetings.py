@@ -79,6 +79,7 @@ async def create_meeting(meeting_data: MeetingCreate, db: Session = Depends(get_
         duration=meeting_data.duration,
         custom_prompt=meeting_data.custom_context,
         owner_upn=upn,
+        is_confidential=meeting_data.is_confidential,
     )
     db.add(db_meeting)
     db.flush()

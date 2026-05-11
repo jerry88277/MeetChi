@@ -128,11 +128,16 @@ class Meeting(Base):
     # Custom prompt for user-defined summarization instructions
     custom_prompt = Column(Text, nullable=True)
 
-    # Soft delete (Sprint 2e / 2026-05-11)
+    # Soft delete (Sprint 2e / PR-B / 2026-05-11)
     # deleted_at IS NULL = active；非 NULL = 已刪除，保留 30 天供 audit / restore
     # 所有 list/get query 自動 filter deleted_at IS NULL（除 admin 端點）
     deleted_at = Column(DateTime, nullable=True, index=True)
     deleted_by = Column(String(255), ForeignKey("users.ad_upn", ondelete="SET NULL"), nullable=True)
+
+    # 機密會議旗標 (Sprint 2e Phase 1 / PR-D / 2026-05-11)
+    # TRUE = 機密：前端鎖複製/截圖警示/浮水印；後端 audio URL 短效化（Phase 3）
+    # FALSE = 一般：開放複製、匯出
+    is_confidential = Column(Boolean, nullable=False, default=False)
 
     # pgvector embedding for future semantic search
     summary_embedding = Column(Vector(768), nullable=True)
