@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { API_BASE_URL } from '@/lib/api';
 import { ThemeToggle } from './ThemeToggle';
-import { FeedbackModal } from './FeedbackModal';
 
 interface SidebarProps {
     activeTab: string;
@@ -27,10 +26,12 @@ interface SidebarProps {
         email?: string | null;
         image?: string | null;
     };
+    /** 2026-05-11：FeedbackModal 升級到 page 層統一管理；Sidebar 只觸發 callback。
+     *  callback 不帶 meeting_id → 一般回報；detail 頁的「回報這個會議」帶 id。 */
+    onOpenFeedback?: () => void;
 }
 
-export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen, isConnected, user }: SidebarProps) => {
-    const [showFeedback, setShowFeedback] = React.useState(false);
+export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen, isConnected, user, onOpenFeedback }: SidebarProps) => {
     const menuItems = [
         { id: 'dashboard', icon: FileText, label: '所有會議', primary: true },
         { id: 'rag', icon: MessageSquare, label: '跨會議知識庫' },
@@ -85,18 +86,20 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen
                     ))}
                 </nav>
 
-                {/* PR24: 回報問題入口 */}
-                <div className="px-4 pb-2">
-                    <button
-                        onClick={() => setShowFeedback(true)}
-                        className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-white/60 hover:text-white hover:bg-white/5 border border-white/10 hover:border-brand-orange/40 rounded-lg transition-colors"
-                        title="回報問題或建議"
-                    >
-                        <MessageSquareWarning size={16} />
-                        <span className="font-medium">回報問題</span>
-                        <span className="ml-auto text-[10px] text-white/30">Beta</span>
-                    </button>
-                </div>
+                {/* PR24: 回報問題入口 — 一般回報（無 meeting context） */}
+                {onOpenFeedback && (
+                    <div className="px-4 pb-2">
+                        <button
+                            onClick={onOpenFeedback}
+                            className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-white/60 hover:text-white hover:bg-white/5 border border-white/10 hover:border-brand-orange/40 rounded-lg transition-colors"
+                            title="回報問題或建議"
+                        >
+                            <MessageSquareWarning size={16} />
+                            <span className="font-medium">回報問題</span>
+                            <span className="ml-auto text-[10px] text-white/30">Beta</span>
+                        </button>
+                    </div>
+                )}
 
                 {/* User Profile Section */}
                 {user && (
@@ -141,12 +144,6 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen
                     </div>
                 </div>
             </div>
-
-            <FeedbackModal
-                isOpen={showFeedback}
-                onClose={() => setShowFeedback(false)}
-                userUpn={user?.email || 'anonymous@meetchi.test'}
-            />
         </>
     );
 };

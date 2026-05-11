@@ -238,6 +238,19 @@ export const FeedbackModal = ({
                         </p>
                     </div>
                 ) : stage === 1 ? (
+                    <>
+                        {meetingId && (
+                            <div className="px-6 pt-4">
+                                <div className="bg-brand-cta/10 border border-brand-cta/20 rounded-lg px-3 py-2 text-xs text-brand-cta flex items-center gap-2">
+                                    <FileText size={14} />
+                                    <span className="flex-1">
+                                        本回報會自動附上會議 ID
+                                        <code className="ml-1.5 px-1 py-0.5 bg-brand-cta/10 rounded font-mono text-[11px]">{meetingId.slice(0, 8)}…</code>
+                                        ，IT 可精準定位問題。
+                                    </span>
+                                </div>
+                            </div>
+                        )}
                     <div className="px-6 py-5 space-y-5">
                         {/* Issue type */}
                         <div>
@@ -349,6 +362,7 @@ export const FeedbackModal = ({
                             </button>
                         </div>
                     </div>
+                    </>
                 ) : (
                     <div className="px-6 py-5 space-y-5">
                         <div className="bg-muted/30 rounded-lg p-3 text-xs text-muted-foreground">

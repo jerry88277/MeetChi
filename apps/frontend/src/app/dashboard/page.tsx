@@ -32,6 +32,7 @@ import { TemplateGallery } from '@/components/TemplateGallery';
 import { RagWorkspace } from '@/components/rag/RagWorkspace';
 import { RagDrawer } from '@/components/rag/RagDrawer';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { FeedbackModal } from '@/components/FeedbackModal';
 import { useMeetings } from '@/hooks/useMeetings';
 import { useRecording } from '@/hooks/useRecording';
 import { useSummary } from '@/hooks/useSummary';
@@ -97,6 +98,11 @@ export default function DashboardPage() {
     // Confirm dialog state — 取代 confirm() / window.confirm()
     const [pendingDelete, setPendingDelete] = useState<{ meetingId: string } | null>(null);
     const [pendingDiscard, setPendingDiscard] = useState<{ key: string } | null>(null);
+
+    // 2026-05-11: FeedbackModal 升級到 page 層；context 含 meetingId 時自動帶入
+    const [feedbackContext, setFeedbackContext] = useState<
+        { meetingId?: string } | null
+    >(null);
 
     // Phase 9.1: Polling hook — watches lastUploadedMeetingId
     // Root fix: enabled driven by ACTUAL meeting data state, not just UI state
@@ -423,6 +429,7 @@ export default function DashboardPage() {
                     setIsMobileOpen={setIsMobileMenuOpen}
                     isConnected={isConnected}
                     user={session?.user}
+                    onOpenFeedback={() => setFeedbackContext({})}
                 />
             )}
 
@@ -550,6 +557,7 @@ export default function DashboardPage() {
                             isRegenerating={isRegenerating}
                             onDelete={handleDeleteMeeting}
                             isDeleting={false}
+                            onReportThisMeeting={(meetingId) => setFeedbackContext({ meetingId })}
                         />
                     )}
 
@@ -714,6 +722,15 @@ export default function DashboardPage() {
                     }
                 }}
                 onCancel={() => setPendingDiscard(null)}
+            />
+
+            {/* 2026-05-11: 全域 FeedbackModal — Sidebar 點開: 無 meeting context；
+                DetailView 「回報這個會議」: 自動帶 meeting_id 讓 IT 精準 debug */}
+            <FeedbackModal
+                isOpen={feedbackContext !== null}
+                onClose={() => setFeedbackContext(null)}
+                userUpn={session?.user?.email || 'anonymous@meetchi.test'}
+                meetingId={feedbackContext?.meetingId}
             />
         </div>
     );
