@@ -38,6 +38,11 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
     let decisions: string[] = [];
     let risks: string[] = [];
     let keyQuotes: KeyQuote[] = [];
+    // Summary V2 (2026-05-11)
+    let chapters: import('@/types/meeting').Chapter[] = [];
+    let speakerContributions: import('@/types/meeting').SpeakerContribution[] = [];
+    let nextSteps: import('@/types/meeting').NextStep[] = [];
+    let crossMeetingRefs: import('@/types/meeting').CrossMeetingRef[] = [];
 
     if (apiMeeting.summary_json) {
         try {
@@ -56,6 +61,60 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
             keyQuotes = (summaryData.key_quotes || []).map((q: ApiKeyQuote) => ({
                 speaker: q.speaker,
                 text: q.text,
+                time: typeof q.time === 'number' ? q.time : undefined,
+            }));
+
+            // V2: chapters → camelCase 映射
+            chapters = (summaryData.chapters || []).map((c) => ({
+                title: c.title,
+                summary: c.summary,
+                bullets: c.bullets || [],
+                keyQuotes: (c.key_quotes || []).map((q) => ({
+                    speaker: q.speaker, text: q.text,
+                    time: typeof q.time === 'number' ? q.time : undefined,
+                })),
+                subChapters: (c.sub_chapters || []).map((sc) => ({
+                    timeStart: sc.time_start,
+                    timeEnd: sc.time_end,
+                    summary: sc.summary,
+                    bullets: sc.bullets || [],
+                    keyQuotes: (sc.key_quotes || []).map((q) => ({
+                        speaker: q.speaker, text: q.text,
+                        time: typeof q.time === 'number' ? q.time : undefined,
+                    })),
+                })),
+            }));
+
+            speakerContributions = (summaryData.speaker_contributions || []).map((s) => ({
+                speaker: s.speaker,
+                role: s.role,
+                speakTimePct: s.speak_time_pct,
+                mainTopics: s.main_topics || [],
+                keyContribution: s.key_contribution,
+            }));
+
+            // next_steps 在 sales_bant 模板可能是 List[str]（向後相容）
+            const rawNextSteps = summaryData.next_steps_v2 || summaryData.next_steps;
+            if (Array.isArray(rawNextSteps)) {
+                nextSteps = rawNextSteps.map((item) => {
+                    if (typeof item === 'string') {
+                        return { task: item };
+                    }
+                    return {
+                        task: item.task,
+                        assignee: item.assignee,
+                        due: item.due,
+                        followUpMeeting: item.follow_up_meeting,
+                    };
+                });
+            }
+
+            crossMeetingRefs = (summaryData.cross_meeting_refs || []).map((r) => ({
+                topic: r.topic,
+                relatedMeetingId: r.related_meeting_id,
+                relatedMeetingTitle: r.related_meeting_title,
+                url: r.url,
+                similarity: r.similarity,
             }));
         } catch {
             summary = apiMeeting.summary_json;
@@ -112,5 +171,10 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
         templateName: apiMeeting.template_name,
         speakerCount: countDistinctSpeakers(apiMeeting),
         isConfidential: apiMeeting.is_confidential ?? false,
+        // Summary V2
+        chapters,
+        speakerContributions,
+        nextSteps,
+        crossMeetingRefs,
     };
 }

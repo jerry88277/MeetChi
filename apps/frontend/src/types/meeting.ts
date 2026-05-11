@@ -24,8 +24,49 @@ export type SpeakerMappings = Record<string, SpeakerMapping>;
 
 // PR23 (Sprint 2b) IA 重設計：對齊 PR21 backend summary 新欄位
 export interface KeyQuote {
-    speaker: string;
+    speaker: string;            // SPEAKER_xx；render 走 SpeakerName transform
     text: string;
+    time?: number;              // V2 (2026-05-11)：秒數
+}
+
+// Summary V2 (Q1-Q8 落地，2026-05-11)
+export interface SubChapter {
+    timeStart: number;
+    timeEnd: number;
+    summary: string;
+    bullets: string[];
+    keyQuotes: KeyQuote[];
+}
+
+export interface Chapter {
+    title: string;
+    summary: string;
+    bullets: string[];
+    keyQuotes: KeyQuote[];
+    subChapters: SubChapter[];
+}
+
+export interface SpeakerContribution {
+    speaker: string;
+    role?: string;
+    speakTimePct: number;
+    mainTopics: string[];
+    keyContribution: string;
+}
+
+export interface NextStep {
+    task: string;
+    assignee?: string;
+    due?: string;
+    followUpMeeting?: string;
+}
+
+export interface CrossMeetingRef {
+    topic: string;
+    relatedMeetingId: string;
+    relatedMeetingTitle: string;
+    url: string;
+    similarity: number;
 }
 
 export interface Meeting {
@@ -48,4 +89,9 @@ export interface Meeting {
     templateName?: string;              // 模板分類 (general/sales_bant/...)
     speakerCount?: number;              // 講者數（卡片顯示 dot 用）
     isConfidential?: boolean;           // Sprint 2e Phase 1：機密會議旗標
+    // Summary V2 (2026-05-11)
+    chapters?: Chapter[];
+    speakerContributions?: SpeakerContribution[];
+    nextSteps?: NextStep[];
+    crossMeetingRefs?: CrossMeetingRef[];
 }

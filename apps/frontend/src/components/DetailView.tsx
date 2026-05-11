@@ -25,6 +25,12 @@ import type { Meeting } from '@/types/meeting';
 import { exportAsTxt, exportAsSrt, exportAsJson } from '@/lib/export';
 import { api } from '@/lib/api';
 import type { TemplateDTO, SummaryVersionDTO, SpeakerMappingDTO } from '@/lib/api';
+import { formatSeconds } from '@/lib/transform';
+import { ChapterSection } from './detail/ChapterSection';
+import { SpeakerContributionsBar } from './detail/SpeakerContributionsBar';
+import { NextStepsTable } from './detail/NextStepsTable';
+import { CrossMeetingRefList } from './detail/CrossMeetingRefList';
+import { QuoteCard } from './detail/QuoteCard';
 
 interface DetailViewProps {
     meeting: Meeting | null;
@@ -479,6 +485,44 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                         </section>
                     )}
 
+                    {/* === Section 2.5 (V2 / 2026-05-11): 主題章節 (Q1+Q2 結合 B+C) === */}
+                    {isCompleted && meeting.chapters && meeting.chapters.length > 0 && (
+                        <section>
+                            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
+                                <FileText size={14} /> 主題章節（{meeting.chapters.length} 章）
+                            </h3>
+                            <div className="space-y-3">
+                                {meeting.chapters.map((ch, i) => (
+                                    <ChapterSection
+                                        key={i}
+                                        chapter={ch}
+                                        index={i + 1}
+                                        speakerMappings={meeting.speakerMappings}
+                                        onTimestampClick={(sec) => handleTimestampClick(formatSeconds(sec))}
+                                    />
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {/* === Section 2.6 (V2 / 2026-05-11): 與會者貢獻度 (Q7) === */}
+                    {isCompleted && meeting.speakerContributions && meeting.speakerContributions.length > 0 && (
+                        <SpeakerContributionsBar
+                            contributions={meeting.speakerContributions}
+                            speakerMappings={meeting.speakerMappings}
+                        />
+                    )}
+
+                    {/* === Section 2.7 (V2 / 2026-05-11): 後續追蹤 (Q7) === */}
+                    {isCompleted && meeting.nextSteps && meeting.nextSteps.length > 0 && (
+                        <NextStepsTable nextSteps={meeting.nextSteps} />
+                    )}
+
+                    {/* === Section 2.8 (V2 / 2026-05-11): 跨會議參照 (Q7) === */}
+                    {isCompleted && meeting.crossMeetingRefs && meeting.crossMeetingRefs.length > 0 && (
+                        <CrossMeetingRefList refs={meeting.crossMeetingRefs} />
+                    )}
+
                     {/* === Section 3: 完整摘要 === */}
                     {isCompleted && meeting.summary && (
                         <section>
@@ -543,27 +587,19 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                         <section>
                             <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
                                 <MessageSquareQuote size={14} /> 精選原音
+                                <span className="text-[10px] font-normal text-muted-foreground/70">
+                                    （V2：點時戳可跳音檔）
+                                </span>
                             </h3>
                             <div className="space-y-3">
-                                {keyQuotes.map((q, i) => {
-                                    const sd = getSpeakerDisplay(q.speaker);
-                                    return (
-                                        <blockquote
-                                            key={i}
-                                            className="bg-card p-4 rounded-xl border border-border shadow-sm border-l-4"
-                                            style={{ borderLeftColor: sd.color }}
-                                        >
-                                            <p className="text-foreground/90 leading-relaxed italic">
-                                                「{q.text}」
-                                            </p>
-                                            <footer className="mt-2 text-xs flex items-center gap-2" style={{ color: sd.color }}>
-                                                <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: sd.color }} />
-                                                {sd.name}
-                                                {sd.role && <span className="opacity-60">({sd.role})</span>}
-                                            </footer>
-                                        </blockquote>
-                                    );
-                                })}
+                                {keyQuotes.map((q, i) => (
+                                    <QuoteCard
+                                        key={i}
+                                        quote={q}
+                                        speakerMappings={meeting.speakerMappings}
+                                        onTimestampClick={(sec) => handleTimestampClick(formatSeconds(sec))}
+                                    />
+                                ))}
                             </div>
                         </section>
                     )}

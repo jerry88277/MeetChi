@@ -43,8 +43,49 @@ export interface Meeting {
 // Sprint 2c (PR21) extended: backend summary_json 加新欄位後，frontend 對齊。
 // 舊摘要缺欄位也不會爆 — 全 optional。
 export interface KeyQuote {
-    speaker: string;
+    speaker: string;            // SPEAKER_xx；render 時走 SpeakerName 元件 transform 為 display_name (Q4)
     text: string;
+    time?: number;              // V2 (2026-05-11)：秒數，點時戳跳音檔
+}
+
+// Summary V2 schema (SUMMARY_FINAL_SPEC.md / Q1-Q8, 2026-05-11)
+export interface SubChapter {
+    time_start: number;         // 秒
+    time_end: number;           // 秒
+    summary: string;            // 30-50 字
+    bullets: string[];
+    key_quotes: KeyQuote[];
+}
+
+export interface Chapter {
+    title: string;
+    summary: string;            // 100-150 字主題摘要
+    bullets: string[];
+    key_quotes: KeyQuote[];
+    sub_chapters: SubChapter[]; // Layer 3 展開
+}
+
+export interface SpeakerContribution {
+    speaker: string;            // SPEAKER_xx；前端 transform display_name
+    role?: string;
+    speak_time_pct: number;     // 0-100
+    main_topics: string[];
+    key_contribution: string;
+}
+
+export interface NextStep {
+    task: string;
+    assignee?: string;
+    due?: string;               // ISO date
+    follow_up_meeting?: string;
+}
+
+export interface CrossMeetingRef {
+    topic: string;
+    related_meeting_id: string;
+    related_meeting_title: string;
+    url: string;                // /dashboard/meetings/{id}
+    similarity: number;         // 0.0-1.0
 }
 
 export interface MeetingSummary {
@@ -53,13 +94,18 @@ export interface MeetingSummary {
     decisions: string[];
     risks: string[];
     // PR21 新欄位（皆 optional 給 backward compat）
-    tldr?: string;                // 100-200 字 TL;DR 結論先行
-    key_quotes?: KeyQuote[];      // 1-3 條原音引言（含 speaker）
+    tldr?: string;
+    key_quotes?: KeyQuote[];
+    // Summary V2 新欄位（Q1-Q8 落地，2026-05-11）
+    chapters?: Chapter[];
+    speaker_contributions?: SpeakerContribution[];
+    next_steps_v2?: NextStep[];           // 注意：sales_bant 模板的舊 next_steps: string[] 可能仍存在
+    cross_meeting_refs?: CrossMeetingRef[];
     // sales_bant 額外
     deal_signal?: string;
     objections?: string[];
     BANT?: Record<string, unknown>;
-    next_steps?: string[];
+    next_steps?: string[] | NextStep[];   // 向後相容：舊 List[str]，新 List[NextStep]
     // hr_star 額外
     candidate_summary?: string;
     STAR_stories?: unknown[];
