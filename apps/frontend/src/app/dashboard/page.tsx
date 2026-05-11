@@ -108,17 +108,28 @@ export default function DashboardPage() {
         await fetchMeetings();
         resetUploadState();
         // PR19: 帶「查看」action 讓 user 可一鍵跳到 detail
+        // 2026-05-11 fix: 點「查看」改用 detail endpoint refetch 取得完整
+        // transcript_segments，避免 list 資料缺逐字稿
         const completedId = completedMeeting?.id;
         toast.success('會議摘要已生成完成！', {
             description: completedId ? '點選「查看」即可進入詳情頁。' : undefined,
             action: completedId
                 ? {
                       label: '查看',
-                      onClick: () => {
-                          const m = meetings.find((x) => x.id === completedId);
-                          if (m) {
-                              setSelectedMeeting(m);
+                      onClick: async () => {
+                          try {
+                              const full = await api.getMeeting(completedId);
+                              setSelectedMeeting(transformMeeting(full));
                               setCurrentView('detail');
+                          } catch (err) {
+                              console.error('Failed to fetch meeting on toast action:', err);
+                              // graceful fallback：用 list 資料切過去（逐字稿區會
+                              // 透過 DetailView 既有的空狀態提示）
+                              const m = meetings.find((x) => x.id === completedId);
+                              if (m) {
+                                  setSelectedMeeting(m);
+                                  setCurrentView('detail');
+                              }
                           }
                       },
                   }
@@ -175,16 +186,45 @@ export default function DashboardPage() {
     }, [needsSafetyNet, fetchMeetings]);
 
     // D3-3: selectedMeeting sync — update detail view when meetings list refreshes
+    //
+    // 2026-05-11 fix: list endpoint (PR #26 perf) 不回 transcript_segments，所以
+    // 直接用 list 內的 meeting 覆蓋 selectedMeeting 會把已 refetch 的 segments
+    // 蓋掉 → 詳情頁逐字稿區塊變空。修法：
+    //   1. 若 status 從非 completed → completed，呼叫 detail endpoint refetch
+    //      完整版（含 segments）
+    //   2. 一般狀態變化（summary 更新等）仍用 list 資料 patch，但**保留**
+    //      原本的 transcript（避免被 list 的空陣列覆蓋）
     const prevMeetingsRef = useRef(meetings);
     useEffect(() => {
         if (prevMeetingsRef.current !== meetings && selectedMeeting) {
             const updated = meetings.find(m => m.id === selectedMeeting.id);
-            if (updated && (
-                updated.status !== selectedMeeting.status ||
-                updated.summary !== selectedMeeting.summary ||
-                updated.transcript !== selectedMeeting.transcript
-            )) {
-                setSelectedMeeting(updated);
+            if (updated) {
+                const justCompleted =
+                    updated.status === 'completed' && selectedMeeting.status !== 'completed';
+                if (justCompleted) {
+                    // refetch full detail to pick up transcript_segments
+                    api.getMeeting(updated.id)
+                        .then((full) => {
+                            const fullTransformed = transformMeeting(full);
+                            setSelectedMeeting((prev) =>
+                                prev?.id === fullTransformed.id ? fullTransformed : prev
+                            );
+                        })
+                        .catch((err) =>
+                            console.error('D3-3: refetch on completion failed:', err)
+                        );
+                } else if (
+                    updated.status !== selectedMeeting.status ||
+                    updated.summary !== selectedMeeting.summary
+                ) {
+                    // 一般 patch：保留 transcript 避免被 list 的空陣列覆蓋
+                    setSelectedMeeting({
+                        ...updated,
+                        transcript: selectedMeeting.transcript?.length
+                            ? selectedMeeting.transcript
+                            : updated.transcript,
+                    });
+                }
             }
         }
         prevMeetingsRef.current = meetings;
