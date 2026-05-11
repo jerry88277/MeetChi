@@ -16,13 +16,14 @@ import uuid
 import asyncio
 import logging
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import desc
 from sqlalchemy.orm import Session, selectinload
 
+from app.audit import record_action
 from app.database import get_db
 from app.models import (
     Meeting,
@@ -98,14 +99,17 @@ async def create_meeting(meeting_data: MeetingCreate, db: Session = Depends(get_
 
 @router.get("/api/v1/meetings", response_model=List[MeetingListItem])
 async def list_meetings(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """List historical meetings (lightweight — no transcript_segments).
+    """List active (non-deleted) meetings (lightweight — no transcript_segments).
 
     Detail view 仍會用 GET /api/v1/meetings/{id} 拿完整 segments；
     list 端不回 segments 是為了避免 N+1 lazy-load 把 worker pool 拖垮
     （見 prod 503 incident 2026-05-09：limit=100 的 list 要 74s 並 503）。
+
+    Soft-deleted (deleted_at IS NOT NULL) 預設不列；admin 端點看 trash。
     """
     meetings = (
         db.query(Meeting)
+        .filter(Meeting.deleted_at.is_(None))
         .order_by(desc(Meeting.created_at))
         .offset(skip)
         .limit(limit)
@@ -116,7 +120,11 @@ async def list_meetings(skip: int = 0, limit: int = 100, db: Session = Depends(g
 
 @router.get("/api/v1/meetings/{meeting_id}", response_model=MeetingRead)
 async def get_meeting(meeting_id: str, db: Session = Depends(get_db)):
-    """Get meeting details including transcript and summary."""
+    """Get meeting details including transcript and summary.
+
+    Soft-deleted meeting 仍可由 ID 直接讀取（給 IT debug + 還原 flow 用），
+    但 list 端不顯示。Frontend 主要 UI 預設不會路由到 deleted meeting。
+    """
     meeting = (
         db.query(Meeting)
         .filter(Meeting.id == meeting_id)
@@ -154,26 +162,66 @@ async def add_transcript_segments(
 
 
 @router.delete("/api/v1/meetings/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_meeting(meeting_id: str, db: Session = Depends(get_db)):
-    """Delete a meeting and its associated resources (audio file, transcripts)."""
+async def delete_meeting(
+    meeting_id: str,
+    request: Request,
+    requester_upn: Optional[str] = Query(None, description="觸發刪除的使用者 UPN（給 audit）"),
+    db: Session = Depends(get_db),
+):
+    """Soft-delete a meeting.
+
+    2026-05-11 改為 soft delete：
+      - 標記 deleted_at = NOW(), deleted_by = requester_upn
+      - 不刪 audio_url 也不刪 transcript_segments（保留 30 天）
+      - 寫 audit_logs 一筆 meeting.deleted (含 title/status/duration/owner_upn)
+      - list endpoint 自動 filter 掉這筆，使用者看不到，但 ID 還在 DB
+      - 30 天後由 cron job hard-delete (另設 — 不在此 PR 內)
+
+    給 IT 的能力：可由 meeting_id 查 audit_logs 找出誰、何時刪、ip/UA。
+    """
     meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
+    if meeting.deleted_at is not None:
+        # 已刪除：idempotent，仍記 audit 但不重覆寫 deleted_at
+        logger.info(f"Meeting {meeting_id} already deleted at {meeting.deleted_at}; idempotent return 204")
+        return None
 
-    # 1. Delete Audio File (best-effort — Cloud SQL may have GCS path; skip if missing)
-    if meeting.audio_url and os.path.exists(meeting.audio_url):
-        try:
-            os.remove(meeting.audio_url)
-            logger.info(f"Deleted audio file: {meeting.audio_url}")
-        except Exception as e:
-            logger.error(f"Failed to delete audio file {meeting.audio_url}: {e}")
+    try:
+        # 1. Mark soft-deleted
+        meeting.deleted_at = datetime.utcnow()
+        meeting.deleted_by = requester_upn
 
-    # 2. Delete Transcripts
-    db.query(TranscriptSegment).filter(TranscriptSegment.meeting_id == meeting_id).delete()
+        # 2. Audit log: title/status/duration/owner_upn 保留給 IT debug
+        record_action(
+            db,
+            user_upn=requester_upn or "anonymous",
+            action_type="meeting.deleted",
+            target_id=meeting_id,
+            metadata={
+                "title": meeting.title,
+                "status": meeting.status.value if meeting.status else None,
+                "duration": meeting.duration,
+                "owner_upn": meeting.owner_upn,
+                "audio_url": meeting.audio_url,
+                "template_name": meeting.template_name,
+                "created_at": meeting.created_at.isoformat() if meeting.created_at else None,
+            },
+            request=request,
+        )
 
-    # 3. Delete Meeting Record
-    db.delete(meeting)
-    db.commit()
+        db.commit()
+        logger.info(
+            f"Soft-deleted meeting {meeting_id} by {requester_upn or 'anonymous'} "
+            f"(title='{meeting.title}', status={meeting.status})"
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to delete meeting {meeting_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"刪除失敗：{type(e).__name__}: {str(e)[:200]}",
+        )
 
     return None
 
