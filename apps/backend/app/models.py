@@ -128,7 +128,13 @@ class Meeting(Base):
     # Custom prompt for user-defined summarization instructions
     custom_prompt = Column(Text, nullable=True)
 
-    # 機密會議旗標 (Sprint 2e Phase 1, 2026-05-11)
+    # Soft delete (Sprint 2e / PR-B / 2026-05-11)
+    # deleted_at IS NULL = active；非 NULL = 已刪除，保留 30 天供 audit / restore
+    # 所有 list/get query 自動 filter deleted_at IS NULL（除 admin 端點）
+    deleted_at = Column(DateTime, nullable=True, index=True)
+    deleted_by = Column(String(255), ForeignKey("users.ad_upn", ondelete="SET NULL"), nullable=True)
+
+    # 機密會議旗標 (Sprint 2e Phase 1 / PR-D / 2026-05-11)
     # TRUE = 機密：前端鎖複製/截圖警示/浮水印；後端 audio URL 短效化（Phase 3）
     # FALSE = 一般：開放複製、匯出
     is_confidential = Column(Boolean, nullable=False, default=False)
@@ -331,4 +337,51 @@ class FeedbackReport(Base):
         Index("idx_feedback_status", "status"),
         Index("idx_feedback_created", "created_at"),
         Index("idx_feedback_issue_type_status", "issue_type", "status"),
+    )
+
+
+# ============================================
+# Audit Log (Sprint 2e / 2026-05-11)
+# ============================================
+# 記錄使用者敏感行為，供 IT debug + 合規 audit。
+# action_type 字串約定：
+#   meeting.deleted           - soft delete (一般使用者)
+#   meeting.restored          - 從 trash 還原 (admin)
+#   meeting.hard_deleted      - 30 天後或 admin 強制 (purge job)
+#   meeting.regenerate_summary
+#   meeting.regenerate_transcript
+#   meeting.viewed            - opt-in 觀看記錄 (FE 呼叫)
+#   meeting.confidential_toggle - 機密旗標切換
+#   speaker_mapping.updated
+#   summary_version.restored
+#
+# 後續可再加 user.login / user.logout 等帳號類動作；非預設打開以免 log 爆量
+class AuditLog(Base):
+    """使用者行為紀錄。給 IT debug + audit trail；非交易資料，不參與 FK。"""
+    __tablename__ = "audit_logs"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    # 行為主體
+    user_upn = Column(String(255), nullable=False, index=True,
+                      comment="觸發行為的 user (AD UPN)；無 session 時為 'anonymous'")
+    action_type = Column(String(64), nullable=False, index=True,
+                         comment="meeting.deleted / meeting.restored / ...")
+
+    # 行為目標（多用 meeting，但保留泛用以後擴）
+    target_type = Column(String(32), nullable=False, default="meeting",
+                         comment="meeting / template / user / ...")
+    target_id = Column(String(36), nullable=True, index=True)
+
+    # 行為 metadata（context-dependent；如 deleted 行為含 title/status/duration）
+    log_metadata = Column("metadata", JSON, nullable=True)
+
+    # Request 上下文
+    ip_address = Column(String(64), nullable=True)
+    user_agent = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    __table_args__ = (
+        Index("idx_audit_user_action_created", "user_upn", "action_type", "created_at"),
     )

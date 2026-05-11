@@ -307,10 +307,14 @@ class ApiClient {
     }
 
     /**
-     * Delete a meeting by ID
+     * Soft-delete a meeting by ID.
+     *
+     * 2026-05-11 update: 後端改為 soft delete + audit log；傳 requester_upn
+     * 讓 audit 能寫進「誰刪了它」。空字串 fallback 為 anonymous。
      */
-    async deleteMeeting(meetingId: string): Promise<void> {
-        await this.fetch(`/api/v1/meetings/${meetingId}`, {
+    async deleteMeeting(meetingId: string, requesterUpn?: string): Promise<void> {
+        const q = requesterUpn ? `?requester_upn=${encodeURIComponent(requesterUpn)}` : '';
+        await this.fetch(`/api/v1/meetings/${meetingId}${q}`, {
             method: 'DELETE',
         });
     }

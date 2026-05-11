@@ -18,6 +18,7 @@ import {
     Target,
     Zap,
     MessageSquareQuote,
+    MessageSquareWarning,
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import type { Meeting } from '@/types/meeting';
@@ -33,6 +34,9 @@ interface DetailViewProps {
     isRegenerating?: boolean;
     onDelete?: (meetingId: string) => void;
     isDeleting?: boolean;
+    /** 2026-05-11：開啟 feedback modal 並帶入當前 meeting_id，讓使用者
+     *  能直接針對「這個會議」回報問題，IT 可由 meeting_id 精準 debug。 */
+    onReportThisMeeting?: (meetingId: string) => void;
 }
 
 /**
@@ -49,7 +53,7 @@ interface DetailViewProps {
  *   - Phase D version history / audio playback / ?t= deeplink 自動跳秒
  *   - regenerate / template selector / export / delete
  */
-export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateTranscript, isRegenerating = false, onDelete, isDeleting = false }: DetailViewProps) => {
+export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateTranscript, isRegenerating = false, onDelete, isDeleting = false, onReportThisMeeting }: DetailViewProps) => {
     const searchParams = useSearchParams();
     const [templates, setTemplates] = useState<TemplateDTO[]>([]);
     const [selectedTemplate, setSelectedTemplate] = useState('general');
@@ -304,12 +308,23 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                         </>
                     )}
                 </div>
+                {onReportThisMeeting && (
+                    <button
+                        onClick={() => onReportThisMeeting(meeting.id)}
+                        className="p-2 text-muted-foreground hover:text-brand-orange hover:bg-brand-orange/10 rounded-full transition-colors"
+                        title="回報這個會議的問題"
+                        aria-label="回報這個會議的問題"
+                    >
+                        <MessageSquareWarning size={20} />
+                    </button>
+                )}
                 {onDelete && (
                     <button
                         onClick={() => onDelete(meeting.id)}
                         disabled={isDeleting}
                         className="p-2 text-status-error/60 hover:text-status-error hover:bg-status-error/10 rounded-full transition-colors disabled:opacity-50"
                         title="刪除會議"
+                        aria-label="刪除會議"
                     >
                         {isDeleting ? <Loader2 size={20} className="animate-spin" /> : <Trash2 size={20} />}
                     </button>
