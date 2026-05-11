@@ -222,6 +222,94 @@ def embed_meeting_summary(db: Session, meeting_id: str) -> bool:
         return False
 
 
+def find_cross_meeting_refs(
+    db: Session,
+    meeting_id: str,
+    *,
+    top_k: int = 5,
+    min_similarity: float = 0.7,
+    same_owner_only: bool = True,
+) -> List[dict]:
+    """Q7 (SUMMARY_FINAL_SPEC) — 找出與此會議相似的歷史會議。
+
+    依 pgvector cosine similarity 排序，過濾：
+      - 相同 owner_upn（避免跨使用者洩漏資訊）
+      - similarity >= min_similarity (預設 0.7)
+      - 不包含自己
+      - 不包含已軟刪除的 meeting (deleted_at IS NOT NULL)
+    回傳 dict list，可直接寫進 summary_json["cross_meeting_refs"]。
+
+    Args:
+        db: SQLAlchemy session
+        meeting_id: 當前會議 ID（拿它的 summary_embedding 作 query vector）
+        top_k: 最多回傳幾筆
+        min_similarity: 0.0-1.0；低於此分數不列
+        same_owner_only: True = 只查同 owner，False = 跨 owner（後者目前未授權）
+
+    Returns:
+        List of dict, each: {topic, related_meeting_id, related_meeting_title, url, similarity}
+    """
+    from sqlalchemy import text
+
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting or meeting.summary_embedding is None:
+        logger.info(f"[CrossRef] No embedding for {meeting_id}, skip cross-ref lookup")
+        return []
+
+    # pgvector cosine distance: smaller = more similar
+    # similarity = 1 - distance (cosine_distance is in [0, 2], for normalized vectors [0, 1])
+    # 1 - cos_dist = cos_similarity
+    sql = """
+        SELECT
+            m.id,
+            m.title,
+            1 - (m.summary_embedding <=> :query_vec) AS similarity
+        FROM meetings m
+        WHERE m.id != :self_id
+          AND m.summary_embedding IS NOT NULL
+          AND m.deleted_at IS NULL
+          {owner_filter}
+        ORDER BY m.summary_embedding <=> :query_vec ASC
+        LIMIT :limit
+    """.format(
+        owner_filter="AND m.owner_upn = :owner" if same_owner_only and meeting.owner_upn else ""
+    )
+
+    params = {
+        "query_vec": str(list(meeting.summary_embedding)),  # pgvector accepts string form
+        "self_id": meeting_id,
+        "limit": top_k * 2,  # over-fetch then filter by similarity
+    }
+    if same_owner_only and meeting.owner_upn:
+        params["owner"] = meeting.owner_upn
+
+    try:
+        rows = db.execute(text(sql), params).fetchall()
+    except Exception as e:
+        logger.error(f"[CrossRef] Query failed for {meeting_id}: {e}", exc_info=True)
+        return []
+
+    refs = []
+    for row in rows:
+        if row.similarity < min_similarity:
+            continue
+        refs.append({
+            "topic": row.title,  # 主題 = 對應會議的 title；LLM 可後續細化
+            "related_meeting_id": row.id,
+            "related_meeting_title": row.title,
+            "url": f"/dashboard/meetings/{row.id}",
+            "similarity": round(float(row.similarity), 3),
+        })
+        if len(refs) >= top_k:
+            break
+
+    logger.info(
+        f"[CrossRef] {meeting_id}: found {len(refs)} cross-meeting refs "
+        f"(min_similarity={min_similarity})"
+    )
+    return refs
+
+
 def backfill_all_embeddings(db: Session) -> dict:
     """
     One-time backfill: generate embeddings for all existing meetings

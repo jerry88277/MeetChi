@@ -359,6 +359,23 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
             except Exception as emb_err:
                 # Embedding failure must NOT break the core pipeline
                 logger.warning(f"[Embedding] Auto-embed failed (non-fatal): {emb_err}")
+
+            # Summary V2 (Q7, 2026-05-11): 補 cross_meeting_refs 進 summary_json
+            # 用 pgvector 查同 owner 近期會議；similarity >= 0.7 才列。
+            # 必須在 embed_meeting_summary 之後，才有 summary_embedding 可用。
+            try:
+                from app.embedding import find_cross_meeting_refs
+                refs = find_cross_meeting_refs(db, meeting_id, top_k=5, min_similarity=0.7)
+                if refs:
+                    # 重新讀 summary_data 附上 cross_meeting_refs 並寫回
+                    sj = json.loads(meeting.summary_json) if meeting.summary_json else {}
+                    sj["cross_meeting_refs"] = refs
+                    meeting.summary_json = json.dumps(sj, ensure_ascii=False)
+                    db.commit()
+                    logger.info(f"[CrossRef] Wrote {len(refs)} cross-meeting refs into summary_json")
+            except Exception as cref_err:
+                # Cross-ref 失敗不擋主流程
+                logger.warning(f"[CrossRef] Failed (non-fatal): {cref_err}")
             
             # Phase 9.2: Fire-and-forget Discord notification
             send_completion_notification(meeting, "completed")

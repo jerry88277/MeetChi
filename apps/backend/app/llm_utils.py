@@ -75,9 +75,72 @@ class SpeakerRole(BaseModel):
 # 舊 LLM 回傳缺欄位時 Pydantic 不爆，frontend 也忽略不渲染。
 
 class KeyQuote(BaseModel):
-    """Original-audio quote preserved verbatim with speaker label."""
-    speaker: str  # e.g. "SPEAKER_00" 或真人姓名
+    """Original-audio quote preserved verbatim with speaker label.
+
+    2026-05-11 增加 time 欄位：給 frontend 點時戳跳音檔用（Q4）。
+    LLM 估算的秒數可能 ±5s，前端容許誤差。
+    """
+    speaker: str  # e.g. "SPEAKER_00"；前端 transform 為 display_name (Q4)
     text: str  # 原音引言，不改寫，≤ 150 字
+    time: Optional[float] = None  # 秒；點擊跳音檔
+
+
+# ============================================
+# 摘要規格 V2 (SUMMARY_FINAL_SPEC.md, 2026-05-11)
+# Q1-Q8 決策落地：三層可展開、結論視情況才列、引言階層化、新增 3 個欄位
+# ============================================
+
+class SubChapter(BaseModel):
+    """Layer 3 時序子段（章節點【展開時序】後出現）。"""
+    time_start: float  # 秒
+    time_end: float    # 秒
+    summary: str       # 30-50 字摘要
+    bullets: List[str] = []  # 2-3 條重點
+    key_quotes: List[KeyQuote] = []  # 0-1 條引言
+
+
+class Chapter(BaseModel):
+    """Layer 2 主題章節（Q1=B+C 結構；8-12 章）。
+
+    title 用主題（如「互聯網三階段與贏家」），不用時序流水號。
+    sub_chapters 按時序排序、每段 30-90 秒，提供 Layer 3 細部展開索引。
+    """
+    title: str
+    summary: str  # 100-150 字主題摘要
+    bullets: List[str] = []  # 3-5 條重點
+    key_quotes: List[KeyQuote] = []  # 0-2 條引言
+    sub_chapters: List[SubChapter] = []  # Q2=C 時序細節索引
+
+
+class SpeakerContribution(BaseModel):
+    """Q7 新增：與會者貢獻度。"""
+    speaker: str  # SPEAKER_00 等；前端 transform display_name
+    role: Optional[str] = None  # 主持人 / 講者 / 客戶...
+    speak_time_pct: float  # 0-100，發言時長占比
+    main_topics: List[str] = []  # 主導議題（2-4 條）
+    key_contribution: str  # 一句話描述貢獻
+
+
+class NextStep(BaseModel):
+    """Q7 新增：會議**之後**該追蹤的事項（區隔 action_items：會議中決定的待辦）。"""
+    task: str
+    assignee: Optional[str] = None
+    due: Optional[str] = None  # ISO date "YYYY-MM-DD" or null
+    follow_up_meeting: Optional[str] = None  # 若需開後續會議的提示
+
+
+class CrossMeetingRef(BaseModel):
+    """Q7 新增：跨會議參照。
+
+    後端在 summary 產生後，用 pgvector cosine similarity 查同 owner 近期會議，
+    similarity ≥ 0.7 才寫入。URL 為 frontend route。
+    LLM 不會 populate，由 backend 在 tasks.py 完成 summary 後查 DB 補。
+    """
+    topic: str
+    related_meeting_id: str
+    related_meeting_title: str
+    url: str  # /dashboard/meetings/{id}
+    similarity: float  # 0.0-1.0
 
 
 class GeneralSummary(BaseModel):
@@ -88,6 +151,12 @@ class GeneralSummary(BaseModel):
     decisions: List[str]
     risks: List[str]
     key_quotes: List[KeyQuote] = []  # 1-3 條原音引言 (新增)
+
+    # 摘要規格 V2 新增（Q1-Q8 落地，2026-05-11）
+    chapters: List[Chapter] = []  # Q1+Q2：8-12 主題章節 + 時序子段索引
+    speaker_contributions: List[SpeakerContribution] = []  # Q7
+    next_steps: List[NextStep] = []  # Q7：會議之後追蹤事項
+    cross_meeting_refs: List[CrossMeetingRef] = []  # Q7：backend post-process 補
 
 class BANTInfo(BaseModel):
     """既有：value 直接是 str（向後相容）。新欄位設 Optional 不阻斷舊資料。"""
@@ -110,10 +179,16 @@ class SalesBANTSummary(BaseModel):
     tldr: Optional[str] = None
     summary: str
     BANT: BANTInfo
-    next_steps: List[str]
+    # 摘要規格 V2 (2026-05-11): next_steps 升級為 List[NextStep] 結構化
+    # （取代舊 List[str]）— 含 assignee / due / follow_up_meeting
+    next_steps: List[NextStep] = []
     deal_signal: Optional[str] = None  # "hot" | "warm" | "cold"
     objections: List[str] = []  # 客戶反對意見，常被忽略
     key_quotes: List[KeyQuote] = []
+    # V2 共通欄位
+    chapters: List[Chapter] = []
+    speaker_contributions: List[SpeakerContribution] = []
+    cross_meeting_refs: List[CrossMeetingRef] = []
 
 class STARStory(BaseModel):
     Situation: str
@@ -133,6 +208,11 @@ class HRSTARSummary(BaseModel):
     red_flags: List[str] = []  # ⚠️ 強制思考過
     fit_score: Optional[int] = None  # 1-5 整體匹配度
     key_quotes: List[KeyQuote] = []
+    # 摘要規格 V2 共通欄位 (2026-05-11)
+    chapters: List[Chapter] = []
+    speaker_contributions: List[SpeakerContribution] = []
+    next_steps: List[NextStep] = []
+    cross_meeting_refs: List[CrossMeetingRef] = []
 
 class TechnicalDecision(BaseModel):
     decision: str
@@ -163,6 +243,11 @@ class RDSummary(BaseModel):
     risks: List[Risk]
     action_items: List[ActionItem]
     key_quotes: List[KeyQuote] = []
+    # 摘要規格 V2 共通欄位 (2026-05-11)
+    chapters: List[Chapter] = []
+    speaker_contributions: List[SpeakerContribution] = []
+    next_steps: List[NextStep] = []
+    cross_meeting_refs: List[CrossMeetingRef] = []
 
 # Template to Schema mapping
 TEMPLATE_SCHEMAS = {
