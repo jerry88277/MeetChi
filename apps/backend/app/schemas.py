@@ -58,6 +58,7 @@ class MeetingRead(BaseModel):
     transcript_polished: Optional[str]
     summary_json: Optional[str]
     speaker_mappings: Optional[str] = None  # Phase 8.1.3
+    is_confidential: bool = False  # Sprint 2e Phase 1 (2026-05-11)
 
     transcript_segments: List[TranscriptSegmentRead] = []  # Include segments for detail view
 
@@ -81,6 +82,7 @@ class MeetingListItem(BaseModel):
     template_name: str
     summary_json: Optional[str]
     speaker_mappings: Optional[str] = None
+    is_confidential: bool = False  # Sprint 2e Phase 1：list 也要看得到 badge
 
     class Config:
         from_attributes = True
@@ -93,6 +95,7 @@ class MeetingCreate(BaseModel):
     duration: Optional[float] = Field(None, description="Audio duration in seconds")
     custom_context: Optional[str] = Field(None, description="Custom context or glossary for ASR and LLM")
     user_upn: Optional[str] = Field(None, description="UPN of the user creating the meeting")
+    is_confidential: bool = Field(False, description="標記為機密會議（前端鎖複製/截圖警示/浮水印）")
 
 
 # ============================================

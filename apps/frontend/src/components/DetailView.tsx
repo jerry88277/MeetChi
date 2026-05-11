@@ -192,7 +192,14 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                     <ChevronRight size={24} className="rotate-180" />
                 </button>
                 <div className="flex-1 min-w-0">
-                    <h2 className="text-xl font-bold text-foreground truncate">{meeting.title}</h2>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="text-xl font-bold text-foreground truncate">{meeting.title}</h2>
+                        {meeting.isConfidential && (
+                            <span className="shrink-0 text-xs font-semibold px-2 py-0.5 rounded-md bg-status-error/10 text-status-error border border-status-error/20" title="機密會議：後續 Phase 將鎖複製/截圖警示/浮水印">
+                                🔒 機密
+                            </span>
+                        )}
+                    </div>
                     <div className="flex items-center gap-3 text-sm text-muted-foreground">
                         <span>{meeting.date}</span>
                         <span className="w-1 h-1 rounded-full bg-border"></span>

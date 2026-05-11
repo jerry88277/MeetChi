@@ -47,4 +47,5 @@ export interface Meeting {
     keyQuotes?: KeyQuote[];             // 精選原音引言（含 speaker + 時間後綴）
     templateName?: string;              // 模板分類 (general/sales_bant/...)
     speakerCount?: number;              // 講者數（卡片顯示 dot 用）
+    isConfidential?: boolean;           // Sprint 2e Phase 1：機密會議旗標
 }

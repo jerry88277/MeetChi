@@ -63,6 +63,8 @@ export default function DashboardPage() {
     // Phase C: Upload template & context selection
     const [uploadTemplateName, setUploadTemplateName] = useState('general');
     const [uploadContext, setUploadContext] = useState('');
+    // Sprint 2e Phase 1 (2026-05-11): 機密會議旗標，上傳/錄音時 user 切換
+    const [uploadConfidential, setUploadConfidential] = useState(false);
     const [availableTemplates, setAvailableTemplates] = useState<import('@/lib/api').TemplateDTO[]>([]);
 
     useEffect(() => {
@@ -216,6 +218,7 @@ export default function DashboardPage() {
                 (msg) => setError(msg),
                 uploadTemplateName,
                 uploadContext,
+                uploadConfidential,
             );
         };
 
@@ -472,6 +475,8 @@ export default function DashboardPage() {
                                 onTemplateChange={setUploadTemplateName}
                                 uploadContext={uploadContext}
                                 onUploadContextChange={setUploadContext}
+                                uploadConfidential={uploadConfidential}
+                                onUploadConfidentialChange={setUploadConfidential}
                             />
                         </>
                     )}

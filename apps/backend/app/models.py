@@ -127,7 +127,12 @@ class Meeting(Base):
     
     # Custom prompt for user-defined summarization instructions
     custom_prompt = Column(Text, nullable=True)
-    
+
+    # 機密會議旗標 (Sprint 2e Phase 1, 2026-05-11)
+    # TRUE = 機密：前端鎖複製/截圖警示/浮水印；後端 audio URL 短效化（Phase 3）
+    # FALSE = 一般：開放複製、匯出
+    is_confidential = Column(Boolean, nullable=False, default=False)
+
     # pgvector embedding for future semantic search
     summary_embedding = Column(Vector(768), nullable=True)
     

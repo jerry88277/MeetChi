@@ -40,6 +40,7 @@ export function useRecording() {
         onError: (msg: string) => void,
         templateName = 'general',
         context = '',
+        isConfidential = false,
     ) => {
         setUploadState('uploading');
         setLastUploadedMeetingId(null);
@@ -64,12 +65,13 @@ export function useRecording() {
             const duration = await getDuration(file);
             const title = file.name.replace(/\.[^/.]+$/, "");
             
-            const meeting = await api.createMeeting({ 
-                title, 
+            const meeting = await api.createMeeting({
+                title,
                 template_name: templateName,
                 duration,
                 custom_context: context,
-                user_upn: 'test@company.com'
+                user_upn: 'test@company.com',
+                is_confidential: isConfidential,
             });
             
             const { uploadUrl } = await api.getUploadUrl(meeting.id, file.name, file.type || 'application/octet-stream');
