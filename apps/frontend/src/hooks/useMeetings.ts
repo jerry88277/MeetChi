@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import type { Meeting } from '@/types/meeting';
 import { transformMeeting } from '@/lib/transform';
@@ -11,6 +12,9 @@ export function useMeetings() {
     const [error, setError] = useState<string | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
+    /** 2026-05-11 修：原本 dashboard/page.tsx 把 isDeleting hardcoded false，
+     *  按下刪除中按鈕不會 disable + 沒 spinner；改由 hook 統一管理。 */
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const fetchMeetings = useCallback(async () => {
         setIsLoading(true);
@@ -47,17 +51,27 @@ export function useMeetings() {
      * Caller 須先用 <ConfirmDialog> 取得使用者確認，再呼叫此函式。
      */
     const deleteMeeting = useCallback(async (meetingId: string) => {
+        setIsDeleting(true);
         try {
             await api.deleteMeeting(meetingId);
             await fetchMeetings();
-            showSuccess('會議已成功刪除');
+            toast.success('會議已成功刪除');
             return true;
         } catch (err) {
+            // 2026-05-11 修：原本只 setError 但 detail 頁不顯示這個 error
+            // → 使用者按刪除「毫無反應」。改用 toast.error 確保跨頁都看得到
+            const msg = err instanceof Error ? err.message : '刪除會議失敗';
             console.error('Failed to delete meeting:', err);
-            setError(err instanceof Error ? err.message : '刪除會議失敗');
+            toast.error(`刪除失敗：${msg}`, {
+                description: '請檢查網路或稍後再試；若持續失敗請使用「回報問題」。',
+                duration: 8000,
+            });
+            setError(msg);
             return false;
+        } finally {
+            setIsDeleting(false);
         }
-    }, [fetchMeetings, showSuccess]);
+    }, [fetchMeetings]);
 
     return {
         meetings,
@@ -69,5 +83,6 @@ export function useMeetings() {
         fetchMeetings,
         showSuccess,
         deleteMeeting,
+        isDeleting,
     };
 }

@@ -155,7 +155,14 @@ async def add_transcript_segments(
 
 @router.delete("/api/v1/meetings/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_meeting(meeting_id: str, db: Session = Depends(get_db)):
-    """Delete a meeting and its associated resources (audio file, transcripts)."""
+    """Delete a meeting and its associated resources.
+
+    歷史 bug (2026-05-11): SummaryVersion.meeting_id FK 沒設 ondelete=CASCADE，
+    有 regenerate 過 summary 的 meeting 一刪就 IntegrityError 500，前端只看到
+    「刪除按鈕毫無反應」(error 被吞)。修法：顯式刪除所有 child rows 後再刪
+    meeting 本體，並把整段 commit 包進 try/except 確保 atomic（失敗 rollback
+    避免半刪狀態）。
+    """
     meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
@@ -168,12 +175,36 @@ async def delete_meeting(meeting_id: str, db: Session = Depends(get_db)):
         except Exception as e:
             logger.error(f"Failed to delete audio file {meeting.audio_url}: {e}")
 
-    # 2. Delete Transcripts
-    db.query(TranscriptSegment).filter(TranscriptSegment.meeting_id == meeting_id).delete()
+    try:
+        # 2. Delete child rows that reference this meeting (FK constraint cleanup)
+        # transcript_segments — 一個會議數百~數千段
+        n_segments = db.query(TranscriptSegment).filter(
+            TranscriptSegment.meeting_id == meeting_id
+        ).delete(synchronize_session=False)
 
-    # 3. Delete Meeting Record
-    db.delete(meeting)
-    db.commit()
+        # summary_versions — 每次 regenerate summary 會新增一筆
+        n_versions = db.query(SummaryVersion).filter(
+            SummaryVersion.meeting_id == meeting_id
+        ).delete(synchronize_session=False)
+
+        # meeting_participants 已設 ON DELETE CASCADE（access control PR f7a9d3e1c5b2）
+        # feedback_reports 設 ON DELETE SET NULL（PR22 alembic b3e9f2a1c8d4）
+        # → 這兩個不需手動處理
+
+        # 3. Delete the meeting itself
+        db.delete(meeting)
+        db.commit()
+        logger.info(
+            f"Deleted meeting {meeting_id}: "
+            f"{n_segments} segments + {n_versions} summary versions"
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to delete meeting {meeting_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"刪除失敗：{type(e).__name__}: {str(e)[:200]}",
+        )
 
     return None
 

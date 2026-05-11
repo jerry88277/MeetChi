@@ -51,7 +51,7 @@ export default function DashboardPage() {
     // Custom hooks
     const {
         meetings, isLoading, error, setError, isConnected,
-        successMessage, fetchMeetings, showSuccess, deleteMeeting,
+        successMessage, fetchMeetings, showSuccess, deleteMeeting, isDeleting,
     } = useMeetings();
 
     const {
@@ -509,7 +509,7 @@ export default function DashboardPage() {
                             onRegenerateTranscript={handleRegenerateTranscript}
                             isRegenerating={isRegenerating}
                             onDelete={handleDeleteMeeting}
-                            isDeleting={false}
+                            isDeleting={isDeleting}
                         />
                     )}
 
