@@ -13,6 +13,8 @@ import {
     HelpCircle,
     ChevronRight,
     Send,
+    Link2,
+    Link2Off,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -105,6 +107,22 @@ const FREQUENCY_OPTIONS: Array<{ value: FeedbackFrequency; label: string }> = [
     { value: "always", label: "每次都這樣" },
 ];
 
+/**
+ * 從當前 page URL 嘗試 parse `/dashboard/meetings/{id}` 抓 meeting_id。
+ * Sidebar 入口開 modal 時 meetingId prop = undefined，但若使用者剛好停在
+ * 詳情頁，仍然能補回上下文（雙保險）。
+ *
+ * 2026-05-12 加入：解決使用者從 sidebar 開回報 → IT 收到無 meeting_id 的
+ * feedback → 無法定位問題的 UX 漏洞。
+ */
+function parseMeetingIdFromUrl(): string | undefined {
+    if (typeof window === "undefined") return undefined;
+    const match = window.location.pathname.match(
+        /\/dashboard\/meetings\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+    );
+    return match?.[1];
+}
+
 export const FeedbackModal = ({
     isOpen,
     onClose,
@@ -125,6 +143,8 @@ export const FeedbackModal = ({
     const [frequency, setFrequency] = useState<FeedbackFrequency | "">("");
     const [submitting, setSubmitting] = useState(false);
     const [submitted, setSubmitted] = useState(false);
+    // 2026-05-12: parse URL fallback；caller 給的 meetingId 優先
+    const [resolvedMeetingId, setResolvedMeetingId] = useState<string | undefined>(meetingId);
 
     React.useEffect(() => {
         if (isOpen) {
@@ -138,8 +158,10 @@ export const FeedbackModal = ({
             setFrequency("");
             setSubmitting(false);
             setSubmitted(false);
+            // caller 已帶 meetingId → 用 caller；否則嘗試從 URL parse
+            setResolvedMeetingId(meetingId ?? parseMeetingIdFromUrl());
         }
-    }, [isOpen, initialIssueType, prefillSummary]);
+    }, [isOpen, initialIssueType, prefillSummary, meetingId]);
 
     const stage1Valid =
         !!issueType && summary.trim().length >= 5 && summary.length <= 200 && !!severity;
@@ -152,7 +174,7 @@ export const FeedbackModal = ({
         setSubmitting(true);
         try {
             const meta = collectFeedbackMetadata();
-            await api.createFeedback({
+            const created = await api.createFeedback({
                 user_upn: userUpn,
                 issue_type: issueType as FeedbackIssueType,
                 summary: summary.trim(),
@@ -165,7 +187,7 @@ export const FeedbackModal = ({
                           repro_steps: reproSteps.trim() || undefined,
                           frequency: (frequency as FeedbackFrequency) || undefined,
                       }),
-                meeting_id: meetingId,
+                meeting_id: resolvedMeetingId,
                 page_url: meta.page_url,
                 browser_info: meta.browser_info,
                 session_id: meta.session_id,
@@ -173,7 +195,15 @@ export const FeedbackModal = ({
                 console_errors: meta.console_errors,
             });
             setSubmitted(true);
-            toast.success("已收到回報，謝謝！");
+            // 2026-05-12 UX：顯示 feedback ID 給使用者可追蹤；附「IT 24h 回覆」
+            // 建立信任感（解 MECE 中 C 層：可追蹤性缺口）
+            const shortId = created?.id ? created.id.slice(0, 8) : "";
+            toast.success("已收到回報，謝謝！", {
+                description: shortId
+                    ? `回報編號 #${shortId}（IT 會在 24 小時內回覆）`
+                    : "IT 會在 24 小時內回覆。",
+                duration: 7000,
+            });
             // 1.5 秒後自動關閉
             setTimeout(() => {
                 onClose();
@@ -239,18 +269,36 @@ export const FeedbackModal = ({
                     </div>
                 ) : stage === 1 ? (
                     <>
-                        {meetingId && (
-                            <div className="px-6 pt-4">
-                                <div className="bg-brand-cta/10 border border-brand-cta/20 rounded-lg px-3 py-2 text-xs text-brand-cta flex items-center gap-2">
-                                    <FileText size={14} />
+                        {/* 2026-05-12 UX：上下文 badge 雙態，使用者一眼知道
+                              IT 拿到的回報有沒有綁會議。解 MECE B 層「使用者
+                              感知度」缺口。
+                          - 有 meetingId（caller 給 OR URL parse 補）：綠色 badge
+                          - 未綁定：黃色 warning + 提示「點某個會議再回報能更快
+                            定位」，避免使用者送出後才知道資訊不全 */}
+                        <div className="px-6 pt-4">
+                            {resolvedMeetingId ? (
+                                <div className="bg-status-success/10 border border-status-success/30 rounded-lg px-3 py-2 text-xs text-status-success flex items-center gap-2">
+                                    <Link2 size={14} className="shrink-0" />
                                     <span className="flex-1">
-                                        本回報會自動附上會議 ID
-                                        <code className="ml-1.5 px-1 py-0.5 bg-brand-cta/10 rounded font-mono text-[11px]">{meetingId.slice(0, 8)}…</code>
+                                        本回報已綁定會議
+                                        <code className="ml-1.5 px-1 py-0.5 bg-status-success/15 rounded font-mono text-[11px]">{resolvedMeetingId.slice(0, 8)}…</code>
                                         ，IT 可精準定位問題。
+                                        {!meetingId && (
+                                            <span className="ml-1 opacity-75">（依目前頁面自動帶入）</span>
+                                        )}
                                     </span>
                                 </div>
-                            </div>
-                        )}
+                            ) : (
+                                <div className="bg-brand-orange/10 border border-brand-orange/30 rounded-lg px-3 py-2 text-xs text-brand-orange flex items-start gap-2">
+                                    <Link2Off size={14} className="shrink-0 mt-0.5" />
+                                    <span className="flex-1 leading-relaxed">
+                                        <strong>本回報未綁定任何會議</strong>。
+                                        若與某個會議有關，建議先進入該會議的詳情頁
+                                        再點「回報這個會議」按鈕，IT 較好追查。
+                                    </span>
+                                </div>
+                            )}
+                        </div>
                     <div className="px-6 py-5 space-y-5">
                         {/* Issue type */}
                         <div>
