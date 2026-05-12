@@ -348,8 +348,17 @@ export default function DashboardPage() {
     };
 
     const executeDeleteMeeting = async (meetingId: string) => {
+        // 2026-05-12 UX 優化（方案 C）：
+        //   先 navigate 回 dashboard，再背景 await delete API。
+        //   感知延遲 ~2-3s → ~0ms（dialog 關閉、立即返回列表）。
+        //   失敗時 toast.error 會跳出，且該 meeting 仍會被 fetchMeetings
+        //   重新載入時帶回來（因為背景刪除已失敗，後端仍有資料）。
+        handleBackToDashboard();
         const success = await deleteMeeting(meetingId);
-        if (success) handleBackToDashboard();
+        if (!success) {
+            // 刪除失敗 → 重抓 list 確保畫面與後端一致
+            fetchMeetings();
+        }
     };
 
     const handleRecovery = async (key: string) => {

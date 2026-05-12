@@ -50,11 +50,18 @@ export function useMeetings() {
      * Caller 須先用 <ConfirmDialog> 取得使用者確認，再呼叫此函式。
      *
      * 2026-05-11：後端改 soft delete + audit log；傳 user.email 給 audit 用。
+     *
+     * 2026-05-12 UX 優化（方案 A）：
+     *   原本 `await api.deleteMeeting + await fetchMeetings` 共 ~2-3s，使用者
+     *   會看到頁面僵著沒反應。改成只 await API（~0.5-1s），成功後本地
+     *   `setMeetings(prev => prev.filter(...))` 直接拿掉那筆，不重抓整份列表。
+     *   省下 fetchMeetings 的 1-2s round trip，且不影響其他 meeting 排序。
      */
     const deleteMeeting = useCallback(async (meetingId: string) => {
         try {
             await api.deleteMeeting(meetingId, session?.user?.email ?? undefined);
-            await fetchMeetings();
+            // 本地 splice（避免重抓整份 list 多 1-2s 延遲）
+            setMeetings(prev => prev.filter(m => m.id !== meetingId));
             toast.success('會議已刪除', {
                 description: '資料保留 30 天供 IT 還原，期間請與 IT 聯絡可恢復。',
                 duration: 5000,
@@ -70,7 +77,7 @@ export function useMeetings() {
             setError(msg);
             return false;
         }
-    }, [fetchMeetings, session?.user?.email]);
+    }, [session?.user?.email]);
 
     return {
         meetings,
