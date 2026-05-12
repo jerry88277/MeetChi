@@ -407,8 +407,10 @@ def generate_summary(
     try:
         # 2026-05-11 fix: 8192 對 V2 schema (chapters + sub_chapters + bullets + quotes)
         # 嚴重不足。2h16m 會議實測在 8K 截斷導致 JSON parse fail。
-        # Gemini 2.5 Flash 支援上限 65536 — 給足夠 headroom 給長會議。
-        MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "65536"))
+        # 2026-05-12 fix: Gemini 2.5 Flash 接受範圍是 [1, 65535]（65536 EXCLUSIVE）。
+        # PR44 設 65536 觸發 400 INVALID_ARGUMENT，ac0e8eeb 會議 summary 失敗實測。
+        # 改用 65535 上限 + clamp 防 env var 誤設超出範圍。
+        MAX_OUTPUT_TOKENS = min(int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "65535")), 65535)
 
         response = client.models.generate_content(
             model=GEMINI_MODEL,
