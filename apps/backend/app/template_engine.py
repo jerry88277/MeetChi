@@ -254,13 +254,15 @@ SUMMARY_V2_REQUIREMENTS = """
 一句話結論，讓使用者讀完就 grab 全會議 30-40% 重點。BLUF 原則（Bottom Line Up Front）：
 最重要的決策/結論/警訊放在第一句。
 
-### 2. chapters (8-12 個主題章節，按議題聚類**非時序**)
+### 2. chapters (6-10 個主題章節，按議題聚類**非時序**)
 不要按發言順序切，要按「主題」分。每章節：
 - title: 主題名稱（不是流水號）
 - summary: 100-150 字摘要
 - bullets: 3-5 條重點，每條 20-30 字
 - key_quotes: 0-2 條原音引言，含 time（秒數）
 - sub_chapters: 該主題在逐字稿中對應的時序子段（按發言時間排序，30-90 秒一段）：
+  - **每章節 sub_chapters 上限 4 條**（即使主題很長也不能超過；挑最有資訊
+    密度的時段，其餘略過）
   - time_start / time_end: 秒
   - summary: 30-50 字
   - bullets: 2-3 條
@@ -305,7 +307,33 @@ def build_prompt_from_template(
     """Build system_prompt and user_prompt from a TemplateSchema.
 
     Returns (system_prompt, user_prompt_suffix) tuple.
+
+    2026-05-13 (feedback 3a4b81b4)：長會議 (>= ~50K chars transcript) Gemini
+    response 即使 max_output_tokens=65535 仍會截斷 (數位時代 2h16m 實測 hit
+    MAX_TOKENS, response 129989 chars → JSON parse fail)。
+
+    Root cause：V2 schema chapters × sub_chapters × bullets × quotes 對長
+    逐字稿展開後過於詳細。65535 是 Gemini API 硬上限，加不了。
+
+    修法：transcript 超過 50K 字（約 1.5h+ 中文會議）→ 注入「精簡指令」
+    要求 LLM 縮減 chapter 數與 sub_chapter 數，控制 response 在硬上限內。
     """
+    # 動態長度適配 (50K chars ~ Gemini 25K-30K input tokens for zh)
+    transcript_len = len(transcript)
+    long_meeting_addendum = ""
+    if transcript_len >= 50_000:
+        long_meeting_addendum = (
+            "\n## ⚠️ 本會議較長之精簡規則（必須遵守）\n"
+            f"原始逐字稿長度 {transcript_len:,} 字（屬長會議）。為避免回應超過 "
+            "API 硬上限 (65K tokens)，請**強制執行**以下精簡規則：\n"
+            "  - chapters：**最多 6 個**（從 6-10 上限再壓縮）\n"
+            "  - 每章節 sub_chapters：**最多 3 條**（從 4 條再壓縮）\n"
+            "  - bullets：每處最多 3 條（從 3-5 上限壓縮）\n"
+            "  - key_quotes：每章節最多 1 條（從 0-2 壓縮）；sub_chapter 不放 quote\n"
+            "  - summary 字數可保持原規格，但勿超過\n"
+            "**這是長會議避免截斷的硬性限制**。你寧可少列重點也不能截斷 JSON。"
+        )
+
     # Build section instructions
     section_instructions = "\n".join(
         f"- **{s.title}** (output_key: `{s.output_key}`, type: {s.output_type}): {s.instruction}"
@@ -321,6 +349,7 @@ def build_prompt_from_template(
 {section_instructions}
 
 {SUMMARY_V2_REQUIREMENTS}
+{long_meeting_addendum}
 
 請確保輸出的 JSON 包含所有上述欄位（模板原欄位 + V2 結構化欄位）。
 """
