@@ -349,7 +349,7 @@ export const FeedbackModal = ({
                                 onChange={(e) => setSummary(e.target.value.slice(0, 200))}
                                 placeholder="例：摘要把預算金額抓錯了，應該是 50 萬不是 5 萬"
                                 rows={3}
-                                className="w-full px-3 py-2 bg-card border border-border rounded-lg focus:border-brand-cta focus:outline-none text-sm text-foreground resize-none"
+                                className="w-full px-3 py-2 bg-surface border border-border rounded-lg focus:border-brand-cta focus:outline-none text-sm text-foreground resize-none"
                             />
                             {summary.length > 0 && summary.trim().length < 5 && (
                                 <p className="text-xs text-status-error mt-1 flex items-center gap-1">
@@ -435,7 +435,7 @@ export const FeedbackModal = ({
                                     onChange={(e) => setExpected(e.target.value.slice(0, 2000))}
                                     placeholder="原本以為會看到 / 應該要..."
                                     rows={4}
-                                    className="w-full px-3 py-2 bg-card border border-border rounded-lg focus:border-brand-cta focus:outline-none text-sm text-foreground resize-none"
+                                    className="w-full px-3 py-2 bg-surface border border-border rounded-lg focus:border-brand-cta focus:outline-none text-sm text-foreground resize-none"
                                 />
                             </div>
                             <div>
@@ -451,7 +451,7 @@ export const FeedbackModal = ({
                                     onChange={(e) => setActual(e.target.value.slice(0, 2000))}
                                     placeholder="結果是 / 系統卻..."
                                     rows={4}
-                                    className="w-full px-3 py-2 bg-card border border-border rounded-lg focus:border-brand-cta focus:outline-none text-sm text-foreground resize-none"
+                                    className="w-full px-3 py-2 bg-surface border border-border rounded-lg focus:border-brand-cta focus:outline-none text-sm text-foreground resize-none"
                                 />
                             </div>
                         </div>
@@ -470,7 +470,7 @@ export const FeedbackModal = ({
                                 onChange={(e) => setReproSteps(e.target.value.slice(0, 5000))}
                                 placeholder="1. 上傳音檔...\n2. 等摘要產生...\n3. 看 BANT 欄位..."
                                 rows={4}
-                                className="w-full px-3 py-2 bg-card border border-border rounded-lg focus:border-brand-cta focus:outline-none text-sm text-foreground resize-none font-mono"
+                                className="w-full px-3 py-2 bg-surface border border-border rounded-lg focus:border-brand-cta focus:outline-none text-sm text-foreground resize-none font-mono"
                             />
                         </div>
 
