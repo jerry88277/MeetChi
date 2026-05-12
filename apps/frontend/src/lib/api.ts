@@ -376,20 +376,45 @@ class ApiClient {
     }
 
     /**
-     * Upload a file directly to GCS using a signed URL
+     * Upload a file directly to GCS using a signed URL.
+     *
+     * 2026-05-12：原本用 `fetch` PUT，但 fetch API 缺 upload progress event，
+     * 無法顯示 % 進度。改用 XHR 取得 upload.onprogress。
+     *
+     * @param onProgress 可選回呼，回傳已上傳 bytes / 總 bytes（0-100 整數 percent）
      */
-    async uploadToGcs(uploadUrl: string, file: File): Promise<void> {
-        const response = await fetch(uploadUrl, {
-            method: 'PUT',
-            body: file,
-            headers: {
-                'Content-Type': file.type,
-            },
-        });
+    async uploadToGcs(
+        uploadUrl: string,
+        file: File,
+        onProgress?: (percent: number, loaded: number, total: number) => void,
+    ): Promise<void> {
+        return new Promise<void>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('PUT', uploadUrl, true);
+            xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
 
-        if (!response.ok) {
-            throw new Error(`Failed to upload file. Status: ${response.status}`);
-        }
+            if (onProgress) {
+                xhr.upload.onprogress = (e: ProgressEvent) => {
+                    if (e.lengthComputable && e.total > 0) {
+                        const percent = Math.min(100, Math.floor((e.loaded / e.total) * 100));
+                        onProgress(percent, e.loaded, e.total);
+                    }
+                };
+            }
+
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    if (onProgress) onProgress(100, file.size, file.size);
+                    resolve();
+                } else {
+                    reject(new Error(`Failed to upload file. Status: ${xhr.status}`));
+                }
+            };
+            xhr.onerror = () => reject(new Error('Network error during upload'));
+            xhr.onabort = () => reject(new Error('Upload aborted'));
+
+            xhr.send(file);
+        });
     }
 
     /**
