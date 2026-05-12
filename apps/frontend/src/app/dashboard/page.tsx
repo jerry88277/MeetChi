@@ -57,6 +57,7 @@ export default function DashboardPage() {
 
     const {
         recordingMeetingId, recordingTitle, isUploading, uploadState,
+        uploadProgress, uploadFileName, uploadFileSize,
         lastUploadedMeetingId, fileInputRef, startRecording, triggerFileInput,
         uploadFile, resetUploadState,
     } = useRecording();
@@ -173,6 +174,22 @@ export default function DashboardPage() {
         document.addEventListener('visibilitychange', handleVisibility);
         return () => document.removeEventListener('visibilitychange', handleVisibility);
     }, [fetchMeetings]);
+
+    // 2026-05-12 (feedback)：dashboard 入口檔案上傳防誤操作。
+    //   原本 beforeunload 只寫在 RecordingView 內，dashboard 上傳不會生效。
+    //   數位時代 70+ MB 影片上傳需數分鐘，使用者很容易誤重整 → 整個 PUT 中斷。
+    //   uploadState='uploading' 期間阻擋 reload / close tab（顯示瀏覽器原生
+    //   confirm dialog）。'processing' 不必擋——audio 已在 GCS，重整不會丟。
+    useEffect(() => {
+        if (uploadState !== 'uploading') return;
+        const handler = (e: BeforeUnloadEvent) => {
+            // 現代瀏覽器不再顯示自訂訊息，但 returnValue 必須設才會跳確認 dialog
+            e.preventDefault();
+            e.returnValue = '';
+        };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [uploadState]);
 
     // D3-2: Smart Interval Safety Net (v15)
     // Only activates when there's a processing meeting but NO active single-meeting poll.
@@ -415,8 +432,51 @@ export default function DashboardPage() {
         }
     };
 
+    // 2026-05-12 (feedback)：上傳中全屏 overlay
+    //   - 解使用者反映「上傳數位時代時前端沒顯示提醒，誤重整取消整個流程」
+    //   - 含 % 進度條（XHR upload.onprogress）+ 「請勿關閉/重整」警告
+    //   - 只在 uploadState='uploading' 顯示（PUT 到 GCS 階段）
+    //   - 'processing' 階段不擋（audio 已在 GCS，使用者可離開）
+    //   - 配合 beforeunload handler 雙重保護
+    const uploadingOverlay =
+        uploadState === 'uploading' ? (
+            <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
+                <div className="bg-card rounded-2xl shadow-2xl border border-border max-w-md w-full p-6 text-center">
+                    <Loader2 className="w-12 h-12 text-brand-cta animate-spin mx-auto mb-4" />
+                    <h2 className="text-xl font-bold text-foreground mb-1">音檔上傳中</h2>
+                    <p className="text-sm text-muted-foreground mb-4">
+                        請<strong className="text-status-error">勿關閉視窗或重新整理</strong>，否則整個上傳會中斷。
+                    </p>
+                    {uploadFileName && (
+                        <p className="text-xs font-mono text-muted-foreground/80 mb-3 break-all">
+                            {uploadFileName}
+                            {uploadFileSize > 0 && (
+                                <span className="ml-2 opacity-70">
+                                    ({(uploadFileSize / 1024 / 1024).toFixed(1)} MB)
+                                </span>
+                            )}
+                        </p>
+                    )}
+                    {/* Progress bar */}
+                    <div className="w-full bg-muted rounded-full h-3 overflow-hidden mb-2">
+                        <div
+                            className="bg-brand-cta h-full transition-all duration-300 ease-out"
+                            style={{ width: `${uploadProgress}%` }}
+                        />
+                    </div>
+                    <p className="text-sm font-semibold text-brand-cta tabular-nums">
+                        {uploadProgress}%
+                    </p>
+                    <p className="text-xs text-muted-foreground/70 mt-4">
+                        傳輸完成後會自動開始 AI 處理，可安心去做其他事。
+                    </p>
+                </div>
+            </div>
+        ) : null;
+
     return (
         <div className="flex h-screen bg-surface font-sans text-foreground overflow-hidden relative">
+            {uploadingOverlay}
             {/* Global FAB for RagSidebar — DDG token */}
             <button
                 onClick={() => setIsRagSidebarOpen(true)}

@@ -11,6 +11,11 @@ export function useRecording() {
     const [recordingTitle, setRecordingTitle] = useState('新會議');
     const [uploadState, setUploadState] = useState<UploadState>('idle');
     const [lastUploadedMeetingId, setLastUploadedMeetingId] = useState<string | null>(null);
+    // 2026-05-12 (feedback)：上傳進度 0-100；大檔上傳時讓 user 知道還剩多少
+    const [uploadProgress, setUploadProgress] = useState(0);
+    // 上傳檔名 + 大小，給 overlay 顯示
+    const [uploadFileName, setUploadFileName] = useState<string>('');
+    const [uploadFileSize, setUploadFileSize] = useState<number>(0);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Backward-compatible computed property
@@ -44,6 +49,9 @@ export function useRecording() {
     ) => {
         setUploadState('uploading');
         setLastUploadedMeetingId(null);
+        setUploadProgress(0);
+        setUploadFileName(file.name);
+        setUploadFileSize(file.size);
         try {
             // Get audio duration using HTMLAudioElement
             const getDuration = (file: File): Promise<number> => {
@@ -75,7 +83,10 @@ export function useRecording() {
             });
             
             const { uploadUrl } = await api.getUploadUrl(meeting.id, file.name, file.type || 'application/octet-stream');
-            await api.uploadToGcs(uploadUrl, file);
+            // 2026-05-12：傳 onProgress callback 讓 overlay 即時顯示 % 進度
+            await api.uploadToGcs(uploadUrl, file, (percent) => {
+                setUploadProgress(percent);
+            });
 
             // Phase 9.1 Fix: Set state BEFORE triggering task so polling starts immediately.
             // The backend endpoint is synchronous (blocks until processing completes),
@@ -102,6 +113,9 @@ export function useRecording() {
     const resetUploadState = useCallback(() => {
         setUploadState('idle');
         setLastUploadedMeetingId(null);
+        setUploadProgress(0);
+        setUploadFileName('');
+        setUploadFileSize(0);
     }, []);
 
     return {
@@ -109,6 +123,9 @@ export function useRecording() {
         recordingTitle,
         isUploading,          // backward-compatible boolean
         uploadState,          // Phase 9.1: fine-grained state
+        uploadProgress,       // 2026-05-12: 0-100 byte 進度，給 overlay 顯示
+        uploadFileName,       // 2026-05-12: 上傳檔名，給 overlay 顯示
+        uploadFileSize,       // 2026-05-12: 上傳檔案大小（bytes），給 overlay 顯示
         lastUploadedMeetingId, // Phase 9.1: for parent to start polling
         fileInputRef,
         startRecording,
