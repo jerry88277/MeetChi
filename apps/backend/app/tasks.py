@@ -60,19 +60,29 @@ def _process_split_audio_sync(
     db: Session,
     suppress_fail_notification: bool,
 ):
-    """Phase A (2026-05-11)：duration > 1200s 走拆解 + 平行 GPU ASR path.
+    """Phase A.1 (2026-05-12)：duration > 1200s 走拆解 + 平行 GPU ASR path.
 
     流程：
       1. 拆 audio_url → N 個 chunks 上 GCS (audio_split.split_audio_to_chunks)
-      2. asyncio.gather POST 給 GPU service N 次（不掛 callback，直接拿 response）
-      3. 各 chunk segments 套 offset 合併
-      4. 全部寫進 TranscriptSegment table
-      5. 觸發 generate_summary_core(skip_asr=True) 跑 summary
-      6. 清理 GCS chunks
+      2. Semaphore(GPU_PARALLELISM) 限流 POST 給 GPU service（不掛 callback）
+      3. 各 chunk 失敗 → 一次獨立 retry（fresh connection）
+      4. 各 chunk segments 套 offset 合併
+      5. 全部寫進 TranscriptSegment table
+      6. 觸發 generate_summary_core(skip_asr=True) 跑 summary
+      7. 所有 chunk 都拿到 final 結果（成功或重試後失敗）後才 cleanup GCS chunks
 
-    與 single-audio path 不同處：
-      - 不依賴 GPU service 的 callback（callback_url=None）
-      - 全部 round-trip 在 backend 內完成，最後一次寫 DB + trigger summary
+    與 Phase A 原版差異（修正 5/11 失敗）：
+      - 原 `asyncio.gather` 一次發 N 個 → GPU concurrency=1 + max-instances=2
+        導致 5+ 個 request 在 Cloud Run queue 排 19 分鐘 → GFE TCP idle timeout
+        砍連線 → ReadError → backend 標 FAILED → 提早 cleanup → 排隊中的
+        chunk 後來才 download 但 404
+      - Phase A.1：Semaphore(GPU_PARALLELISM=2) 對齊 max-instances，
+        永遠只有 2 個 in-flight，無排隊 → 不會被 GFE 砍
+      - cleanup 改在所有 chunk 都「最終 settled」之後執行，避免 race
+
+    可調參數：
+      GPU_PARALLELISM (env: ASR_PARALLELISM, default=2) 跟 GPU max-instances 對齊。
+      若日後 Google 開 max=4 quota，把這個 env 同步調大即可。
 
     Returns dict {status, meeting_id, ...}; 與 single-audio path 同格式
     """
@@ -80,25 +90,37 @@ def _process_split_audio_sync(
     from app.audio_split import split_audio_to_chunks, cleanup_chunks
     from app.models import TranscriptSegment
 
+    # Semaphore 上限：對齊 Cloud Run GPU max-instances (目前 quota=2)
+    GPU_PARALLELISM = int(os.getenv("ASR_PARALLELISM", "2"))
+
+    chunks: list = []  # for finally cleanup
+    cleanup_done = False
     try:
         # 1. Split audio → upload chunks
         logger.info(f"[ParallelASR] splitting audio for {meeting_id}")
         chunks = split_audio_to_chunks(audio_url, meeting_id)
         n_chunks = len(chunks)
-        logger.info(f"[ParallelASR] {meeting_id} split into {n_chunks} chunks")
+        logger.info(
+            f"[ParallelASR] {meeting_id} split into {n_chunks} chunks "
+            f"(parallelism={GPU_PARALLELISM})"
+        )
 
-        # 2. asyncio.gather POST to GPU N times in parallel
-        async def call_gpu(chunk_url: str, offset: float, idx: int) -> dict:
+        # 2. Semaphore-limited POST：每個 chunk 一次 retry on failure
+        async def call_gpu_once(chunk_url: str, offset: float, idx: int, attempt: int) -> dict:
+            """單次 POST，timeout 對齊 Cloud Run service timeout (3600s)。"""
             import httpx
             async with httpx.AsyncClient(timeout=3600.0) as client:
-                logger.info(f"[ParallelASR] chunk {idx+1}/{n_chunks} → GPU (offset={offset:.0f}s)")
+                logger.info(
+                    f"[ParallelASR] chunk {idx+1}/{n_chunks} → GPU "
+                    f"(offset={offset:.0f}s, attempt={attempt})"
+                )
                 resp = await client.post(
                     f"{gpu_asr_url.rstrip('/')}/asr/refine",
                     json={
-                        "meeting_id": f"{meeting_id}__chunk_{idx:03d}",  # GPU 不需要真實 ID
+                        "meeting_id": f"{meeting_id}__chunk_{idx:03d}",
                         "audio_url": chunk_url,
                         "language": language,
-                        "callback_url": None,  # 不要 callback，sync return
+                        "callback_url": None,
                     },
                 )
                 resp.raise_for_status()
@@ -106,25 +128,45 @@ def _process_split_audio_sync(
                 data["_chunk_offset"] = offset
                 data["_chunk_idx"] = idx
                 logger.info(
-                    f"[ParallelASR] chunk {idx+1}/{n_chunks} done: "
+                    f"[ParallelASR] chunk {idx+1}/{n_chunks} done attempt={attempt}: "
                     f"{len(data.get('segments', []))} segments"
                 )
                 return data
 
+        async def call_gpu_with_retry(sem: asyncio.Semaphore, chunk_url: str, offset: float, idx: int) -> dict:
+            """Semaphore-guarded POST + 一次 retry."""
+            async with sem:
+                try:
+                    return await call_gpu_once(chunk_url, offset, idx, attempt=1)
+                except Exception as e:
+                    logger.warning(
+                        f"[ParallelASR] chunk {idx+1}/{n_chunks} attempt 1 failed "
+                        f"({type(e).__name__}: {e}); retrying once"
+                    )
+                    # 短暫退避避免 retry 撞同一個 in-flight；retry 仍佔 sem 額度
+                    await asyncio.sleep(2.0)
+                    return await call_gpu_once(chunk_url, offset, idx, attempt=2)
+
         async def run_all_chunks():
-            tasks = [call_gpu(url, off, i) for i, (url, off) in enumerate(chunks)]
+            sem = asyncio.Semaphore(GPU_PARALLELISM)
+            tasks = [
+                call_gpu_with_retry(sem, url, off, i)
+                for i, (url, off) in enumerate(chunks)
+            ]
             return await asyncio.gather(*tasks, return_exceptions=True)
 
         results = asyncio.run(run_all_chunks())
 
-        # Check for chunk-level failures
+        # Check for chunk-level failures (after retry)
         failed_chunks = [i for i, r in enumerate(results) if isinstance(r, Exception)]
         if failed_chunks:
             err_msgs = "; ".join(
                 f"chunk_{i}: {type(results[i]).__name__}: {results[i]}"
                 for i in failed_chunks[:3]
             )
-            raise RuntimeError(f"[ParallelASR] {len(failed_chunks)}/{n_chunks} chunks failed: {err_msgs}")
+            raise RuntimeError(
+                f"[ParallelASR] {len(failed_chunks)}/{n_chunks} chunks failed after retry: {err_msgs}"
+            )
 
         # 3. Merge segments with time offset
         all_segments = []
@@ -184,8 +226,11 @@ def _process_split_audio_sync(
             f"(from {n_chunks} chunks)"
         )
 
-        # 5. Cleanup chunks from GCS
+        # 5. Cleanup chunks from GCS — 只在所有 chunk 都 settled 後執行
+        # （Phase A.1 修：原版 cleanup 在 failed_chunks 觸發 raise 前就跑，
+        # 與 Cloud Run queue 中仍在等的 chunk race，造成 404 連鎖失敗）
         cleanup_chunks(audio_url, meeting_id)
+        cleanup_done = True
 
         # 6. Trigger summary generation (synchronously continue)
         _update_task_status(
@@ -212,12 +257,13 @@ def _process_split_audio_sync(
             except Exception:
                 pass
         _update_task_status(db, meeting_id, "offline_asr", "FAILED", f"ParallelASR error: {str(e)}")
-        # cleanup chunks even on failure
-        try:
-            from app.audio_split import cleanup_chunks
-            cleanup_chunks(audio_url, meeting_id)
-        except Exception:
-            pass
+        # cleanup chunks even on failure（若 success 路徑沒走到 cleanup_done=True）
+        if not cleanup_done and chunks:
+            try:
+                from app.audio_split import cleanup_chunks
+                cleanup_chunks(audio_url, meeting_id)
+            except Exception:
+                pass
         return {"status": "failed", "error": f"Parallel ASR failed: {str(e)}"}
 
 
