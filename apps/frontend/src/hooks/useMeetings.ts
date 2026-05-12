@@ -57,7 +57,20 @@ export function useMeetings() {
      *   `setMeetings(prev => prev.filter(...))` 直接拿掉那筆，不重抓整份列表。
      *   省下 fetchMeetings 的 1-2s round trip，且不影響其他 meeting 排序。
      */
-    const deleteMeeting = useCallback(async (meetingId: string) => {
+    /**
+     * 2026-05-12 UX (feedback 617bb614)：
+     *   原刪除失敗 toast 只顯示 raw error string（例：「(psycopg2.errors.
+     *   ForeignKeyViolation) ...」），使用者直接看到 stack trace 風格訊息，
+     *   無法理解、也不知道下一步。
+     *
+     *   改成：user-friendly 標題 + 引導句 + 「立即回報」action 按鈕。
+     *   action 透過 onReportFailedDelete callback 開 FeedbackModal 並帶
+     *   meeting_id（caller 在 page 層接 callback）。
+     */
+    const deleteMeeting = useCallback(async (
+        meetingId: string,
+        onReportFailedDelete?: (meetingId: string) => void
+    ) => {
         try {
             await api.deleteMeeting(meetingId, session?.user?.email ?? undefined);
             // 本地 splice（避免重抓整份 list 多 1-2s 延遲）
@@ -70,9 +83,16 @@ export function useMeetings() {
         } catch (err) {
             console.error('Failed to delete meeting:', err);
             const msg = err instanceof Error ? err.message : '刪除會議失敗';
-            toast.error(`刪除失敗：${msg}`, {
-                description: '請檢查網路或稍後再試；若持續失敗請使用「回報問題」並附 Meeting ID。',
-                duration: 8000,
+            toast.error('刪除失敗，請稍候再試', {
+                description:
+                    '若持續失敗，請點下方「立即回報」交給 IT 協助處理（系統會自動附上 Meeting ID）。',
+                duration: 10000,
+                action: onReportFailedDelete
+                    ? {
+                          label: '立即回報',
+                          onClick: () => onReportFailedDelete(meetingId),
+                      }
+                    : undefined,
             });
             setError(msg);
             return false;
