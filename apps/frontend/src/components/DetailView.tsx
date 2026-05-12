@@ -31,6 +31,7 @@ import { SpeakerContributionsBar } from './detail/SpeakerContributionsBar';
 import { NextStepsTable } from './detail/NextStepsTable';
 import { CrossMeetingRefList } from './detail/CrossMeetingRefList';
 import { QuoteCard } from './detail/QuoteCard';
+import { SecurityWrapper } from './SecurityWrapper';
 
 interface DetailViewProps {
     meeting: Meeting | null;
@@ -194,8 +195,10 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     const keyQuotes = meeting.keyQuotes ?? [];
     const isCompleted = meeting.status === 'completed';
 
-    return (
-        <div className="h-full flex flex-col bg-card">
+    // 2026-05-12 (feedback 4504f2e3): 把 SecurityWrapper 從 dashboard/layout.tsx
+    // 移下來，只在 is_confidential=true 時才包，避免全域鎖住一般會議的複製功能。
+    const content = (
+        <div className="h-full flex flex-col bg-card">{/* === DETAIL VIEW BODY START === */}
             {/* Sticky header */}
             <div className="border-b border-border px-6 py-4 flex items-center gap-4 bg-card sticky top-0 z-10">
                 <button onClick={onBack} className="p-2 hover:bg-muted rounded-full text-muted-foreground transition-colors">
@@ -766,6 +769,14 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
             )}
         </div>
     );
+    // === DETAIL VIEW BODY END ===
+
+    // 條件式套用機密保護：watermark + select-none + contextmenu/Ctrl+C 攔截
+    // is_confidential=false 的一般會議返回原 content，使用者可正常複製
+    if (meeting.isConfidential) {
+        return <SecurityWrapper>{content}</SecurityWrapper>;
+    }
+    return content;
 };
 
 /** 結論卡片：決策 / 待辦 / 風險 統一外觀 */

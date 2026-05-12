@@ -353,8 +353,13 @@ export default function DashboardPage() {
         //   感知延遲 ~2-3s → ~0ms（dialog 關閉、立即返回列表）。
         //   失敗時 toast.error 會跳出，且該 meeting 仍會被 fetchMeetings
         //   重新載入時帶回來（因為背景刪除已失敗，後端仍有資料）。
+        //
+        // 2026-05-12 UX (feedback 617bb614)：刪除失敗 toast 加「立即回報」action，
+        // 點下去直接開 FeedbackModal 並帶 meeting_id 給 IT 追查。
         handleBackToDashboard();
-        const success = await deleteMeeting(meetingId);
+        const success = await deleteMeeting(meetingId, (failedMeetingId) => {
+            setFeedbackContext({ meetingId: failedMeetingId });
+        });
         if (!success) {
             // 刪除失敗 → 重抓 list 確保畫面與後端一致
             fetchMeetings();
