@@ -275,8 +275,12 @@ def find_cross_meeting_refs(
         owner_filter="AND m.owner_upn = :owner" if same_owner_only and meeting.owner_upn else ""
     )
 
+    # 2026-05-22 fix: numpy 2.x 把 np.float32(x) 加進 repr 字串，pgvector 不認得
+    # ('[np.float32(0.044), ...]' → InvalidTextRepresentation)。
+    # 改用純 float 重組成 '[0.044,0.034,...]' 字串。
+    vec_str = "[" + ",".join(str(float(v)) for v in meeting.summary_embedding) + "]"
     params = {
-        "query_vec": str(list(meeting.summary_embedding)),  # pgvector accepts string form
+        "query_vec": vec_str,
         "self_id": meeting_id,
         "limit": top_k * 2,  # over-fetch then filter by similarity
     }
