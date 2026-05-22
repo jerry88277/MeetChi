@@ -403,10 +403,15 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                             <div className="flex flex-col items-center justify-center text-center text-status-error">
                                 <AlertCircle className="h-10 w-10 mb-4" />
                                 <p className="text-lg font-semibold mb-1">處理失敗</p>
-                                <p className="text-sm text-foreground/70 mb-6 max-w-sm">
-                                    系統在生成紀錄的過程中遇到了問題，這可能是後端資源繁忙或轉錄模型錯誤所致。
+                                {/* 2026-05-22 (feedback 3dcd58fc) 改寫錯誤訊息 + 加「立即回報」按鈕：
+                                    使用者明確要求「新增對應的錯誤訊息給使用者，或者是一鍵通報」。
+                                    舊版只有兩個 retry 按鈕，若連續失敗使用者就卡死。 */}
+                                <p className="text-sm text-foreground/70 mb-6 max-w-md">
+                                    很抱歉，AI 無法完成這份會議。常見原因：音檔太長導致摘要超出長度上限、
+                                    或系統暫時繁忙。請先嘗試「重新生成摘要」；若連續失敗，請按「立即回報」
+                                    交給 IT 協助（已自動帶上會議 ID）。
                                 </p>
-                                <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-md">
+                                <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-2xl">
                                     {onRegenerateTranscript && (
                                         <button
                                             onClick={() => onRegenerateTranscript(meeting.id, selectedTemplate)}
@@ -425,6 +430,16 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                         >
                                             {isRegenerating ? <Loader2 size={16} className="animate-spin text-white/70" /> : <RefreshCw size={16} className="group-hover:rotate-180 transition-transform duration-500" />}
                                             <span>2. 僅重新生成摘要</span>
+                                        </button>
+                                    )}
+                                    {onReportThisMeeting && (
+                                        <button
+                                            onClick={() => onReportThisMeeting(meeting.id)}
+                                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-status-error/10 border border-status-error/30 hover:bg-status-error/20 text-status-error rounded-xl shadow-sm transition-all group"
+                                            title="開啟回報視窗並自動帶入會議 ID"
+                                        >
+                                            <MessageSquareWarning size={16} />
+                                            <span>3. 立即回報</span>
                                         </button>
                                     )}
                                 </div>
