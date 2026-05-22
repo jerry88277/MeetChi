@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { Send, FileText, Loader2 } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { api, RagCitation } from "@/lib/api";
 
 interface ChatPanelProps {
@@ -16,6 +17,12 @@ type Message = {
 };
 
 export function ChatPanel({ onCitationClick }: ChatPanelProps) {
+  // 2026-05-22 (feedback #9 RAG 查不到)：原硬編 'global_test@company.com' 與
+  // 任何 meeting_participants 都不匹配 → 查無資料。改用 session.user.email
+  // 拿登入者 UPN，後端用此 JOIN meeting_participants enforce 存取控制。
+  const { data: session } = useSession();
+  const userUpn = session?.user?.email ?? undefined;
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
@@ -38,12 +45,14 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
 
     try {
       // Extract history, skipping the first hardcoded welcome message
-      const history = messages.length > 1 
+      const history = messages.length > 1
         ? messages.slice(1).map(m => ({ role: m.role, text: m.text }))
         : [];
-        
-      // Hardcoded userUpn or fetch from session if available
-      const res = await api.askRag(userMsg.text, 'global_test@company.com', history);
+
+      if (!userUpn) {
+        throw new Error("尚未登入或無法取得使用者識別，請重新整理頁面後再試。");
+      }
+      const res = await api.askRag(userMsg.text, userUpn, history);
       setMessages(prev => [
         ...prev,
         { id: (Date.now() + 1).toString(), role: "ai", text: res.answer, citations: res.citations }

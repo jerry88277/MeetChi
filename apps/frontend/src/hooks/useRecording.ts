@@ -1,12 +1,20 @@
 "use client";
 
 import { useState, useRef, useCallback, useMemo } from 'react';
+import { useSession } from 'next-auth/react';
 import { api } from '@/lib/api';
 
 // Phase 9.1: Upload State Machine — replaces boolean isUploading
 export type UploadState = 'idle' | 'uploading' | 'processing' | 'done' | 'error';
 
 export function useRecording() {
+    // 2026-05-22 (feedback #9 RAG)：原硬編 user_upn: sessionUpn 導致
+    // 上傳會議 owner=test@company.com，但 RAG 用 session email 查 →
+    // meeting_participants JOIN 不到 → RAG「未找到相關段落」。
+    // 改用 session.user.email 讓 owner 與 RAG query 對齊。
+    const { data: session } = useSession();
+    const sessionUpn = session?.user?.email ?? 'test@company.com';
+
     const [recordingMeetingId, setRecordingMeetingId] = useState<string | null>(null);
     const [recordingTitle, setRecordingTitle] = useState('新會議');
     const [uploadState, setUploadState] = useState<UploadState>('idle');
@@ -30,7 +38,7 @@ export function useRecording() {
             `會議 ${new Date().toLocaleDateString('zh-TW')}`
         ) || `會議 ${new Date().toLocaleDateString('zh-TW')}`;
         setRecordingTitle(title);
-        const meeting = await api.createMeeting({ title, user_upn: 'test@company.com' });
+        const meeting = await api.createMeeting({ title, user_upn: sessionUpn });
         setRecordingMeetingId(meeting.id);
         return meeting.id;
     }, []);
@@ -78,7 +86,7 @@ export function useRecording() {
                 template_name: templateName,
                 duration,
                 custom_context: context,
-                user_upn: 'test@company.com',
+                user_upn: sessionUpn,
                 is_confidential: isConfidential,
             });
             
