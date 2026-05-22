@@ -90,18 +90,27 @@ class KeyQuote(BaseModel):
 # Q1-Q8 決策落地：三層可展開、結論視情況才列、引言階層化、新增 3 個欄位
 # ============================================
 
-# 2026-05-22 (feedback 3dcd58fc)：Pydantic max_length 硬約束
-# 5/12 修了「prompt 自然語言精簡規則」但 LLM 完全無視 → 5/22 同樣會議
-# response 146K chars 比 5/12 的 130K 還大。
+# 2026-05-22 schema cap 設計史（兩次失敗的教訓）：
 #
-# 根因：response_schema 從 Pydantic 轉 JSON Schema 時 List[] 沒 maxItems →
-# LLM 完全自由發揮。改加 Pydantic Field(max_length=N) 把上限編進 schema 自身。
-# 即使 LLM 仍超出，generate_summary 內 post-process 截斷會收尾防呆。
+# 嘗試 1 (5/12)：prompt 自然語言「最多 N 個」→ LLM 完全無視，response 146K
+#   chars 比 prompt 前還大。
 #
-# 數字依「最壞情境下仍能塞進 65K token output」反推：
-#   chapters 8 × sub_chapters 3 × (bullets 3 + key_quotes 1) ≈ 200 nested items
-#   單 item ~500 chars JSON → 100K chars JSON 預估，加 chapters 自身 summary
-#   約 130K chars total，接近上限但留 15% buffer
+# 嘗試 2 (5/22 PM)：Pydantic Field(max_length=...) 加在所有巢狀層級
+#   chapters / sub_chapters / bullets / key_quotes 都加 cap。Gemini API 直接
+#   拒收 schema：
+#     400 INVALID_ARGUMENT: schema produces a constraint that has too many
+#     states for serving... long array length limits (especially when nested)
+#   Gemini FSM validator 對巢狀 maxItems 容量有限制，狀態空間爆炸。
+#
+# 嘗試 3 (this commit, 5/22 PM revert)：**完全不在 Pydantic schema 加
+#   max_length**，純靠 Python post-process 截尾（_truncate_summary_lists）
+#   + prompt 軟提示。trade-off：
+#     - 失去 LLM 階段的硬約束
+#     - 但 schema 通過 Gemini validator ✓
+#     - response 太長仍會 MAX_TOKENS truncate，後備機制：post-process 截尾
+#       讓「即使有缺角也能存進 DB」（partial summary 比 FAILED 好）
+#
+# 真正解：未來改 map-reduce summary（每 chunk 各自 summarize 後合併）。
 _CAP_CHAPTERS = 8
 _CAP_SUB_CHAPTERS_PER_CHAPTER = 3
 _CAP_BULLETS = 5
@@ -111,27 +120,28 @@ _CAP_SPEAKER_CONTRIB = 10
 
 
 class SubChapter(BaseModel):
-    """Layer 3 時序子段（章節點【展開時序】後出現）。"""
+    """Layer 3 時序子段（章節點【展開時序】後出現）。
+    list 上限改由 _truncate_summary_lists post-process 強制（不在 Pydantic）。
+    """
     time_start: float  # 秒
     time_end: float    # 秒
     summary: str       # 30-50 字摘要
-    bullets: List[str] = Field(default_factory=list, max_length=_CAP_BULLETS)  # 2-3 條重點
-    key_quotes: List[KeyQuote] = Field(default_factory=list, max_length=2)  # 0-1 條引言
+    bullets: List[str] = []  # 2-3 條重點
+    key_quotes: List[KeyQuote] = []  # 0-1 條引言
 
 
 class Chapter(BaseModel):
-    """Layer 2 主題章節（Q1=B+C 結構；6-8 章，硬上限 8）。
+    """Layer 2 主題章節（Q1=B+C 結構；6-8 章）。
 
     title 用主題（如「互聯網三階段與贏家」），不用時序流水號。
     sub_chapters 按時序排序、每段 30-90 秒，提供 Layer 3 細部展開索引。
+    所有 list 上限改由 _truncate_summary_lists post-process 強制。
     """
     title: str
     summary: str  # 100-150 字主題摘要
-    bullets: List[str] = Field(default_factory=list, max_length=_CAP_BULLETS)
-    key_quotes: List[KeyQuote] = Field(default_factory=list, max_length=_CAP_KEY_QUOTES)
-    sub_chapters: List[SubChapter] = Field(
-        default_factory=list, max_length=_CAP_SUB_CHAPTERS_PER_CHAPTER
-    )
+    bullets: List[str] = []
+    key_quotes: List[KeyQuote] = []
+    sub_chapters: List[SubChapter] = []
 
 
 class SpeakerContribution(BaseModel):
@@ -169,18 +179,16 @@ class GeneralSummary(BaseModel):
     speaker_roles: Optional[List[SpeakerRole]] = None
     tldr: Optional[str] = None  # 100-200 字 TL;DR (新增)
     summary: str
-    action_items: List[str] = Field(default_factory=list, max_length=20)
-    decisions: List[str] = Field(default_factory=list, max_length=10)
-    risks: List[str] = Field(default_factory=list, max_length=10)
-    key_quotes: List[KeyQuote] = Field(default_factory=list, max_length=_CAP_KEY_QUOTES)
-
-    # 摘要規格 V2 (Q1-Q8 落地, 2026-05-11)；V3 加 max_length 防 LLM 越限 (2026-05-22)
-    chapters: List[Chapter] = Field(default_factory=list, max_length=_CAP_CHAPTERS)
-    speaker_contributions: List[SpeakerContribution] = Field(
-        default_factory=list, max_length=_CAP_SPEAKER_CONTRIB
-    )
-    next_steps: List[NextStep] = Field(default_factory=list, max_length=_CAP_NEXT_STEPS)
-    cross_meeting_refs: List[CrossMeetingRef] = []  # backend post-process 補
+    action_items: List[str] = []
+    decisions: List[str] = []
+    risks: List[str] = []
+    key_quotes: List[KeyQuote] = []
+    # 摘要規格 V2 (Q1-Q8 落地, 2026-05-11)
+    # 5/22：list cap 由 _truncate_summary_lists 在 json.loads 後 post-process 處理
+    chapters: List[Chapter] = []
+    speaker_contributions: List[SpeakerContribution] = []
+    next_steps: List[NextStep] = []
+    cross_meeting_refs: List[CrossMeetingRef] = []
 
 class BANTInfo(BaseModel):
     """既有：value 直接是 str（向後相容）。新欄位設 Optional 不阻斷舊資料。"""
@@ -203,15 +211,13 @@ class SalesBANTSummary(BaseModel):
     tldr: Optional[str] = None
     summary: str
     BANT: BANTInfo
-    next_steps: List[NextStep] = Field(default_factory=list, max_length=_CAP_NEXT_STEPS)
+    next_steps: List[NextStep] = []
     deal_signal: Optional[str] = None  # "hot" | "warm" | "cold"
-    objections: List[str] = Field(default_factory=list, max_length=10)
-    key_quotes: List[KeyQuote] = Field(default_factory=list, max_length=_CAP_KEY_QUOTES)
-    # V2 共通欄位（2026-05-22 加 max_length）
-    chapters: List[Chapter] = Field(default_factory=list, max_length=_CAP_CHAPTERS)
-    speaker_contributions: List[SpeakerContribution] = Field(
-        default_factory=list, max_length=_CAP_SPEAKER_CONTRIB
-    )
+    objections: List[str] = []
+    key_quotes: List[KeyQuote] = []
+    # V2 共通欄位 (5/22 list cap 改 post-process)
+    chapters: List[Chapter] = []
+    speaker_contributions: List[SpeakerContribution] = []
     cross_meeting_refs: List[CrossMeetingRef] = []
 
 class STARStory(BaseModel):
@@ -227,17 +233,15 @@ class HRSTARSummary(BaseModel):
     speaker_roles: Optional[List[SpeakerRole]] = None
     tldr: Optional[str] = None
     candidate_summary: str
-    STAR_stories: List[STARStory] = Field(default_factory=list, max_length=10)
-    key_strengths: List[str] = Field(default_factory=list, max_length=10)
-    red_flags: List[str] = Field(default_factory=list, max_length=10)
+    STAR_stories: List[STARStory] = []
+    key_strengths: List[str] = []
+    red_flags: List[str] = []
     fit_score: Optional[int] = None  # 1-5 整體匹配度
-    key_quotes: List[KeyQuote] = Field(default_factory=list, max_length=_CAP_KEY_QUOTES)
-    # V2 共通欄位 (2026-05-22 加 max_length)
-    chapters: List[Chapter] = Field(default_factory=list, max_length=_CAP_CHAPTERS)
-    speaker_contributions: List[SpeakerContribution] = Field(
-        default_factory=list, max_length=_CAP_SPEAKER_CONTRIB
-    )
-    next_steps: List[NextStep] = Field(default_factory=list, max_length=_CAP_NEXT_STEPS)
+    key_quotes: List[KeyQuote] = []
+    # V2 共通欄位 (5/22 list cap 改 post-process)
+    chapters: List[Chapter] = []
+    speaker_contributions: List[SpeakerContribution] = []
+    next_steps: List[NextStep] = []
     cross_meeting_refs: List[CrossMeetingRef] = []
 
 class TechnicalDecision(BaseModel):
@@ -264,17 +268,15 @@ class RDSummary(BaseModel):
     speaker_roles: Optional[List[SpeakerRole]] = None
     tldr: Optional[str] = None
     summary: str
-    technical_decisions: List[TechnicalDecision] = Field(default_factory=list, max_length=15)
-    challenges: List[Challenge] = Field(default_factory=list, max_length=15)
-    risks: List[Risk] = Field(default_factory=list, max_length=10)
-    action_items: List[ActionItem] = Field(default_factory=list, max_length=20)
-    key_quotes: List[KeyQuote] = Field(default_factory=list, max_length=_CAP_KEY_QUOTES)
-    # V2 共通欄位 (2026-05-22 加 max_length)
-    chapters: List[Chapter] = Field(default_factory=list, max_length=_CAP_CHAPTERS)
-    speaker_contributions: List[SpeakerContribution] = Field(
-        default_factory=list, max_length=_CAP_SPEAKER_CONTRIB
-    )
-    next_steps: List[NextStep] = Field(default_factory=list, max_length=_CAP_NEXT_STEPS)
+    technical_decisions: List[TechnicalDecision] = []
+    challenges: List[Challenge] = []
+    risks: List[Risk] = []
+    action_items: List[ActionItem] = []
+    key_quotes: List[KeyQuote] = []
+    # V2 共通欄位 (5/22 list cap 改 post-process)
+    chapters: List[Chapter] = []
+    speaker_contributions: List[SpeakerContribution] = []
+    next_steps: List[NextStep] = []
     cross_meeting_refs: List[CrossMeetingRef] = []
 
 # Template to Schema mapping
