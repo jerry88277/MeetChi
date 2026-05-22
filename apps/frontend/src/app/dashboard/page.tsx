@@ -318,6 +318,13 @@ export default function DashboardPage() {
         // 立即切換到 detail 頁顯示 list 帶來的 metadata (status/title/summary/decisions/risks/keyQuotes)
         setSelectedMeeting(meeting);
         setCurrentView('detail');
+        // 2026-05-22 (feedback #8)：URL 加上會議 ID 讓使用者可分享 / 重整保留位置。
+        // 使用 history.pushState 不觸發 Next.js 路由重渲染（SPA 內部繼續顯示），
+        // 但若 user 重整，Next 會載入 /dashboard/meetings/[meeting_id]/page.tsx
+        // deep-link 路由（已存在）→ 看到同樣的詳情頁。
+        if (typeof window !== 'undefined') {
+            window.history.pushState(null, '', `/dashboard/meetings/${meeting.id}`);
+        }
 
         // 背景補拉完整 transcript_segments — list endpoint 為了效能不回 segments (PR #26)
         // 使用者會先看到 TL;DR 與結論摘要，逐字稿在 1~2s 後到位
@@ -357,6 +364,10 @@ export default function DashboardPage() {
     const handleBackToDashboard = () => {
         setSelectedMeeting(null);
         setCurrentView('dashboard');
+        // 2026-05-22 (feedback #8) 配對 handleViewDetail：返回 dashboard 時還原 URL
+        if (typeof window !== 'undefined' && window.location.pathname.startsWith('/dashboard/meetings/')) {
+            window.history.pushState(null, '', '/dashboard');
+        }
     };
 
     const handleDeleteMeeting = (meetingId: string) => {
@@ -477,18 +488,22 @@ export default function DashboardPage() {
     return (
         <div className="flex h-screen bg-surface font-sans text-foreground overflow-hidden relative">
             {uploadingOverlay}
-            {/* Global FAB for RagSidebar — DDG token */}
-            <button
-                onClick={() => setIsRagSidebarOpen(true)}
-                className="fixed bottom-6 right-6 z-40 bg-brand-cta text-white p-4 rounded-full shadow-lg hover:bg-brand-cta/90 hover:scale-[1.02] transition-all flex items-center justify-center group"
-                title="召喚智能助理"
-                aria-label="召喚智能助理"
-            >
-                <MessageSquare className="w-6 h-6" />
-                <span className="max-w-0 overflow-hidden whitespace-nowrap group-hover:max-w-xs group-hover:ml-3 transition-all duration-300 font-medium text-sm">
-                    智能助理
-                </span>
-            </button>
+            {/* Global FAB for RagSidebar — DDG token
+                2026-05-22 (feedback #10)：在 RAG workspace 內 FAB 會遮擋送出
+                按鈕，使用者本來就在跨會議助理頁了，不必再重複入口。 */}
+            {currentView !== 'rag' && (
+                <button
+                    onClick={() => setIsRagSidebarOpen(true)}
+                    className="fixed bottom-6 right-6 z-40 bg-brand-cta text-white p-4 rounded-full shadow-lg hover:bg-brand-cta/90 hover:scale-[1.02] transition-all flex items-center justify-center group"
+                    title="召喚智能助理"
+                    aria-label="召喚智能助理"
+                >
+                    <MessageSquare className="w-6 h-6" />
+                    <span className="max-w-0 overflow-hidden whitespace-nowrap group-hover:max-w-xs group-hover:ml-3 transition-all duration-300 font-medium text-sm">
+                        智能助理
+                    </span>
+                </button>
+            )}
             
             <RagDrawer
                 isOpen={isRagSidebarOpen}
