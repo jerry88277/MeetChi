@@ -164,6 +164,29 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
         audioRef.current.play().catch(e => console.error("Playback failed:", e));
     };
 
+    /**
+     * 2026-05-22 (feedback #2)：講者金句轉跳時戳對不上音檔。
+     * LLM 在 V2 chapters.key_quotes 中估算的 time 不可靠（常差「開頭靜默」秒數）。
+     * 修法：以 quote.text 的前綴在 transcript segments 中比對，找到吻合的
+     * segment 就用它的 start_time，這個時間是 Whisper 從原始音檔解析的真值。
+     */
+    const resolveQuoteTime = React.useCallback(
+        (quote: { text: string; time?: number }): number | undefined => {
+            if (!quote?.text || !meeting?.transcript?.length) return quote.time;
+            // 取 quote 前 15 字（中文）/ 30 字（英文）做不分大小寫比對
+            const needle = quote.text.trim().slice(0, 15);
+            if (needle.length < 4) return quote.time;
+            for (const line of meeting.transcript) {
+                if (line.text && line.text.includes(needle)) {
+                    const sec = parseTimeToSeconds(line.time);
+                    return Number.isFinite(sec) ? sec : quote.time;
+                }
+            }
+            return quote.time;
+        },
+        [meeting?.transcript]
+    );
+
     useEffect(() => {
         const timestamp = searchParams.get('t');
         if (timestamp && audioRef.current && audioUrl) {
@@ -510,15 +533,32 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                 <FileText size={14} /> 主題章節（{meeting.chapters.length} 章）
                             </h3>
                             <div className="space-y-3">
-                                {meeting.chapters.map((ch, i) => (
-                                    <ChapterSection
-                                        key={i}
-                                        chapter={ch}
-                                        index={i + 1}
-                                        speakerMappings={meeting.speakerMappings}
-                                        onTimestampClick={(sec) => handleTimestampClick(formatSeconds(sec))}
-                                    />
-                                ))}
+                                {meeting.chapters.map((ch, i) => {
+                                    // 2026-05-22 feedback #2：先 resolve 每條 quote 的時戳
+                                    const resolvedChapter = {
+                                        ...ch,
+                                        keyQuotes: (ch.keyQuotes || []).map(q => ({
+                                            ...q,
+                                            time: resolveQuoteTime(q),
+                                        })),
+                                        subChapters: (ch.subChapters || []).map(sc => ({
+                                            ...sc,
+                                            keyQuotes: (sc.keyQuotes || []).map(q => ({
+                                                ...q,
+                                                time: resolveQuoteTime(q),
+                                            })),
+                                        })),
+                                    };
+                                    return (
+                                        <ChapterSection
+                                            key={i}
+                                            chapter={resolvedChapter}
+                                            index={i + 1}
+                                            speakerMappings={meeting.speakerMappings}
+                                            onTimestampClick={(sec) => handleTimestampClick(formatSeconds(sec))}
+                                        />
+                                    );
+                                })}
                             </div>
                         </section>
                     )}
@@ -605,19 +645,23 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                         <section>
                             <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
                                 <MessageSquareQuote size={14} /> 精選原音
-                                <span className="text-[10px] font-normal text-muted-foreground/70">
-                                    （V2：點時戳可跳音檔）
+                                <span className="text-[10px] font-normal text-muted-foreground/70 normal-case tracking-normal">
+                                    點時戳可直接跳音檔聆聽
                                 </span>
                             </h3>
                             <div className="space-y-3">
-                                {keyQuotes.map((q, i) => (
-                                    <QuoteCard
-                                        key={i}
-                                        quote={q}
-                                        speakerMappings={meeting.speakerMappings}
-                                        onTimestampClick={(sec) => handleTimestampClick(formatSeconds(sec))}
-                                    />
-                                ))}
+                                {keyQuotes.map((q, i) => {
+                                    // 2026-05-22 (feedback #2): 用 transcript 比對解析真實時間
+                                    const resolved = resolveQuoteTime(q);
+                                    return (
+                                        <QuoteCard
+                                            key={i}
+                                            quote={{ ...q, time: resolved }}
+                                            speakerMappings={meeting.speakerMappings}
+                                            onTimestampClick={(sec) => handleTimestampClick(formatSeconds(sec))}
+                                        />
+                                    );
+                                })}
                             </div>
                         </section>
                     )}
@@ -766,6 +810,37 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                             </div>
                         </section>
                     )}
+
+                    {/* 2026-05-22 (feedback #7)：詳情頁底部顯示轉錄相關時間資訊 */}
+                    {(meeting.createdAt || meeting.updatedAt || meeting.duration) && (
+                        <div className="mt-8 pt-4 border-t border-border/40 text-[11px] text-muted-foreground/80 flex flex-wrap gap-x-4 gap-y-1 justify-center font-mono">
+                            {meeting.createdAt && (
+                                <span title="會議建立時間">
+                                    建立：{new Date(meeting.createdAt).toLocaleString('zh-TW', { hour12: false })}
+                                </span>
+                            )}
+                            {meeting.updatedAt && (
+                                <span title="轉錄 / 摘要最後完成時間">
+                                    完成：{new Date(meeting.updatedAt).toLocaleString('zh-TW', { hour12: false })}
+                                </span>
+                            )}
+                            {meeting.duration && (
+                                <span title="音檔長度">音檔長度：{meeting.duration}</span>
+                            )}
+                            {meeting.createdAt && meeting.updatedAt && (() => {
+                                const ms = new Date(meeting.updatedAt).getTime() - new Date(meeting.createdAt).getTime();
+                                if (ms <= 0) return null;
+                                const totalSec = Math.floor(ms / 1000);
+                                const m = Math.floor(totalSec / 60);
+                                const s = totalSec % 60;
+                                return (
+                                    <span title="從上傳到摘要完成的總耗時">
+                                        處理耗時：{m} 分 {String(s).padStart(2, '0')} 秒
+                                    </span>
+                                );
+                            })()}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -773,6 +848,11 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
             {audioUrl && (
                 <div className="border-t border-border bg-card shadow-[0_-4px_10px_rgba(0,0,0,0.05)] z-10 shrink-0 px-4 py-3">
                     <div className="max-w-3xl xl:max-w-5xl 2xl:max-w-6xl mx-auto">
+                        {/* 2026-05-22 (feedback #3)：自訂 hover-tooltip 時間軸。
+                            原生 <audio controls> 在 Chrome/Edge 不顯示 hover 時間，
+                            自訂一條 seek bar 同步 audio.currentTime / duration，
+                            mousemove 顯示對應時間，click 可 seek。 */}
+                        <HoverTimeline audioRef={audioRef} />
                         <audio
                             ref={audioRef}
                             src={audioUrl}
@@ -793,6 +873,104 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     }
     return content;
 };
+
+/**
+ * HoverTimeline — 2026-05-22 (feedback #3)
+ *
+ * 自訂時間軸 hover 顯示對應時間 tooltip。同步既有 audioRef 的 currentTime / duration，
+ * 不取代原生 <audio controls>（保留 play/pause/volume 等 UX）。
+ *
+ * 設計：fixed-height bar + 完成進度浮動 fill + 滑鼠移動時的 tooltip。
+ * 點擊 seek 到對應時間。
+ */
+function HoverTimeline({ audioRef }: { audioRef: React.RefObject<HTMLAudioElement | null> }) {
+    const [progress, setProgress] = React.useState(0);    // 0-1
+    const [duration, setDuration] = React.useState(0);
+    const [hoverX, setHoverX] = React.useState<number | null>(null);
+    const [hoverSec, setHoverSec] = React.useState<number>(0);
+    const barRef = React.useRef<HTMLDivElement | null>(null);
+
+    React.useEffect(() => {
+        const audio = audioRef.current;
+        if (!audio) return;
+        const onTime = () => {
+            setDuration(audio.duration || 0);
+            if (audio.duration > 0) {
+                setProgress(audio.currentTime / audio.duration);
+            }
+        };
+        const onMeta = () => setDuration(audio.duration || 0);
+        audio.addEventListener('timeupdate', onTime);
+        audio.addEventListener('loadedmetadata', onMeta);
+        audio.addEventListener('durationchange', onMeta);
+        return () => {
+            audio.removeEventListener('timeupdate', onTime);
+            audio.removeEventListener('loadedmetadata', onMeta);
+            audio.removeEventListener('durationchange', onMeta);
+        };
+    }, [audioRef]);
+
+    const fmt = (sec: number) => {
+        if (!Number.isFinite(sec) || sec < 0) return '0:00';
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        const s = Math.floor(sec % 60);
+        if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        return `${m}:${String(s).padStart(2, '0')}`;
+    };
+
+    const onMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+        const bar = barRef.current;
+        if (!bar || duration <= 0) return;
+        const rect = bar.getBoundingClientRect();
+        const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+        setHoverX(x);
+        setHoverSec((x / rect.width) * duration);
+    };
+    const onMouseLeave = () => setHoverX(null);
+    const onClick = (e: React.MouseEvent<HTMLDivElement>) => {
+        const audio = audioRef.current;
+        const bar = barRef.current;
+        if (!audio || !bar || duration <= 0) return;
+        const rect = bar.getBoundingClientRect();
+        const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+        audio.currentTime = (x / rect.width) * duration;
+    };
+
+    return (
+        <div
+            ref={barRef}
+            onMouseMove={onMouseMove}
+            onMouseLeave={onMouseLeave}
+            onClick={onClick}
+            className="relative h-2 mb-2 rounded-full bg-muted cursor-pointer select-none group"
+            role="slider"
+            aria-label="音訊時間軸（hover 顯示時間，點擊跳轉）"
+            aria-valuemin={0}
+            aria-valuemax={duration}
+            aria-valuenow={progress * duration}
+        >
+            <div
+                className="absolute inset-y-0 left-0 rounded-full bg-brand-cta/70 transition-[width] duration-100"
+                style={{ width: `${progress * 100}%` }}
+            />
+            {hoverX !== null && duration > 0 && (
+                <>
+                    <div
+                        className="absolute inset-y-[-2px] w-px bg-foreground/40 pointer-events-none"
+                        style={{ left: `${hoverX}px` }}
+                    />
+                    <div
+                        className="absolute -top-7 -translate-x-1/2 px-1.5 py-0.5 rounded bg-foreground text-background text-[10px] font-mono whitespace-nowrap pointer-events-none shadow"
+                        style={{ left: `${hoverX}px` }}
+                    >
+                        {fmt(hoverSec)}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
 
 /** 結論卡片：決策 / 待辦 / 風險 統一外觀 */
 function ConclusionCard({

@@ -153,6 +153,7 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
         title: apiMeeting.title,
         date: new Date(apiMeeting.created_at).toISOString().split('T')[0],
         createdAt: apiMeeting.created_at,
+        updatedAt: apiMeeting.updated_at,  // 2026-05-22 feedback #7
         duration: durationStr,
         status: apiMeeting.status?.toLowerCase() === "completed" ? "completed"
             : apiMeeting.status?.toLowerCase() === "failed" ? "failed"

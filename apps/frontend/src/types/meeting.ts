@@ -74,6 +74,7 @@ export interface Meeting {
     title: string;
     date: string;
     createdAt: string;
+    updatedAt?: string;  // 2026-05-22 (feedback #7)：用於顯示「轉錄完成時間」
     duration: string;
     status: "completed" | "processing" | "failed" | "pending";
     summary: string;
