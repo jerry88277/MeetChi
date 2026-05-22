@@ -4,7 +4,7 @@ import json
 import re
 import unicodedata
 from typing import List, Optional, Dict, Any, Union
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
 
@@ -90,26 +90,48 @@ class KeyQuote(BaseModel):
 # Q1-Q8 決策落地：三層可展開、結論視情況才列、引言階層化、新增 3 個欄位
 # ============================================
 
+# 2026-05-22 (feedback 3dcd58fc)：Pydantic max_length 硬約束
+# 5/12 修了「prompt 自然語言精簡規則」但 LLM 完全無視 → 5/22 同樣會議
+# response 146K chars 比 5/12 的 130K 還大。
+#
+# 根因：response_schema 從 Pydantic 轉 JSON Schema 時 List[] 沒 maxItems →
+# LLM 完全自由發揮。改加 Pydantic Field(max_length=N) 把上限編進 schema 自身。
+# 即使 LLM 仍超出，generate_summary 內 post-process 截斷會收尾防呆。
+#
+# 數字依「最壞情境下仍能塞進 65K token output」反推：
+#   chapters 8 × sub_chapters 3 × (bullets 3 + key_quotes 1) ≈ 200 nested items
+#   單 item ~500 chars JSON → 100K chars JSON 預估，加 chapters 自身 summary
+#   約 130K chars total，接近上限但留 15% buffer
+_CAP_CHAPTERS = 8
+_CAP_SUB_CHAPTERS_PER_CHAPTER = 3
+_CAP_BULLETS = 5
+_CAP_KEY_QUOTES = 3
+_CAP_NEXT_STEPS = 15
+_CAP_SPEAKER_CONTRIB = 10
+
+
 class SubChapter(BaseModel):
     """Layer 3 時序子段（章節點【展開時序】後出現）。"""
     time_start: float  # 秒
     time_end: float    # 秒
     summary: str       # 30-50 字摘要
-    bullets: List[str] = []  # 2-3 條重點
-    key_quotes: List[KeyQuote] = []  # 0-1 條引言
+    bullets: List[str] = Field(default_factory=list, max_length=_CAP_BULLETS)  # 2-3 條重點
+    key_quotes: List[KeyQuote] = Field(default_factory=list, max_length=2)  # 0-1 條引言
 
 
 class Chapter(BaseModel):
-    """Layer 2 主題章節（Q1=B+C 結構；8-12 章）。
+    """Layer 2 主題章節（Q1=B+C 結構；6-8 章，硬上限 8）。
 
     title 用主題（如「互聯網三階段與贏家」），不用時序流水號。
     sub_chapters 按時序排序、每段 30-90 秒，提供 Layer 3 細部展開索引。
     """
     title: str
     summary: str  # 100-150 字主題摘要
-    bullets: List[str] = []  # 3-5 條重點
-    key_quotes: List[KeyQuote] = []  # 0-2 條引言
-    sub_chapters: List[SubChapter] = []  # Q2=C 時序細節索引
+    bullets: List[str] = Field(default_factory=list, max_length=_CAP_BULLETS)
+    key_quotes: List[KeyQuote] = Field(default_factory=list, max_length=_CAP_KEY_QUOTES)
+    sub_chapters: List[SubChapter] = Field(
+        default_factory=list, max_length=_CAP_SUB_CHAPTERS_PER_CHAPTER
+    )
 
 
 class SpeakerContribution(BaseModel):
@@ -147,16 +169,18 @@ class GeneralSummary(BaseModel):
     speaker_roles: Optional[List[SpeakerRole]] = None
     tldr: Optional[str] = None  # 100-200 字 TL;DR (新增)
     summary: str
-    action_items: List[str]
-    decisions: List[str]
-    risks: List[str]
-    key_quotes: List[KeyQuote] = []  # 1-3 條原音引言 (新增)
+    action_items: List[str] = Field(default_factory=list, max_length=20)
+    decisions: List[str] = Field(default_factory=list, max_length=10)
+    risks: List[str] = Field(default_factory=list, max_length=10)
+    key_quotes: List[KeyQuote] = Field(default_factory=list, max_length=_CAP_KEY_QUOTES)
 
-    # 摘要規格 V2 新增（Q1-Q8 落地，2026-05-11）
-    chapters: List[Chapter] = []  # Q1+Q2：8-12 主題章節 + 時序子段索引
-    speaker_contributions: List[SpeakerContribution] = []  # Q7
-    next_steps: List[NextStep] = []  # Q7：會議之後追蹤事項
-    cross_meeting_refs: List[CrossMeetingRef] = []  # Q7：backend post-process 補
+    # 摘要規格 V2 (Q1-Q8 落地, 2026-05-11)；V3 加 max_length 防 LLM 越限 (2026-05-22)
+    chapters: List[Chapter] = Field(default_factory=list, max_length=_CAP_CHAPTERS)
+    speaker_contributions: List[SpeakerContribution] = Field(
+        default_factory=list, max_length=_CAP_SPEAKER_CONTRIB
+    )
+    next_steps: List[NextStep] = Field(default_factory=list, max_length=_CAP_NEXT_STEPS)
+    cross_meeting_refs: List[CrossMeetingRef] = []  # backend post-process 補
 
 class BANTInfo(BaseModel):
     """既有：value 直接是 str（向後相容）。新欄位設 Optional 不阻斷舊資料。"""
@@ -179,15 +203,15 @@ class SalesBANTSummary(BaseModel):
     tldr: Optional[str] = None
     summary: str
     BANT: BANTInfo
-    # 摘要規格 V2 (2026-05-11): next_steps 升級為 List[NextStep] 結構化
-    # （取代舊 List[str]）— 含 assignee / due / follow_up_meeting
-    next_steps: List[NextStep] = []
+    next_steps: List[NextStep] = Field(default_factory=list, max_length=_CAP_NEXT_STEPS)
     deal_signal: Optional[str] = None  # "hot" | "warm" | "cold"
-    objections: List[str] = []  # 客戶反對意見，常被忽略
-    key_quotes: List[KeyQuote] = []
-    # V2 共通欄位
-    chapters: List[Chapter] = []
-    speaker_contributions: List[SpeakerContribution] = []
+    objections: List[str] = Field(default_factory=list, max_length=10)
+    key_quotes: List[KeyQuote] = Field(default_factory=list, max_length=_CAP_KEY_QUOTES)
+    # V2 共通欄位（2026-05-22 加 max_length）
+    chapters: List[Chapter] = Field(default_factory=list, max_length=_CAP_CHAPTERS)
+    speaker_contributions: List[SpeakerContribution] = Field(
+        default_factory=list, max_length=_CAP_SPEAKER_CONTRIB
+    )
     cross_meeting_refs: List[CrossMeetingRef] = []
 
 class STARStory(BaseModel):
@@ -203,15 +227,17 @@ class HRSTARSummary(BaseModel):
     speaker_roles: Optional[List[SpeakerRole]] = None
     tldr: Optional[str] = None
     candidate_summary: str
-    STAR_stories: List[STARStory]
-    key_strengths: List[str]
-    red_flags: List[str] = []  # ⚠️ 強制思考過
+    STAR_stories: List[STARStory] = Field(default_factory=list, max_length=10)
+    key_strengths: List[str] = Field(default_factory=list, max_length=10)
+    red_flags: List[str] = Field(default_factory=list, max_length=10)
     fit_score: Optional[int] = None  # 1-5 整體匹配度
-    key_quotes: List[KeyQuote] = []
-    # 摘要規格 V2 共通欄位 (2026-05-11)
-    chapters: List[Chapter] = []
-    speaker_contributions: List[SpeakerContribution] = []
-    next_steps: List[NextStep] = []
+    key_quotes: List[KeyQuote] = Field(default_factory=list, max_length=_CAP_KEY_QUOTES)
+    # V2 共通欄位 (2026-05-22 加 max_length)
+    chapters: List[Chapter] = Field(default_factory=list, max_length=_CAP_CHAPTERS)
+    speaker_contributions: List[SpeakerContribution] = Field(
+        default_factory=list, max_length=_CAP_SPEAKER_CONTRIB
+    )
+    next_steps: List[NextStep] = Field(default_factory=list, max_length=_CAP_NEXT_STEPS)
     cross_meeting_refs: List[CrossMeetingRef] = []
 
 class TechnicalDecision(BaseModel):
@@ -238,15 +264,17 @@ class RDSummary(BaseModel):
     speaker_roles: Optional[List[SpeakerRole]] = None
     tldr: Optional[str] = None
     summary: str
-    technical_decisions: List[TechnicalDecision]
-    challenges: List[Challenge]
-    risks: List[Risk]
-    action_items: List[ActionItem]
-    key_quotes: List[KeyQuote] = []
-    # 摘要規格 V2 共通欄位 (2026-05-11)
-    chapters: List[Chapter] = []
-    speaker_contributions: List[SpeakerContribution] = []
-    next_steps: List[NextStep] = []
+    technical_decisions: List[TechnicalDecision] = Field(default_factory=list, max_length=15)
+    challenges: List[Challenge] = Field(default_factory=list, max_length=15)
+    risks: List[Risk] = Field(default_factory=list, max_length=10)
+    action_items: List[ActionItem] = Field(default_factory=list, max_length=20)
+    key_quotes: List[KeyQuote] = Field(default_factory=list, max_length=_CAP_KEY_QUOTES)
+    # V2 共通欄位 (2026-05-22 加 max_length)
+    chapters: List[Chapter] = Field(default_factory=list, max_length=_CAP_CHAPTERS)
+    speaker_contributions: List[SpeakerContribution] = Field(
+        default_factory=list, max_length=_CAP_SPEAKER_CONTRIB
+    )
+    next_steps: List[NextStep] = Field(default_factory=list, max_length=_CAP_NEXT_STEPS)
     cross_meeting_refs: List[CrossMeetingRef] = []
 
 # Template to Schema mapping
@@ -361,6 +389,60 @@ def build_sandwiched_prompt(system_prompt: str, user_instruction: str, transcrip
     
     return "\n".join(parts)
 
+def _truncate_summary_lists(data: dict) -> None:
+    """In-place truncate summary V2 list fields to schema caps.
+
+    Defensive layer 2026-05-22：當 Gemini 沒 enforce schema max_length 時，
+    Python 端硬截尾。caps 對齊上方 _CAP_* 常數。
+
+    遍歷已知欄位，不存在的鍵跳過；不 raise。
+    """
+    if not isinstance(data, dict):
+        return
+
+    # Top-level list caps (apply to all template variants)
+    _CAPS_TOP = {
+        "chapters": _CAP_CHAPTERS,
+        "speaker_contributions": _CAP_SPEAKER_CONTRIB,
+        "next_steps": _CAP_NEXT_STEPS,
+        "key_quotes": _CAP_KEY_QUOTES,
+        "action_items": 20,
+        "decisions": 10,
+        "risks": 10,
+        "objections": 10,
+        "STAR_stories": 10,
+        "key_strengths": 10,
+        "red_flags": 10,
+        "technical_decisions": 15,
+        "challenges": 15,
+    }
+    for key, cap in _CAPS_TOP.items():
+        val = data.get(key)
+        if isinstance(val, list) and len(val) > cap:
+            data[key] = val[:cap]
+
+    # Nested chapter > sub_chapter caps
+    chapters = data.get("chapters")
+    if isinstance(chapters, list):
+        for ch in chapters:
+            if not isinstance(ch, dict):
+                continue
+            for k, cap in (("bullets", _CAP_BULLETS), ("key_quotes", _CAP_KEY_QUOTES),
+                           ("sub_chapters", _CAP_SUB_CHAPTERS_PER_CHAPTER)):
+                v = ch.get(k)
+                if isinstance(v, list) and len(v) > cap:
+                    ch[k] = v[:cap]
+            sub_chapters = ch.get("sub_chapters")
+            if isinstance(sub_chapters, list):
+                for sc in sub_chapters:
+                    if not isinstance(sc, dict):
+                        continue
+                    for k, cap in (("bullets", _CAP_BULLETS), ("key_quotes", 2)):
+                        v = sc.get(k)
+                        if isinstance(v, list) and len(v) > cap:
+                            sc[k] = v[:cap]
+
+
 def generate_summary(
     client: genai.Client,
     text: str,
@@ -456,7 +538,13 @@ def generate_summary(
         
         try:
             result_json = json.loads(resp_text)
-            
+
+            # 2026-05-22 (feedback 3dcd58fc) defensive post-process truncation
+            # Pydantic max_length 是「軟限制」對 Gemini 不保證 100% 遵守。萬一
+            # LLM 越界 / API 沒 enforce，這層硬截尾防止 frontend 顯示過量資料、
+            # 也防 DB 寫入過大 JSON。Caps 對齊 schema 定義。
+            _truncate_summary_lists(result_json)
+
             # Normalize output structure to match frontend expectations
             # PR21: 把 tldr / key_quotes / 各模板新欄位 (deal_signal/red_flags/etc)
             # 帶到 normalized response，frontend 能讀新欄位但不破壞舊渲染
