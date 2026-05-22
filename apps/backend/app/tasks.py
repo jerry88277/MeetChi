@@ -556,22 +556,38 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
             meeting.transcript_raw = transcript_text
             
             # Phase 8.1: Auto-populate speaker_mappings from CoT speaker_roles
+            # 2026-05-22 (feedback 5/22 #1)：color 改以 display_name 為 key 分配，
+            # Phase A.1 平行 ASR 會產生 12+ 個 SPEAKER_NN_cM labels 對應同個人，
+            # 若 color 按 speaker_id 順序分配會出現「同一人多色」混亂。LLM 已
+            # 被指示把同一人的所有 _cM 變體用同一個 display_name（見
+            # template_engine.COT_ROLE_INFERENCE_BLOCK），這裡只要 display_name
+            # 相同就共用同色，自然完成跨 chunk 合併視覺。
             speaker_roles = summary_data.get("speaker_roles")
             if speaker_roles and not meeting.speaker_mappings:
                 SPEAKER_COLORS = [
                     "#5FB7AC", "#2D428B", "#48B070", "#E4831A",
                     "#D2343D", "#EDD414", "#513A57", "#1E455E"
                 ]
+                display_name_to_color: dict = {}
                 mappings = {}
-                for i, sr in enumerate(speaker_roles):
-                    sid = sr.get("speaker_id", f"Speaker_{i}")
+                for sr in speaker_roles:
+                    sid = sr.get("speaker_id") or f"Speaker_{len(mappings)}"
+                    display = sr.get("display_name") or sid
+                    if display not in display_name_to_color:
+                        display_name_to_color[display] = SPEAKER_COLORS[
+                            len(display_name_to_color) % len(SPEAKER_COLORS)
+                        ]
                     mappings[sid] = {
-                        "display_name": sr.get("display_name", sid),
+                        "display_name": display,
                         "role": sr.get("role", "未知"),
-                        "color": SPEAKER_COLORS[i % len(SPEAKER_COLORS)]
+                        "color": display_name_to_color[display],
                     }
                 meeting.speaker_mappings = json.dumps(mappings, ensure_ascii=False)
-                logger.info(f"Auto-populated speaker_mappings for {meeting_id}: {len(mappings)} speakers")
+                unique_people = len(display_name_to_color)
+                logger.info(
+                    f"Auto-populated speaker_mappings for {meeting_id}: "
+                    f"{len(mappings)} labels → {unique_people} unique people"
+                )
             
             meeting.status = MeetingStatus.COMPLETED
             

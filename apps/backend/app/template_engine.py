@@ -36,20 +36,45 @@ class TemplateSchema(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-# --- CoT Role Inference Block (from Phase 8.1.2, unchanged) ---
+# --- CoT Role Inference Block (Phase 8.1.2 base + 2026-05-22 cross-chunk merge) ---
+#
+# 2026-05-22 改：Phase A.1 平行 ASR 把音檔切成 ~20 分鐘 chunk 各自 diarize，
+# speaker label 跨 chunk 不連貫（SPEAKER_00 in chunk_0 ≠ SPEAKER_00 in chunk_1）。
+# Frontend 用 SPEAKER_NN_cM 後綴標明 chunk。實測一場 2h16m 3 人會議出現
+# 12 個 speaker labels（user feedback 5/22）。
+#
+# 修法：在這個 prompt 加「跨 chunk 同一人合併」的明確指令，要求 LLM 對所有
+# SPEAKER_NN_cM 各出一筆 SpeakerRole，但「實際同一人」共用同一個 display_name。
+# 既有 frontend SpeakerName 已用 display_name 渲染，不必改前端。
 COT_ROLE_INFERENCE_BLOCK = """
-## 步驟一：角色推斷 (Chain-of-Thought)
-在生成摘要之前，請先分析逐字稿中每位說話者的身份與角色。
-根據說話內容、用詞、語氣與上下文，推斷每位 Speaker 的：
-- speaker_id: 原始標籤（如 "Speaker_0"）
-- display_name: 最可能的姓名或稱呼（如「李經理」、「王工程師」）
-- role: 角色分類（如「客戶」、「業務」、「主管」、「工程師」、「面試者」）
+## 步驟一：角色推斷 + 跨 chunk 講者合併 (Chain-of-Thought)
 
-將推斷結果填入 speaker_roles 欄位。
-若無法確定姓名，display_name 填入角色+Speaker編號（如「客戶_Speaker_0」）。
+本系統把長音檔切成多段（chunk）分別 diarize，每段 chunk 內的 speaker 編號
+**獨立**，不跨段一致。例如：
+  - `SPEAKER_00_c0`（chunk 0 的講者 0）
+  - `SPEAKER_00_c1`（chunk 1 的講者 0，可能是另一個人）
+  - `SPEAKER_01_c1`（chunk 1 的講者 1）
+
+你的任務：在逐字稿中找出**所有不同的 SPEAKER_NN_cM 標籤**，根據以下線索
+判斷哪些其實是「同一個自然人」：
+  1. **內容延續性**：跨 chunk 邊界附近，如果語氣 / 用詞 / 主題連續，通常是同一人
+  2. **角色語氣**：主持人 vs 客戶 vs 講者通常用詞差異顯著
+  3. **稱呼**：講者被他人稱呼為「王總編輯」「簡博士」等明確 ID，記入
+  4. **發言比例**：若某 `_cM` chunk 內某 SPEAKER 發言極多（如主持人/keynote
+     講者），對應到其他 chunk 內發言量類似的 SPEAKER 機率高
+
+輸出 `speaker_roles`：對逐字稿中**每一個唯一的 SPEAKER_NN_cM**都出一筆：
+  - speaker_id: 原始標籤（如 "SPEAKER_00_c0"）
+  - display_name: 最可能的稱呼。**同一個人**的多個 chunk 標籤共用**完全相同**
+    的 display_name（這是合併的關鍵；前端會用 display_name 歸併）
+  - role: 角色分類（如「主持人」、「客戶」、「講者」、「面試者」）。若同一人
+    在不同段扮演不同角色（例如主持人也提問），用**主要**角色
 
 ## 步驟二：基於角色生成摘要
-在了解每位說話者的角色後，生成摘要時應使用推斷出的 display_name 取代原始 Speaker 標籤。
+
+在了解每位說話者的角色後，生成摘要時：
+  - 引言 (key_quotes) 仍寫原始 SPEAKER_NN_cM 標籤（前端會用 mapping 渲染）
+  - 摘要敘述用 display_name（如「王總編輯指出」而非「Speaker_0 指出」）
 """
 
 
