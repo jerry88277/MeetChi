@@ -14,6 +14,13 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models import (
+    AccessSource,
+    Meeting,
+    MeetingParticipant,
+    ParticipantRole,
+    User,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,51 +64,45 @@ async def backfill_participants(
     if not user_upn or "@" not in user_upn:
         raise HTTPException(status_code=400, detail="user_upn must be a valid email")
 
-    # 確保 users 表有此記錄（否則 FK 違反）— 不存在就先補
-    db.execute(
-        text(
-            """
-            INSERT INTO users (id, ad_upn, display_name, is_admin)
-            VALUES (:id, :upn, :name, false)
-            ON CONFLICT (ad_upn) DO NOTHING
-            """
-        ),
-        {"id": str(uuid.uuid4()), "upn": user_upn, "name": user_upn.split("@")[0]},
-    )
+    # 2026-05-24 rewrite：原 raw SQL 對 PG ENUM 沒做 explicit cast，
+    # 試 'admin_backfill' / 'granted' 都被 DB 拒絕。改用 SQLAlchemy ORM 讓
+    # Enum(AccessSource) 自動處理序列化（DB 可能存 uppercase member name），
+    # 避免猜 ENUM 內部 representation。
 
-    # 取得目前 meeting 總數（含已 deleted）做為 total reference
-    total = db.execute(
-        text("SELECT COUNT(*) FROM meetings WHERE deleted_at IS NULL")
-    ).scalar()
+    # 確保 users 表有此記錄（否則 FK 違反）
+    existing_user = db.query(User).filter(User.ad_upn == user_upn).first()
+    if not existing_user:
+        db.add(User(
+            id=str(uuid.uuid4()),
+            ad_upn=user_upn,
+            display_name=user_upn.split("@")[0],
+            is_admin=False,
+        ))
+        db.flush()  # 讓後續 FK 看得到
 
-    # 用 INSERT ... SELECT 一次 bulk add；用 NOT EXISTS 跳過已綁定的
-    result = db.execute(
-        text(
-            """
-            INSERT INTO meeting_participants
-                (id, meeting_id, user_upn, role, access_source, granted_at)
-            SELECT
-                gen_random_uuid()::varchar(36),
-                m.id,
-                :upn,
-                'owner',
-                -- 2026-05-24 hot-fix: access_source 是 ENUM('upload', 'participant', 'granted')，
-                -- 不接受自訂值 'admin_backfill'；用語意最近的 'granted' (事後被授權)。
-                'granted',
-                NOW()
-            FROM meetings m
-            WHERE m.deleted_at IS NULL
-              AND NOT EXISTS (
-                  SELECT 1 FROM meeting_participants mp
-                  WHERE mp.meeting_id = m.id AND mp.user_upn = :upn
-              )
-            RETURNING id
-            """
-        ),
-        {"upn": user_upn},
-    )
-    inserted_rows = result.fetchall()
-    inserted = len(inserted_rows)
+    # 取得所有未刪除 meeting
+    meetings = db.query(Meeting).filter(Meeting.deleted_at.is_(None)).all()
+    total = len(meetings)
+
+    # 取得該 user 已經是 participant 的 meeting_ids set
+    existing_mids = {
+        row[0]
+        for row in db.query(MeetingParticipant.meeting_id)
+            .filter(MeetingParticipant.user_upn == user_upn).all()
+    }
+
+    inserted = 0
+    for m in meetings:
+        if m.id in existing_mids:
+            continue
+        db.add(MeetingParticipant(
+            id=str(uuid.uuid4()),
+            meeting_id=m.id,
+            user_upn=user_upn,
+            role=ParticipantRole.OWNER,
+            access_source=AccessSource.GRANTED,
+        ))
+        inserted += 1
 
     db.commit()
 
