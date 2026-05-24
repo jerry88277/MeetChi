@@ -37,6 +37,7 @@ import { useMeetings } from '@/hooks/useMeetings';
 import { useRecording } from '@/hooks/useRecording';
 import { useSummary } from '@/hooks/useSummary';
 import { useMeetingPolling } from '@/hooks/useMeetingPolling';
+import { useFontSize } from '@/hooks/useFontSize';
 import { installConsoleErrorHook } from '@/lib/feedback-metadata';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -68,6 +69,10 @@ export default function DashboardPage() {
     // Sprint 2e Phase 1 (2026-05-11): 機密會議旗標，上傳/錄音時 user 切換
     const [uploadConfidential, setUploadConfidential] = useState(false);
     const [availableTemplates, setAvailableTemplates] = useState<import('@/lib/api').TemplateDTO[]>([]);
+
+    // 2026-05-24 (request #2)：初始化字體大小 hook（從 localStorage 還原），
+    // 一進 dashboard 就同步套上 root font-size，所有 rem 單位元素跟著縮放。
+    useFontSize();
 
     useEffect(() => {
         api.getTemplates()

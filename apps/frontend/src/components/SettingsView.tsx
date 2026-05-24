@@ -8,9 +8,12 @@ import {
     Moon,
     Sun,
     Loader2,
+    Type,
+    RotateCcw,
 } from 'lucide-react';
 import { API_BASE_URL } from '@/lib/api';
 import { useTheme } from '@/hooks/useTheme';
+import { useFontSize, MIN_FONT_PCT, MAX_FONT_PCT, DEFAULT_FONT_PCT } from '@/hooks/useFontSize';
 
 interface SettingsViewProps {
     onBack: () => void;
@@ -21,6 +24,7 @@ interface SettingsViewProps {
 
 export const SettingsView = ({ onBack, isConnected, isLoadingConnection = false }: SettingsViewProps) => {
     const { theme, toggleTheme } = useTheme();
+    const { fontSizePct, setFontSizePct, reset: resetFontSize } = useFontSize();
 
     return (
         <div className="p-6 md:p-8 max-w-4xl mx-auto">
@@ -111,6 +115,81 @@ export const SettingsView = ({ onBack, isConnected, isLoadingConnection = false 
                                     }`}></div>
                             </button>
                         </div>
+                    </div>
+                </div>
+
+                {/* 2026-05-24 (request #2)：字體大小設定，給高齡使用者放大用。
+                    全域 root font-size 縮放，所有 rem 單位元素同步調整。 */}
+                <div className="bg-card rounded-xl border border-border p-6">
+                    <h3 className="font-bold text-foreground mb-4 flex items-center gap-2">
+                        <Type size={18} /> 字體大小
+                    </h3>
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="flex-1">
+                                <p className="font-medium text-foreground">介面字體縮放</p>
+                                <p className="text-sm text-muted-foreground">
+                                    調整整個應用程式的文字大小（{MIN_FONT_PCT}% – {MAX_FONT_PCT}%）
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={resetFontSize}
+                                className="px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground border border-border hover:border-brand-cta rounded-lg transition-colors flex items-center gap-1.5"
+                                title="重設為預設大小（100%）"
+                                disabled={fontSizePct === DEFAULT_FONT_PCT}
+                            >
+                                <RotateCcw size={12} /> 重設
+                            </button>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setFontSizePct(fontSizePct - 5)}
+                                disabled={fontSizePct <= MIN_FONT_PCT}
+                                className="w-9 h-9 rounded-full border border-border hover:border-brand-cta text-foreground hover:text-brand-cta font-bold disabled:opacity-30 transition-colors"
+                                aria-label="縮小字體"
+                            >
+                                A-
+                            </button>
+                            <input
+                                type="range"
+                                min={MIN_FONT_PCT}
+                                max={MAX_FONT_PCT}
+                                step={5}
+                                value={fontSizePct}
+                                onChange={(e) => setFontSizePct(parseInt(e.target.value, 10))}
+                                className="flex-1 h-2 accent-brand-cta cursor-pointer"
+                                aria-label="字體縮放比例"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setFontSizePct(fontSizePct + 5)}
+                                disabled={fontSizePct >= MAX_FONT_PCT}
+                                className="w-9 h-9 rounded-full border border-border hover:border-brand-cta text-foreground hover:text-brand-cta font-bold disabled:opacity-30 transition-colors text-lg"
+                                aria-label="放大字體"
+                            >
+                                A+
+                            </button>
+                            <div className="w-16 text-center">
+                                <input
+                                    type="number"
+                                    min={MIN_FONT_PCT}
+                                    max={MAX_FONT_PCT}
+                                    step={5}
+                                    value={fontSizePct}
+                                    onChange={(e) => {
+                                        const v = parseInt(e.target.value, 10);
+                                        if (Number.isFinite(v)) setFontSizePct(v);
+                                    }}
+                                    className="w-full px-2 py-1.5 text-sm text-center border border-border rounded-lg bg-surface text-foreground focus:border-brand-cta focus:outline-none font-mono"
+                                />
+                                <span className="text-xs text-muted-foreground">%</span>
+                            </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground italic">
+                            預覽：這段範例文字會隨設定立即變化，方便您找出最舒適的閱讀大小。
+                        </p>
                     </div>
                 </div>
 
