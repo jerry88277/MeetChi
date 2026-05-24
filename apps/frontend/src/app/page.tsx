@@ -1,156 +1,165 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import {
-    Mic,
-    FileText,
-    Users,
-    Zap,
+    LogIn,
     ArrowRight,
-    CheckCircle2,
-    Globe
+    Mic,
+    Brain,
+    FileText,
+    Sparkles,
 } from 'lucide-react';
 
 /**
- * Landing page — DDG 配色重做（2026-05-10 / color-audit P1）
- * 從 slate-900 / indigo-900 hardcode 改為 brand-navy + brand-cta；
- * feature 卡片配色用 DDG 8 色（cta / green / violet）對應功能。
+ * Landing — 企業內部入口頁（2026-05-24 重做）。
+ *
+ * 第一性原理：MeetChi 是企業內部會議助理，使用者非「行銷漏斗轉化目標」，
+ * 而是被指定使用的內部同仁。原 landing 為 SaaS 行銷風（hero / 3 特色 /
+ * 「準備好提升效率了嗎？」），對內部 user 不必要。
+ *
+ * MECE 5 種內部使用者需求：
+ *   1. 認知（進對地方）✅ logo + 系統名
+ *   2. 操作（進入應用）✅ 一個明確 CTA
+ *   3. 學習（怎麼用）⚠️ 簡短 3-step quick start
+ *   4. 信任（系統可用）⚠️ 系統狀態（暫略）
+ *   5. 行銷說服 ❌ 不需 — 公司指定使用
+ *
+ * 已登入 → 直接 redirect /dashboard（內部使用者通常已 SSO 登入，不必再看 landing）。
+ * 未登入 → 顯示簡化入口（logo + 系統名 + 進入按鈕 + 3-step quick start）。
  */
 export default function HomePage() {
+    const router = useRouter();
+    const { data: session, status } = useSession();
+
+    useEffect(() => {
+        // 已登入直接送進 dashboard，省一次點擊
+        if (status === 'authenticated' && session?.user) {
+            router.replace('/dashboard');
+        }
+    }, [status, session, router]);
+
     return (
         <div className="min-h-screen bg-gradient-to-br from-brand-navy via-brand-cta to-brand-navy text-white">
-
-            {/* Navigation */}
-            <nav className="container mx-auto px-6 py-6">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <div className="w-10 h-10 bg-brand-cta rounded-xl flex items-center justify-center shadow-lg shadow-brand-cta/30">
-                            <span className="font-bold text-xl">M</span>
-                        </div>
-                        <span className="text-2xl font-bold tracking-tight">MeetChi</span>
+            {/* Top nav */}
+            <nav className="container mx-auto px-6 py-6 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 bg-brand-cta rounded-xl flex items-center justify-center shadow-lg shadow-brand-cta/30">
+                        <span className="font-bold text-xl">M</span>
                     </div>
+                    <div>
+                        <span className="text-xl font-bold tracking-tight">MeetChi</span>
+                        <span className="ml-2 text-xs text-white/60 hidden sm:inline">企業 AI 會議助理</span>
+                    </div>
+                </div>
+                {status === 'authenticated' ? (
                     <Link
                         href="/dashboard"
-                        className="px-5 py-2.5 bg-white/10 hover:bg-white/20 rounded-lg font-medium transition-colors backdrop-blur-sm border border-white/10"
+                        className="px-5 py-2.5 bg-white text-brand-cta hover:bg-white/90 rounded-lg font-semibold transition-colors flex items-center gap-2"
                     >
-                        進入應用
+                        進入工作台 <ArrowRight size={16} />
                     </Link>
-                </div>
+                ) : (
+                    <Link
+                        href="/login"
+                        className="px-5 py-2.5 bg-white/10 hover:bg-white/20 rounded-lg font-medium transition-colors backdrop-blur-sm border border-white/10 flex items-center gap-2"
+                    >
+                        <LogIn size={16} /> 登入
+                    </Link>
+                )}
             </nav>
 
-            {/* Hero Section */}
-            <section className="container mx-auto px-6 py-20 md:py-32 text-center">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-cta/30 text-white/90 text-sm font-medium mb-8 border border-white/20">
-                    <Zap size={16} />
-                    AI 驅動的會議智慧助理
+            {/* Hero（極簡，無行銷文案）*/}
+            <section className="container mx-auto px-6 py-16 md:py-24 text-center">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 text-white/80 text-sm font-medium mb-6 border border-white/20">
+                    <Sparkles size={14} /> 內部部署 · 資料留在公司
                 </div>
-
-                <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold leading-tight mb-6">
-                    <span className="bg-gradient-to-r from-white via-white/80 to-brand-amber bg-clip-text text-transparent">
-                        讓每場會議
-                    </span>
-                    <br />
-                    <span className="bg-gradient-to-r from-brand-amber to-brand-orange bg-clip-text text-transparent">
-                        都有價值
-                    </span>
+                <h1 className="text-3xl md:text-5xl font-bold leading-tight mb-4 text-white">
+                    上傳會議錄音，AI 自動產出摘要
                 </h1>
-
-                <p className="text-lg md:text-xl text-white/70 max-w-2xl mx-auto mb-12">
-                    MeetChi 自動錄製您的會議，即時轉錄語音，並用 AI 生成摘要、
-                    提取待辦事項，讓您專注於對話本身。
+                <p className="text-base md:text-lg text-white/70 max-w-xl mx-auto mb-10">
+                    為公司同仁設計的會議筆記助理：自動轉錄、生成摘要、提取待辦，
+                    並可跨會議查詢過去討論。
                 </p>
-
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                    <Link
-                        href="/dashboard"
-                        className="w-full sm:w-auto px-8 py-4 bg-brand-orange hover:bg-brand-orange/90 rounded-xl font-semibold text-lg shadow-xl shadow-brand-orange/30 transition-all flex items-center justify-center gap-2"
-                    >
-                        開始使用 <ArrowRight size={20} />
-                    </Link>
-                    <button
-                        type="button"
-                        className="w-full sm:w-auto px-8 py-4 bg-white/5 hover:bg-white/10 rounded-xl font-semibold text-lg border border-white/10 transition-colors"
-                    >
-                        觀看演示
-                    </button>
-                </div>
+                <Link
+                    href={status === 'authenticated' ? '/dashboard' : '/login'}
+                    className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-brand-orange hover:bg-brand-orange/90 rounded-xl font-semibold text-lg shadow-xl shadow-brand-orange/30 transition-all"
+                >
+                    {status === 'authenticated' ? '進入工作台' : '使用公司帳號登入'}
+                    <ArrowRight size={20} />
+                </Link>
             </section>
 
-            {/* Features Section */}
-            <section className="container mx-auto px-6 py-20">
-                <div className="grid md:grid-cols-3 gap-8">
-
-                    <div className="bg-white/5 rounded-2xl p-8 border border-white/10 hover:bg-white/10 transition-colors group">
-                        <div className="w-14 h-14 bg-brand-cta/30 rounded-xl flex items-center justify-center mb-6 group-hover:bg-brand-cta/40 transition-colors">
-                            <Mic size={28} className="text-white" />
-                        </div>
-                        <h3 className="text-xl font-bold mb-3">即時語音轉錄</h3>
-                        <p className="text-white/70 leading-relaxed">
-                            支援中文、英文及台語的高精度語音辨識，即時將會議對話轉為文字。
-                        </p>
-                    </div>
-
-                    <div className="bg-white/5 rounded-2xl p-8 border border-white/10 hover:bg-white/10 transition-colors group">
-                        <div className="w-14 h-14 bg-brand-green/30 rounded-xl flex items-center justify-center mb-6 group-hover:bg-brand-green/40 transition-colors">
-                            <FileText size={28} className="text-brand-green" />
-                        </div>
-                        <h3 className="text-xl font-bold mb-3">AI 智慧摘要</h3>
-                        <p className="text-white/70 leading-relaxed">
-                            自動分析會議內容，生成簡潔摘要、重點決策和待辦事項。
-                        </p>
-                    </div>
-
-                    <div className="bg-white/5 rounded-2xl p-8 border border-white/10 hover:bg-white/10 transition-colors group">
-                        <div className="w-14 h-14 bg-brand-violet/30 rounded-xl flex items-center justify-center mb-6 group-hover:bg-brand-violet/40 transition-colors">
-                            <Users size={28} className="text-white" />
-                        </div>
-                        <h3 className="text-xl font-bold mb-3">說話者識別</h3>
-                        <p className="text-white/70 leading-relaxed">
-                            自動區分不同說話者，清楚標記每段發言歸屬。
-                        </p>
-                    </div>
-
-                </div>
-            </section>
-
-            {/* CTA Section */}
-            <section className="container mx-auto px-6 py-20">
-                <div className="bg-gradient-to-r from-brand-cta to-brand-violet rounded-3xl p-10 md:p-16 text-center relative overflow-hidden">
-                    <div className="relative z-10">
-                        <h2 className="text-3xl md:text-4xl font-bold mb-4">
-                            準備好提升會議效率了嗎？
-                        </h2>
-                        <p className="text-white/80 text-lg mb-8 max-w-xl mx-auto">
-                            立即開始免費使用 MeetChi，讓 AI 成為您的會議助理。
-                        </p>
-                        <Link
-                            href="/dashboard"
-                            className="inline-flex items-center gap-2 px-8 py-4 bg-white text-brand-cta rounded-xl font-semibold text-lg hover:bg-white/90 transition-colors shadow-xl"
-                        >
-                            <Globe size={20} />
-                            進入 Dashboard
-                        </Link>
-                    </div>
+            {/* Quick Start — 3 步驟 */}
+            <section className="container mx-auto px-6 py-12">
+                <h2 className="text-center text-sm font-bold uppercase tracking-[0.2em] text-white/60 mb-8">
+                    使用流程
+                </h2>
+                <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+                    <QuickStepCard
+                        step="1"
+                        icon={<Mic size={22} />}
+                        title="上傳音檔"
+                        desc="支援 mp3 / mp4 / wav 等常見格式，最長 4 小時"
+                    />
+                    <QuickStepCard
+                        step="2"
+                        icon={<Brain size={22} />}
+                        title="AI 自動處理"
+                        desc="平均 5-20 分鐘完成轉錄與摘要，背景執行不阻塞"
+                    />
+                    <QuickStepCard
+                        step="3"
+                        icon={<FileText size={22} />}
+                        title="查看摘要"
+                        desc="主題章節、待辦事項、原音引言、跨會議搜尋一站到位"
+                    />
                 </div>
             </section>
 
             {/* Footer */}
-            <footer className="container mx-auto px-6 py-10 border-t border-white/10">
-                <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                    <div className="flex items-center gap-2 text-white/60">
+            <footer className="container mx-auto px-6 py-10 mt-10 border-t border-white/10">
+                <div className="flex flex-col md:flex-row items-center justify-between gap-3 text-sm text-white/50">
+                    <div className="flex items-center gap-2">
                         <div className="w-6 h-6 bg-brand-cta rounded flex items-center justify-center">
-                            <span className="font-bold text-xs">M</span>
+                            <span className="font-bold text-[10px]">M</span>
                         </div>
-                        <span>MeetChi © 2026</span>
+                        <span>MeetChi · 內部會議助理 © 2026</span>
                     </div>
-                    <div className="flex items-center gap-6 text-white/60 text-sm">
-                        <a href="#" className="hover:text-white transition-colors">隱私政策</a>
-                        <a href="#" className="hover:text-white transition-colors">服務條款</a>
-                        <a href="#" className="hover:text-white transition-colors">聯繫我們</a>
+                    <div>
+                        問題回報請進入應用後點右上「回報問題」
                     </div>
                 </div>
             </footer>
+        </div>
+    );
+}
+
+function QuickStepCard({
+    step,
+    icon,
+    title,
+    desc,
+}: {
+    step: string;
+    icon: React.ReactNode;
+    title: string;
+    desc: string;
+}) {
+    return (
+        <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-colors">
+            <div className="flex items-start gap-4">
+                <div className="shrink-0 w-10 h-10 bg-brand-cta/30 rounded-xl flex items-center justify-center text-white">
+                    {icon}
+                </div>
+                <div>
+                    <div className="text-xs font-bold text-brand-amber mb-1">STEP {step}</div>
+                    <h3 className="text-base font-bold mb-1.5">{title}</h3>
+                    <p className="text-sm text-white/70 leading-relaxed">{desc}</p>
+                </div>
+            </div>
         </div>
     );
 }
