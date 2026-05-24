@@ -85,7 +85,9 @@ async def backfill_participants(
                 m.id,
                 :upn,
                 'owner',
-                'admin_backfill',
+                -- 2026-05-24 hot-fix: access_source 是 ENUM('upload', 'participant', 'granted')，
+                -- 不接受自訂值 'admin_backfill'；用語意最近的 'granted' (事後被授權)。
+                'granted',
                 NOW()
             FROM meetings m
             WHERE m.deleted_at IS NULL
