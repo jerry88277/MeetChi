@@ -12,10 +12,13 @@ import {
     RefreshCw,
     ChevronDown,
     Shield,
+    Trash2,
+    X,
 } from 'lucide-react';
 import type { Meeting } from '@/types/meeting';
 import type { UploadState } from '@/hooks/useRecording';
 import type { TemplateDTO } from '@/lib/api';
+import { useDragSelect } from '@/hooks/useDragSelect';
 import { MeetingCard } from './MeetingCard';
 import { ErrorState } from './ui/error-state';
 
@@ -40,12 +43,24 @@ interface DashboardViewProps {
     // Sprint 2e Phase 1 (2026-05-11): 機密會議旗標
     uploadConfidential?: boolean;
     onUploadConfidentialChange?: (confidential: boolean) => void;
+    // 2026-05-24 (request #1)：拖曳框選後批次刪除
+    onBulkDelete?: (meetingIds: string[]) => void;
 }
 
-export const DashboardView = ({ meetings, isLoading, isUploading = false, uploadState = 'idle', error, successMessage, onSelectMeeting, onCreateMeeting, onUploadClick, onRefresh, availableTemplates = [], selectedTemplateName = 'general', onTemplateChange, uploadContext = '', onUploadContextChange, uploadConfidential = false, onUploadConfidentialChange }: DashboardViewProps) => {
+export const DashboardView = ({ meetings, isLoading, isUploading = false, uploadState = 'idle', error, successMessage, onSelectMeeting, onCreateMeeting, onUploadClick, onRefresh, availableTemplates = [], selectedTemplateName = 'general', onTemplateChange, uploadContext = '', onUploadContextChange, uploadConfidential = false, onUploadConfidentialChange, onBulkDelete }: DashboardViewProps) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
+
+    // 2026-05-24 (request #1)：拖曳框選 + 批次刪除
+    const {
+        containerRef,
+        selectedIds,
+        toggleId,
+        clearSelection,
+        dragRect,
+        isDragging,
+    } = useDragSelect<HTMLDivElement>();
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -249,18 +264,85 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                 </div>
             )}
 
+            {/* 2026-05-24 (request #1)：拖曳框選浮動工具列 */}
+            {selectedIds.size > 0 && (
+                <div className="sticky top-4 z-30 flex items-center justify-between gap-3 px-4 py-2.5 bg-brand-cta text-white rounded-xl shadow-lg animate-in fade-in slide-in-from-top-2 duration-200">
+                    <span className="text-sm font-medium">
+                        已選取 {selectedIds.size} 個會議
+                    </span>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => onBulkDelete?.(Array.from(selectedIds))}
+                            disabled={!onBulkDelete}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-status-error hover:bg-status-error/90 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+                        >
+                            <Trash2 size={14} /> 批次刪除
+                        </button>
+                        <button
+                            type="button"
+                            onClick={clearSelection}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-lg text-sm font-medium transition-colors"
+                            title="清空選取（Esc）"
+                        >
+                            <X size={14} /> 取消
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Meeting List */}
             {!isLoading && (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {filteredMeetings.map((meeting, index) => (
+                <div
+                    ref={containerRef}
+                    className="relative grid gap-4 md:grid-cols-2 lg:grid-cols-3 select-none"
+                    style={{ userSelect: isDragging ? 'none' : undefined }}
+                >
+                    {filteredMeetings.map((meeting, index) => {
+                        const isSelected = selectedIds.has(meeting.id);
+                        return (
+                            <div
+                                key={meeting.id}
+                                data-select-id={meeting.id}
+                                style={{ animationDelay: `${index * 0.1}s` }}
+                                onClick={(e) => {
+                                    // Shift/Ctrl+click 切換選取；否則正常打開詳情頁
+                                    // （若已有其他選取也 toggle，方便框選後微調）
+                                    if (e.shiftKey || e.ctrlKey || e.metaKey || selectedIds.size > 0) {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        toggleId(meeting.id);
+                                        return;
+                                    }
+                                    onSelectMeeting(meeting);
+                                }}
+                                className={`relative animate-in fade-in slide-in-from-bottom-4 duration-500 rounded-xl transition-all ${
+                                    isSelected ? 'ring-2 ring-brand-cta ring-offset-2 ring-offset-surface' : ''
+                                }`}
+                            >
+                                {/* 已選取 checkmark 標記 */}
+                                {isSelected && (
+                                    <div className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-brand-cta text-white flex items-center justify-center shadow-md pointer-events-none">
+                                        <CheckCircle2 size={14} />
+                                    </div>
+                                )}
+                                <MeetingCard meeting={meeting} onClick={() => { /* 由外層 onClick 處理 */ }} />
+                            </div>
+                        );
+                    })}
+
+                    {/* 拖曳選取框 */}
+                    {dragRect && (
                         <div
-                            key={meeting.id}
-                            style={{ animationDelay: `${index * 0.1}s` }}
-                            className="animate-in fade-in slide-in-from-bottom-4 duration-500"
-                        >
-                            <MeetingCard meeting={meeting} onClick={onSelectMeeting} />
-                        </div>
-                    ))}
+                            className="absolute pointer-events-none border-2 border-brand-cta bg-brand-cta/10 rounded-md"
+                            style={{
+                                left: dragRect.left,
+                                top: dragRect.top,
+                                width: dragRect.width,
+                                height: dragRect.height,
+                            }}
+                        />
+                    )}
                 </div>
             )}
 
