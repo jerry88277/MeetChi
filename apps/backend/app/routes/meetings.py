@@ -20,6 +20,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Request, status
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from sqlalchemy import desc
 from sqlalchemy.orm import Session, selectinload
 
@@ -160,6 +161,93 @@ async def add_transcript_segments(
     db.commit()
     db.refresh(db_meeting)
     return {"message": f"Added {len(new_segments)} segments to meeting {meeting_id}"}
+
+
+class BulkDeleteRequest(BaseModel):
+    meeting_ids: List[str]
+    requester_upn: Optional[str] = None
+
+
+@router.post("/api/v1/meetings/bulk-delete")
+async def bulk_delete_meetings(
+    payload: BulkDeleteRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Bulk soft-delete N meetings in one transaction.
+
+    2026-05-24 (user request #1)：給拖曳多選後批次刪除用。
+    每筆走與單一 delete_meeting 相同的 soft-delete + audit log 邏輯，
+    但 commit 集中一次，省 N-1 次 round trip。
+
+    Idempotent：已刪除的 meeting 跳過不重複寫 deleted_at；不存在的 ID
+    記在 not_found 回傳給前端提示但不 raise。
+    """
+    if not payload.meeting_ids:
+        return {"deleted": 0, "skipped_already_deleted": 0, "not_found": []}
+
+    if len(payload.meeting_ids) > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="一次最多刪除 100 筆會議（請分批操作）",
+        )
+
+    deleted_count = 0
+    skipped_already = 0
+    not_found: List[str] = []
+    now = datetime.utcnow()
+
+    for mid in payload.meeting_ids:
+        meeting = db.query(Meeting).filter(Meeting.id == mid).first()
+        if not meeting:
+            not_found.append(mid)
+            continue
+        if meeting.deleted_at is not None:
+            skipped_already += 1
+            continue
+
+        meeting.deleted_at = now
+        meeting.deleted_by = payload.requester_upn
+
+        record_action(
+            db,
+            user_upn=payload.requester_upn or "anonymous",
+            action_type="meeting.deleted",
+            target_id=mid,
+            metadata={
+                "title": meeting.title,
+                "status": meeting.status.value if meeting.status else None,
+                "duration": meeting.duration,
+                "owner_upn": meeting.owner_upn,
+                "audio_url": meeting.audio_url,
+                "template_name": meeting.template_name,
+                "created_at": meeting.created_at.isoformat() if meeting.created_at else None,
+                "bulk_operation": True,
+            },
+            request=request,
+        )
+        deleted_count += 1
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Bulk delete commit failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"批次刪除失敗：{type(e).__name__}: {str(e)[:200]}",
+        )
+
+    logger.info(
+        f"Bulk soft-deleted {deleted_count} meetings by "
+        f"{payload.requester_upn or 'anonymous'} "
+        f"(skipped {skipped_already} already-deleted, {len(not_found)} not-found)"
+    )
+    return {
+        "deleted": deleted_count,
+        "skipped_already_deleted": skipped_already,
+        "not_found": not_found,
+    }
 
 
 @router.delete("/api/v1/meetings/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT)

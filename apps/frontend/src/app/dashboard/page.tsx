@@ -106,6 +106,9 @@ export default function DashboardPage() {
     // Confirm dialog state — 取代 confirm() / window.confirm()
     const [pendingDelete, setPendingDelete] = useState<{ meetingId: string } | null>(null);
     const [pendingDiscard, setPendingDiscard] = useState<{ key: string } | null>(null);
+    // 2026-05-24 (request #1)：拖曳框選批次刪除 confirm state
+    const [pendingBulkDelete, setPendingBulkDelete] = useState<{ meetingIds: string[] } | null>(null);
+    const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
     // 2026-05-11: FeedbackModal 升級到 page 層；context 含 meetingId 時自動帶入
     const [feedbackContext, setFeedbackContext] = useState<
@@ -375,6 +378,45 @@ export default function DashboardPage() {
         }
     };
 
+    // 2026-05-24 (request #1) 批次刪除執行：與單筆 delete 同樣的 optimistic
+    // local splice 模式，但用 api.bulkDeleteMeetings 一次 API call。
+    const executeBulkDelete = async (meetingIds: string[]) => {
+        if (meetingIds.length === 0) return;
+        setIsBulkDeleting(true);
+        try {
+            const result = await api.bulkDeleteMeetings(
+                meetingIds,
+                session?.user?.email ?? undefined,
+            );
+            // optimistic：把已刪 ID 從 list 拿掉
+            const deletedSet = new Set(
+                meetingIds.filter(id => !result.not_found.includes(id))
+            );
+            // 直接 refetch 以取得後端最新狀態（含 audit log timestamps 等）
+            await fetchMeetings();
+            const msg = result.not_found.length > 0
+                ? `已刪除 ${result.deleted} 筆會議（${result.not_found.length} 筆找不到）`
+                : `已刪除 ${result.deleted} 筆會議`;
+            toast.success(msg, {
+                description: result.skipped_already_deleted > 0
+                    ? `${result.skipped_already_deleted} 筆已是刪除狀態，跳過。資料保留 30 天供 IT 還原。`
+                    : '資料保留 30 天供 IT 還原。',
+                duration: 5000,
+            });
+            // 不必手動清 selectedIds，DashboardView 重新 render 時若 meeting 不在
+            // 已自動消失（hook 只在 selectedIds 用 setSelectedIdsState 改變）
+            return deletedSet;
+        } catch (err) {
+            console.error('Bulk delete failed:', err);
+            toast.error('批次刪除失敗，請稍候再試', {
+                description: err instanceof Error ? err.message : undefined,
+                duration: 8000,
+            });
+        } finally {
+            setIsBulkDeleting(false);
+        }
+    };
+
     const handleDeleteMeeting = (meetingId: string) => {
         // PR19: 取代 useMeetings 內已移除的 confirm()，改 ConfirmDialog
         setPendingDelete({ meetingId });
@@ -618,6 +660,7 @@ export default function DashboardPage() {
                                 onUploadContextChange={setUploadContext}
                                 uploadConfidential={uploadConfidential}
                                 onUploadConfidentialChange={setUploadConfidential}
+                                onBulkDelete={(ids) => setPendingBulkDelete({ meetingIds: ids })}
                             />
                         </>
                     )}
@@ -821,6 +864,26 @@ export default function DashboardPage() {
                     }
                 }}
                 onCancel={() => setPendingDiscard(null)}
+            />
+
+            {/* 2026-05-24 (request #1)：拖曳框選後批次刪除確認 */}
+            <ConfirmDialog
+                open={!!pendingBulkDelete}
+                title={`確定要刪除 ${pendingBulkDelete?.meetingIds.length ?? 0} 筆會議記錄嗎？`}
+                description={
+                    `此操作將同時移除這些會議的音檔、逐字稿與摘要。` +
+                    `\n資料保留 30 天供 IT 還原，期間請與 IT 聯絡可恢復。`
+                }
+                confirmText={isBulkDeleting ? '刪除中…' : `刪除 ${pendingBulkDelete?.meetingIds.length ?? 0} 筆`}
+                cancelText="取消"
+                variant="destructive"
+                onConfirm={async () => {
+                    if (pendingBulkDelete) {
+                        await executeBulkDelete(pendingBulkDelete.meetingIds);
+                        setPendingBulkDelete(null);
+                    }
+                }}
+                onCancel={() => setPendingBulkDelete(null)}
             />
 
             {/* 2026-05-11: 全域 FeedbackModal — Sidebar 點開: 無 meeting context；

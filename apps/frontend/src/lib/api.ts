@@ -524,6 +524,20 @@ class ApiClient {
         });
     }
 
+    /**
+     * 2026-05-24 (request #1)：批次軟刪除多筆 meeting。
+     * Backend: POST /api/v1/meetings/bulk-delete
+     */
+    async bulkDeleteMeetings(
+        meetingIds: string[],
+        requesterUpn?: string,
+    ): Promise<{ deleted: number; skipped_already_deleted: number; not_found: string[] }> {
+        return this.fetch('/api/v1/meetings/bulk-delete', {
+            method: 'POST',
+            body: JSON.stringify({ meeting_ids: meetingIds, requester_upn: requesterUpn }),
+        });
+    }
+
     // --- Feedback API (PR24) ---
     async createFeedback(payload: FeedbackCreate): Promise<FeedbackRead> {
         return this.fetch('/api/v1/feedback', {
