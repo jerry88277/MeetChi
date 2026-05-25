@@ -307,12 +307,18 @@ export default function DashboardPage() {
         }
     };
 
+    // 2026-05-25 (Y6) 批次上傳：files 多選 → 依序執行單筆 uploadFile。
+    // 序列化（非平行）原因：avoid GCS signed URL race / GPU queue 雪崩；
+    // 序列保證每筆完成後才下一筆，且當下 uploadState='processing' 防誤觸。
+    const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
+
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
+        const fileList = event.target.files;
+        if (!fileList || fileList.length === 0) return;
+        const files = Array.from(fileList);
         event.target.value = '';
 
-        const executeUpload = async (f: File) => {
+        const executeUpload = async (f: File): Promise<void> => {
             await uploadFile(
                 f,
                 (fileName) => {
@@ -326,33 +332,62 @@ export default function DashboardPage() {
             );
         };
 
-        // Phase C.2: Audio duration prediction/warning
-        if (file.type.startsWith('audio/') || file.type.startsWith('video/')) {
-            const url = URL.createObjectURL(file);
-            const media = new Audio(url);
-            
-            media.addEventListener('loadedmetadata', () => {
-                URL.revokeObjectURL(url);
-                const durationMinutes = media.duration / 60;
-                
-                // Warn if longer than 120 minutes
-                if (durationMinutes > 120) {
-                    if(!window.confirm(`警告：音檔長度約 ${Math.round(durationMinutes)} 分鐘。處理時間可能需要 20 分鐘以上，是否確定繼續上傳？`)) {
-                        return;
-                    }
+        const checkDuration = (file: File): Promise<boolean> => {
+            // 回傳 true=繼續上傳，false=取消
+            return new Promise((resolve) => {
+                if (!(file.type.startsWith('audio/') || file.type.startsWith('video/'))) {
+                    resolve(true);
+                    return;
                 }
-                executeUpload(file);
+                const url = URL.createObjectURL(file);
+                const media = new Audio(url);
+                media.addEventListener('loadedmetadata', () => {
+                    URL.revokeObjectURL(url);
+                    const minutes = media.duration / 60;
+                    if (minutes > 120) {
+                        resolve(window.confirm(
+                            `警告：${file.name} 長度約 ${Math.round(minutes)} 分鐘。處理時間可能 20+ 分鐘，是否繼續？`
+                        ));
+                    } else {
+                        resolve(true);
+                    }
+                });
+                media.addEventListener('error', () => {
+                    URL.revokeObjectURL(url);
+                    resolve(true);  // 不支援格式直接讓 backend 處理
+                });
             });
-            
-            media.addEventListener('error', () => {
-                // Ignore errors (unsupported formats by browser) and just upload
-                URL.revokeObjectURL(url);
-                executeUpload(file);
-            });
-        } else {
-            // General files (like if someone tries uploading a supported but non-media file)
-            executeUpload(file);
+        };
+
+        // Single file path：直接走（與原行為一致）
+        if (files.length === 1) {
+            const proceed = await checkDuration(files[0]);
+            if (proceed) await executeUpload(files[0]);
+            return;
         }
+
+        // Batch path：序列上傳，顯示進度
+        if (!window.confirm(`即將依序上傳 ${files.length} 個檔案，全部完成前請勿關閉視窗。是否繼續？`)) {
+            return;
+        }
+        setBatchProgress({ current: 0, total: files.length });
+        for (let i = 0; i < files.length; i++) {
+            setBatchProgress({ current: i + 1, total: files.length });
+            const f = files[i];
+            const proceed = await checkDuration(f);
+            if (!proceed) {
+                showSuccess(`已跳過 ${f.name}（過長且未確認）`);
+                continue;
+            }
+            try {
+                await executeUpload(f);
+            } catch (err) {
+                console.error(`Batch upload ${f.name} failed:`, err);
+                // 單筆失敗不中斷批次（已 toast.error）
+            }
+        }
+        setBatchProgress(null);
+        showSuccess(`批次上傳完成（${files.length} 個檔案）`);
     };
 
     const handleViewDetail = async (meeting: Meeting) => {
@@ -534,9 +569,18 @@ export default function DashboardPage() {
             <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
                 <div className="bg-card rounded-2xl shadow-2xl border border-border max-w-md w-full p-6 text-center">
                     <Loader2 className="w-12 h-12 text-brand-cta animate-spin mx-auto mb-4" />
-                    <h2 className="text-xl font-bold text-foreground mb-1">音檔上傳中</h2>
+                    <h2 className="text-xl font-bold text-foreground mb-1">
+                        {batchProgress
+                            ? `批次上傳中（${batchProgress.current} / ${batchProgress.total}）`
+                            : '音檔上傳中'}
+                    </h2>
                     <p className="text-sm text-muted-foreground mb-4">
                         請<strong className="text-status-error">勿關閉視窗或重新整理</strong>，否則整個上傳會中斷。
+                        {batchProgress && batchProgress.total > 1 && (
+                            <span className="block text-xs mt-1 opacity-80">
+                                目前處理第 {batchProgress.current} 個檔案；剩餘 {batchProgress.total - batchProgress.current} 個排隊中。
+                            </span>
+                        )}
                     </p>
                     {uploadFileName && (
                         <p className="text-xs font-mono text-muted-foreground/80 mb-3 break-all">
@@ -628,9 +672,11 @@ export default function DashboardPage() {
                 <div className="flex-1 overflow-auto bg-surface">
                     {currentView === 'dashboard' && (
                         <>
+                            {/* 2026-05-25 (Y6)：multiple 支援批次上傳 */}
                             <input
                                 type="file"
-                                accept="audio/*"
+                                accept="audio/*,video/*"
+                                multiple
                                 className="hidden"
                                 ref={fileInputRef}
                                 onChange={handleFileUpload}
