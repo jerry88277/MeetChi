@@ -1,5 +1,7 @@
 # MeetChi GCP 部署指南（Terraform Quick Reference）
 
+> 📖 **日常維運 / 故障排除 / Admin 操作** 看 [OPERATIONS.md](./OPERATIONS.md)。
+>
 > **本文件聚焦**：已有 GCP 專案 + Service Account 後，怎麼用 Terraform + Cloud Build 跑起 MeetChi 整套服務（backend / frontend / gpu-asr / migrate job + 周邊 GCP 資源）。
 
 ## 📋 前置需求
