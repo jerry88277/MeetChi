@@ -99,6 +99,11 @@
    Dark Mode Override
    =============================== */
 
+/* 2026-05-25 (Y1 fix)：原本只支援 [data-theme="dark"]，但 providers.tsx
+   掛的 next-themes 是用 .dark class 標註。兩個系統不相容導致 user 切
+   toggle 無視覺變化。改成 .dark + [data-theme="dark"] 雙 selector 兼容，
+   解 root cause 並保留向後相容（舊 localStorage 'meetchi-theme' 還在）。 */
+.dark,
 [data-theme="dark"] {
   --color-background: #0f172a;
   --color-foreground: #f1f5f9;

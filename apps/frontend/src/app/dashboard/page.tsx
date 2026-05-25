@@ -183,6 +183,39 @@ export default function DashboardPage() {
         return () => document.removeEventListener('visibilitychange', handleVisibility);
     }, [fetchMeetings]);
 
+    // 2026-05-25 (Y1, feedback 7ea78e1a)：詳情頁按瀏覽器上一頁，URL 變了但畫面沒變。
+    //   原因：handleViewDetail 用 history.pushState 改 URL 進 SPA detail；返回時瀏覽器
+    //   把 URL 回退一格，但沒有任何 React state 監聽，畫面停留在 detail。
+    //   修法：popstate event 同步 URL 與 currentView。
+    //     URL 變回 /dashboard → setCurrentView('dashboard') + 清空 selectedMeeting
+    //     URL 進 /dashboard/meetings/{id} → setCurrentView('detail')（前進按鈕）
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const handler = () => {
+            const path = window.location.pathname;
+            const m = path.match(/^\/dashboard\/meetings\/([0-9a-f-]{36})/i);
+            if (m) {
+                const targetId = m[1];
+                // 前進到 detail：若已有 selectedMeeting 且 id 對得上就直接切；否則 refetch
+                if (selectedMeeting?.id === targetId) {
+                    setCurrentView('detail');
+                } else {
+                    api.getMeeting(targetId)
+                        .then(full => {
+                            setSelectedMeeting(transformMeeting(full));
+                            setCurrentView('detail');
+                        })
+                        .catch(() => setCurrentView('dashboard'));
+                }
+            } else {
+                setSelectedMeeting(null);
+                setCurrentView('dashboard');
+            }
+        };
+        window.addEventListener('popstate', handler);
+        return () => window.removeEventListener('popstate', handler);
+    }, [selectedMeeting]);
+
     // 2026-05-12 (feedback)：dashboard 入口檔案上傳防誤操作。
     //   原本 beforeunload 只寫在 RecordingView 內，dashboard 上傳不會生效。
     //   數位時代 70+ MB 影片上傳需數分鐘，使用者很容易誤重整 → 整個 PUT 中斷。

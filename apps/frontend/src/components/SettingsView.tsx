@@ -12,7 +12,9 @@ import {
     RotateCcw,
 } from 'lucide-react';
 import { API_BASE_URL } from '@/lib/api';
-import { useTheme } from '@/hooks/useTheme';
+// 2026-05-25 (Y1)：原 useTheme 用 data-theme attribute，與 providers 掛的
+// next-themes (.dark class) 不相容 → toggle 無視覺變化。改用 next-themes 統一。
+import { useTheme } from 'next-themes';
 import { useFontSize, MIN_FONT_PCT, MAX_FONT_PCT, DEFAULT_FONT_PCT } from '@/hooks/useFontSize';
 
 interface SettingsViewProps {
@@ -23,7 +25,12 @@ interface SettingsViewProps {
 }
 
 export const SettingsView = ({ onBack, isConnected, isLoadingConnection = false }: SettingsViewProps) => {
-    const { theme, toggleTheme } = useTheme();
+    // next-themes：resolvedTheme 含 system → light/dark 已 resolve；setTheme 直接寫 .dark class
+    const { resolvedTheme, setTheme } = useTheme();
+    const [mounted, setMounted] = React.useState(false);
+    React.useEffect(() => setMounted(true), []);
+    const theme: 'dark' | 'light' = (mounted ? (resolvedTheme as 'dark' | 'light') : 'light') || 'light';
+    const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
     const { fontSizePct, setFontSizePct, reset: resetFontSize } = useFontSize();
 
     return (
