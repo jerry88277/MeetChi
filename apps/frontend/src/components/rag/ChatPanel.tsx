@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
-import { Send, FileText, Loader2 } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Send, FileText, Loader2, History, ChevronDown, X } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { api, RagCitation } from "@/lib/api";
+import { api, RagCitation, RagHistoryItem } from "@/lib/api";
 
 interface ChatPanelProps {
   onCitationClick: (citation: RagCitation) => void;
@@ -40,6 +40,28 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  // 2026-05-25 Y5：RAG 查詢歷史。Drop-down 顯示近 90 天的查詢，點擊可 re-fire。
+  const [historyItems, setHistoryItems] = useState<RagHistoryItem[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+
+  const loadHistory = React.useCallback(async () => {
+    if (!userUpn) return;
+    setIsHistoryLoading(true);
+    try {
+      const items = await api.getRagHistory(userUpn, 90, 50);
+      setHistoryItems(items);
+    } catch (err) {
+      console.error('Load RAG history failed:', err);
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  }, [userUpn]);
+
+  useEffect(() => {
+    if (isHistoryOpen && historyItems.length === 0) loadHistory();
+  }, [isHistoryOpen, historyItems.length, loadHistory]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,6 +111,8 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
         ...prev,
         { id: (Date.now() + 1).toString(), role: "ai", text: answerText, citations: res.citations }
       ]);
+      // Y5：清掉 cached history，下次開 dropdown 重新拿（含這次新增的）
+      setHistoryItems([]);
     } catch (err) {
       console.error(err);
       setMessages(prev => [
@@ -146,7 +170,71 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-surface">
+    <div className="flex flex-col h-full bg-surface relative">
+      {/* 2026-05-25 Y5：歷史 dropdown 觸發 + 浮動列表 */}
+      <div className="sticky top-0 z-20 bg-surface/95 backdrop-blur-sm border-b border-border px-4 py-2 flex items-center justify-end">
+        <button
+          type="button"
+          onClick={() => setIsHistoryOpen(v => !v)}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
+          title="查看過去 90 天的查詢紀錄"
+        >
+          <History size={14} />
+          <span>歷史查詢</span>
+          <ChevronDown size={12} className={`transition-transform ${isHistoryOpen ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+      {isHistoryOpen && (
+        <div className="absolute top-12 right-4 z-30 w-[min(28rem,calc(100%-2rem))] max-h-96 overflow-y-auto bg-card border border-border rounded-xl shadow-xl">
+          <div className="sticky top-0 bg-card border-b border-border px-3 py-2 flex items-center justify-between">
+            <span className="text-xs font-bold text-foreground">過去 90 天查詢紀錄</span>
+            <button onClick={() => setIsHistoryOpen(false)} className="text-muted-foreground hover:text-foreground" aria-label="關閉">
+              <X size={14} />
+            </button>
+          </div>
+          {isHistoryLoading && (
+            <div className="p-4 text-center text-xs text-muted-foreground">
+              <Loader2 size={14} className="inline animate-spin mr-1" /> 載入中...
+            </div>
+          )}
+          {!isHistoryLoading && historyItems.length === 0 && (
+            <div className="p-6 text-center text-xs text-muted-foreground">
+              還沒有查詢紀錄
+            </div>
+          )}
+          {!isHistoryLoading && historyItems.length > 0 && (
+            <ul className="divide-y divide-border">
+              {historyItems.map(item => (
+                <li
+                  key={item.id}
+                  className="p-3 hover:bg-muted cursor-pointer transition-colors"
+                  onClick={() => {
+                    setInput(item.query);
+                    setIsHistoryOpen(false);
+                  }}
+                  title="點擊填入提問框"
+                >
+                  <p className="text-sm text-foreground line-clamp-2 mb-1">{item.query}</p>
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <span>{new Date(item.created_at).toLocaleString('zh-TW', { hour12: false })}</span>
+                    <span>·</span>
+                    <span>{item.citation_count} 個來源</span>
+                    {item.confidence && (
+                      <>
+                        <span>·</span>
+                        <span className={item.confidence === 'high' ? 'text-status-success' : item.confidence === 'no_answer' ? 'text-status-warning' : ''}>
+                          {item.confidence}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>

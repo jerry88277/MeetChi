@@ -338,10 +338,12 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
     2. pgvector cosine similarity search → Top-K segments
     3. Build context prompt → Gemini generates cited answer
     """
+    import time
+    _t0 = time.time()  # Y5 (2026-05-25)：計時用於 history 紀錄
     client = get_gemini_client()
     if not client:
         raise HTTPException(status_code=503, detail="Gemini client unavailable")
-    
+
     # Step 1: Query Contextualization (If history exists)
     search_query = request.question
     if request.history:
@@ -490,6 +492,17 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
         answer = f"（回答生成失敗，但以下是最相關的會議段落供參考）\n\n錯誤: {str(e)}"
         confidence = "no_answer"
 
+    # Y5 (2026-05-25)：log to rag_query_logs（寫失敗不影響主回應，只 warn）
+    _log_rag_query(
+        db,
+        user_upn=request.user_upn,
+        query=request.question,
+        answer=answer,
+        citation_count=len(citations),
+        confidence=confidence,
+        response_time_ms=int((time.time() - _t0) * 1000),
+    )
+
     return RAGResponse(
         answer=answer,
         citations=citations,
@@ -497,6 +510,96 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
         question=request.question,
         confidence=confidence,
     )
+
+
+def _log_rag_query(
+    db: Session,
+    user_upn: str,
+    query: str,
+    answer: str,
+    citation_count: int,
+    confidence: str,
+    response_time_ms: int,
+) -> None:
+    """2026-05-25 (Y5)：把每次 RAG ask 寫入 rag_query_logs 表，給歷史 UI 用。
+    寫入失敗不影響主回應（log warning 即可）。"""
+    import uuid as _uuid
+    try:
+        db.execute(
+            text(
+                """
+                INSERT INTO rag_query_logs
+                    (id, user_upn, query, answer_preview, citation_count, confidence,
+                     response_time_ms, created_at)
+                VALUES (:id, :upn, :q, :ans, :cc, :conf, :rt, NOW())
+                """
+            ),
+            {
+                "id": str(_uuid.uuid4()),
+                "upn": user_upn,
+                "q": query[:2000],  # safety truncate
+                "ans": (answer or "")[:1000],  # preview only
+                "cc": citation_count,
+                "conf": confidence[:20],
+                "rt": response_time_ms,
+            },
+        )
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"[RAG history] log insert failed (non-fatal): {e}")
+
+
+class RagHistoryItem(BaseModel):
+    id: str
+    query: str
+    answer_preview: Optional[str]
+    citation_count: int
+    confidence: Optional[str]
+    response_time_ms: Optional[int]
+    created_at: str
+
+
+@router.get("/history", response_model=List[RagHistoryItem])
+async def get_rag_history(
+    user_upn: str,
+    days: int = 90,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
+    """2026-05-25 (Y5)：取得使用者 RAG 查詢歷史。
+    Frontend 預設只看 90 天；backend 保留 10 年由 cron 清理。
+    """
+    if days < 1 or days > 3650:
+        days = 90
+    if limit < 1 or limit > 500:
+        limit = 100
+    rows = db.execute(
+        text(
+            """
+            SELECT id, query, answer_preview, citation_count, confidence,
+                   response_time_ms, created_at
+            FROM rag_query_logs
+            WHERE user_upn = :upn
+              AND created_at >= NOW() - (:days || ' days')::interval
+            ORDER BY created_at DESC
+            LIMIT :limit
+            """
+        ),
+        {"upn": user_upn, "days": days, "limit": limit},
+    ).fetchall()
+    return [
+        RagHistoryItem(
+            id=r.id,
+            query=r.query,
+            answer_preview=r.answer_preview,
+            citation_count=r.citation_count or 0,
+            confidence=r.confidence,
+            response_time_ms=r.response_time_ms,
+            created_at=r.created_at.isoformat() if r.created_at else "",
+        )
+        for r in rows
+    ]
 
 
 @router.post("/backfill")

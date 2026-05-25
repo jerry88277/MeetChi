@@ -553,6 +553,15 @@ class ApiClient {
     }
 
     // --- RAG API ---
+    /**
+     * 2026-05-25 Y5：取得使用者 RAG 查詢歷史
+     * frontend 看 90 天；backend 保留 10 年
+     */
+    async getRagHistory(userUpn: string, days: number = 90, limit: number = 100): Promise<RagHistoryItem[]> {
+        const q = new URLSearchParams({ user_upn: userUpn, days: String(days), limit: String(limit) });
+        return this.fetch(`/api/v1/rag/history?${q.toString()}`);
+    }
+
     async askRag(question: string, userUpn: string = 'global_test@company.com', history?: RagChatMessage[], meetingIds?: string[]): Promise<RagResponse> {
         return this.fetch('/api/v1/rag/ask', {
             method: 'POST',
@@ -648,8 +657,19 @@ export interface RagResponse {
     citations: RagCitation[];
     segments_searched: number;
     question: string;
-    /** LLM 自評信心度：high / medium / low / no_answer */
+    /** Y3：LLM 自評信心度 high / medium / low / no_answer */
     confidence?: 'high' | 'medium' | 'low' | 'no_answer';
+}
+
+// 2026-05-25 (Y5) RAG 查詢歷史
+export interface RagHistoryItem {
+    id: string;
+    query: string;
+    answer_preview: string | null;
+    citation_count: number;
+    confidence: string | null;
+    response_time_ms: number | null;
+    created_at: string;
 }
 
 // Export singleton instance
