@@ -426,14 +426,20 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                             <div className="flex flex-col items-center justify-center text-center text-status-error">
                                 <AlertCircle className="h-10 w-10 mb-4" />
                                 <p className="text-lg font-semibold mb-1">處理失敗</p>
-                                {/* 2026-05-22 (feedback 3dcd58fc) 改寫錯誤訊息 + 加「立即回報」按鈕：
-                                    使用者明確要求「新增對應的錯誤訊息給使用者，或者是一鍵通報」。
-                                    舊版只有兩個 retry 按鈕，若連續失敗使用者就卡死。 */}
-                                <p className="text-sm text-foreground/70 mb-6 max-w-md">
-                                    很抱歉，AI 無法完成這份會議。常見原因：音檔太長導致摘要超出長度上限、
-                                    或系統暫時繁忙。請先嘗試「重新生成摘要」；若連續失敗，請按「立即回報」
-                                    交給 IT 協助（已自動帶上會議 ID）。
-                                </p>
+                                {/* 2026-05-25 (Y7)：如果 backend 有寫 failure_reason 就顯示具體原因，
+                                    沒寫（舊資料）才回退到 generic 訊息。failure_reason 用 whitespace-pre-line
+                                    保留段落 + bullet 格式。 */}
+                                {meeting.failureReason ? (
+                                    <div className="text-sm text-foreground/80 mb-6 max-w-2xl text-left bg-status-error/5 border border-status-error/20 rounded-lg p-4 whitespace-pre-line">
+                                        {meeting.failureReason}
+                                    </div>
+                                ) : (
+                                    <p className="text-sm text-foreground/70 mb-6 max-w-md">
+                                        很抱歉，AI 無法完成這份會議。常見原因：音檔太長導致摘要超出長度上限、
+                                        或系統暫時繁忙。請先嘗試「重新生成摘要」；若連續失敗，請按「立即回報」
+                                        交給 IT 協助（已自動帶上會議 ID）。
+                                    </p>
+                                )}
                                 <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-2xl">
                                     {onRegenerateTranscript && (
                                         <button

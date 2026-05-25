@@ -139,6 +139,11 @@ class Meeting(Base):
     # FALSE = 一般：開放複製、匯出
     is_confidential = Column(Boolean, nullable=False, default=False)
 
+    # 2026-05-25 (Y7)：failed meetings 的人類可讀失敗原因
+    # 配合 detail page UX 顯示具體原因（如 "Gemini 回應截斷"、"GCS 上傳失敗"），
+    # 不只顯示 generic "處理失敗"。
+    failure_reason = Column(Text, nullable=True)
+
     # pgvector embedding for future semantic search
     summary_embedding = Column(Vector(768), nullable=True)
     

@@ -248,11 +248,18 @@ def _process_split_audio_sync(
 
     except Exception as e:
         logger.error(f"[ParallelASR] {meeting_id} failed: {e}", exc_info=True)
+        # 2026-05-25 (Y7): 寫 failure_reason 給 user 看，分類 ASR 階段失敗
+        _fail_reason = (
+            f"平行 ASR 處理失敗 ({type(e).__name__})：{str(e)[:200]}\n\n"
+            "可能原因：GPU service 繁忙、network 中斷、或 audio 切片問題。"
+            "建議：點「重新從頭轉錄」再試；若連續失敗請點「立即回報」。"
+        )
         if not suppress_fail_notification:
             try:
                 meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
                 if meeting:
                     meeting.status = MeetingStatus.FAILED
+                    meeting.failure_reason = _fail_reason
                     db.commit()
             except Exception:
                 pass
@@ -627,8 +634,32 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
 
         except Exception as e:
              logger.error(f"Error calling Gemini Service: {e}")
+             # 2026-05-25 (Y7): 分類 Gemini summary 階段常見失敗，給 user 具體說明
+             err_str = str(e)
+             if "MAX_TOKENS" in err_str.upper() or "Failed to parse JSON" in err_str:
+                 fail_reason = (
+                     "AI 摘要回應過長被截斷（會議內容極多，超出單次回應上限）。\n\n"
+                     "解法：點「僅重新生成摘要」會用更簡短設定重試；若仍失敗，可能"
+                     "需要把會議拆成幾段分別處理。"
+                 )
+             elif "INVALID_ARGUMENT" in err_str or "400" in err_str[:10]:
+                 fail_reason = (
+                     "AI 服務拒絕請求（可能 schema 或設定問題）。\n\n"
+                     "解法：請點「立即回報」交給 IT 協助，已自動帶上會議 ID。"
+                 )
+             elif "timeout" in err_str.lower() or "ReadError" in err_str:
+                 fail_reason = (
+                     "AI 服務回應逾時或連線中斷。\n\n"
+                     "解法：點「僅重新生成摘要」再試；通常重試一次就會成功。"
+                 )
+             else:
+                 fail_reason = (
+                     f"AI 摘要生成失敗 ({type(e).__name__})：{err_str[:200]}\n\n"
+                     "解法：先試「僅重新生成摘要」；若連續失敗請「立即回報」。"
+                 )
              if not suppress_fail_notification:
                  meeting.status = MeetingStatus.FAILED
+                 meeting.failure_reason = fail_reason
                  db.commit()
                  send_completion_notification(meeting, "failed")
              else:

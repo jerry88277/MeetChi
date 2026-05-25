@@ -172,6 +172,7 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
         templateName: apiMeeting.template_name,
         speakerCount: countDistinctSpeakers(apiMeeting),
         isConfidential: apiMeeting.is_confidential ?? false,
+        failureReason: apiMeeting.failure_reason ?? null,
         // Summary V2
         chapters,
         speakerContributions,
