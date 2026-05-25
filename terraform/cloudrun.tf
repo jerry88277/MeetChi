@@ -395,7 +395,10 @@ resource "google_cloud_run_v2_service" "frontend" {
   location = var.region
 
   template {
-    service_account = google_service_account.cloudrun.email
+    # 2026-05-25 align-live：保留 default compute SA（既有 gcloud deploy 沒指定
+    # SA 時的 GCP 自動分配）。frontend 不直接呼 GCP API（透過 backend），不必
+    # 統一到 meetchi-cloudrun。若未來需要統一 IAM，另開 PR + 切流量低峰時段做。
+    service_account = "705495828555-compute@developer.gserviceaccount.com"
     timeout         = "300s"
 
     scaling {
@@ -415,10 +418,13 @@ resource "google_cloud_run_v2_service" "frontend" {
           cpu    = "1000m"
           memory = "512Mi"
         }
+        # 2026-05-25 align-live：保留 live 既有設定避免 apply 後成本上升 +
+        # 冷啟動變慢
+        cpu_idle          = true # request 才計費（非 always-on）
+        startup_cpu_boost = true # 加速冷啟動
       }
 
       # NEXT_PUBLIC_API_URL 是 build-time，不在 runtime env
-      # 其他 runtime env 視需要追加（目前無）
     }
   }
 
@@ -490,9 +496,14 @@ resource "google_cloud_run_v2_job" "db_migrate" {
 
   lifecycle {
     # Image 對齊 backend image lifecycle（cloudbuild + manual deploy）
-    # 不要每次 terraform plan 因 image 改變就觸發 job recreate
+    # 2026-05-25 align-live：env 也加進 ignore_changes，與 backend resource 一致。
+    # DATABASE_URL 內含 password，HCL 的 random_password.db_password.result 與
+    # live 既有 hardcoded password 是 sensitive 比較副作用（值可能相同），但
+    # apply 風險高（萬一不同會讓 migrate 連不上 DB）→ 改 ignore，由 manual
+    # gcloud 管 env 內容。
     ignore_changes = [
       template[0].template[0].containers[0].image,
+      template[0].template[0].containers[0].env,
       client,
       client_version,
     ]
