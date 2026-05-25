@@ -81,7 +81,25 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
     const isProcessing = uploadState === 'uploading' || uploadState === 'processing';
 
     return (
-        <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
+        // 2026-05-25 fix：containerRef 從 grid 移到最外層 full-width wrapper，
+        // 讓拖曳框選可在 max-w-7xl 兩側留白也能啟動（user 反映無法橫向擴展）。
+        // 卡片仍在內部，querySelectorAll('[data-select-id]') 與 bbox 交集計算
+        // 都不變。dragRect 改在這個 wrapper 內 absolute 定位，覆蓋整個寬度。
+        <div ref={containerRef} className="relative min-h-full select-none" style={{ userSelect: isDragging ? 'none' : undefined }}>
+            {/* 拖曳選取框（覆蓋整個 dashboard 寬度，含 max-w-7xl 兩側留白）*/}
+            {dragRect && (
+                <div
+                    className="absolute pointer-events-none border-2 border-brand-cta bg-brand-cta/10 rounded-md z-20"
+                    style={{
+                        left: dragRect.left,
+                        top: dragRect.top,
+                        width: dragRect.width,
+                        height: dragRect.height,
+                    }}
+                />
+            )}
+
+        <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8 relative">
 
             {/* Header & Actions */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -294,9 +312,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
             {/* Meeting List */}
             {!isLoading && (
                 <div
-                    ref={containerRef}
-                    className="relative grid gap-4 md:grid-cols-2 lg:grid-cols-3 select-none"
-                    style={{ userSelect: isDragging ? 'none' : undefined }}
+                    className="relative grid gap-4 md:grid-cols-2 lg:grid-cols-3"
                 >
                     {filteredMeetings.map((meeting, index) => {
                         const isSelected = selectedIds.has(meeting.id);
@@ -331,18 +347,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                         );
                     })}
 
-                    {/* 拖曳選取框 */}
-                    {dragRect && (
-                        <div
-                            className="absolute pointer-events-none border-2 border-brand-cta bg-brand-cta/10 rounded-md"
-                            style={{
-                                left: dragRect.left,
-                                top: dragRect.top,
-                                width: dragRect.width,
-                                height: dragRect.height,
-                            }}
-                        />
-                    )}
+                    {/* dragRect 已移到最外層 wrapper，這裡不再渲染 */}
                 </div>
             )}
 
@@ -355,6 +360,8 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                     </p>
                 </div>
             )}
+        </div>
+        {/* close outer containerRef wrapper */}
         </div>
     );
 };
