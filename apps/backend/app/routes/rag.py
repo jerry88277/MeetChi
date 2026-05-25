@@ -387,20 +387,62 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
         expanded_rows = results  # graceful fallback
 
     # Build citations from expanded rows (送 LLM) 與 raw rows (回 frontend)
-    # frontend 仍拿原命中段 content (與 audio 時間戳對齊)，
-    # 但 prompt 給 LLM 看的是 expanded content
+    # 2026-05-25 (Y2): citation merge — 把同一場會議內間隔 < MERGE_GAP_SEC
+    # 的連續 segments 合成單一 citation，避免「10 個來源時間零散」UX 痛點。
+    # 同會議內按 start_time 排序，gap < 120s 合併；speakers 用 set 統計，
+    # content 用 \n 串接；similarity 取群組內最高分（最具代表性）。
+    MERGE_GAP_SEC = 120
+
+    sorted_results = sorted(results, key=lambda r: (r.meeting_id, r.start_time or 0))
+
     citations: List[Citation] = []
-    for row in results:
+    # 群組臨時狀態（避免 pydantic 即時 mutate；最後一次性 build）
+    groups: List[dict] = []
+    for row in sorted_results:
         content = row.content_polished or row.content_raw or ""
-        similarity = 1.0 - float(row.distance)  # Convert distance to similarity
+        similarity = 1.0 - float(row.distance)
+        if (
+            groups
+            and groups[-1]["meeting_id"] == row.meeting_id
+            and (row.start_time or 0) - (groups[-1]["end_time"] or 0) < MERGE_GAP_SEC
+        ):
+            g = groups[-1]
+            g["end_time"] = max(g["end_time"] or 0, row.end_time or 0)
+            g["content"] = (g["content"] + "\n" + content).strip()
+            g["similarity"] = max(g["similarity"], similarity)
+            if row.speaker and row.speaker not in g["speakers"]:
+                g["speakers"].append(row.speaker)
+        else:
+            groups.append({
+                "meeting_id": row.meeting_id,
+                "meeting_title": row.meeting_title or "未命名會議",
+                "speakers": [row.speaker] if row.speaker else [],
+                "start_time": row.start_time,
+                "end_time": row.end_time,
+                "content": content,
+                "similarity": similarity,
+            })
+
+    # 群組依最高 similarity 排序（讓最強 hit 排前面）
+    groups.sort(key=lambda g: g["similarity"], reverse=True)
+
+    for g in groups:
+        # speaker 顯示：單一 → 直接給；多人 → 「2 人 (SPEAKER_00, SPEAKER_01)」
+        speakers = g["speakers"]
+        if len(speakers) == 0:
+            speaker_str = None
+        elif len(speakers) == 1:
+            speaker_str = speakers[0]
+        else:
+            speaker_str = f"{len(speakers)} 人 ({', '.join(speakers[:3])}{'...' if len(speakers) > 3 else ''})"
         citations.append(Citation(
-            meeting_id=row.meeting_id,
-            meeting_title=row.meeting_title or "未命名會議",
-            speaker=row.speaker,
-            start_time=row.start_time,
-            end_time=row.end_time,
-            content=content,
-            similarity=round(similarity, 4),
+            meeting_id=g["meeting_id"],
+            meeting_title=g["meeting_title"],
+            speaker=speaker_str,
+            start_time=g["start_time"],
+            end_time=g["end_time"],
+            content=g["content"],
+            similarity=round(g["similarity"], 4),
         ))
 
     # 用 expanded content 組 prompt（讓 LLM 看到更完整上下文）
