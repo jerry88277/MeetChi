@@ -373,11 +373,151 @@ resource "google_cloud_run_v2_service_iam_member" "gpu_asr_backend" {
 
 
 # ============================================
+# Cloud Run - Frontend (Next.js, No GPU)
+# ============================================
+# 2026-05-25 (P0 IaC audit)：補上 meetchi-frontend 進 IaC 管理。
+# 之前純 gcloud 手動 deploy，沒 IaC = 災難恢復找不到 config 範本。
+#
+# IMPORTANT — first-time IaC adoption procedure:
+#   1) 確認 live 與 HCL 對齊:
+#        gcloud run services describe meetchi-frontend --region asia-southeast1
+#   2) Import 既有服務（避免 plan 嘗試重建造成 downtime）:
+#        terraform import google_cloud_run_v2_service.frontend \
+#          projects/${PROJECT_ID}/locations/${REGION}/services/meetchi-frontend
+#   3) terraform plan 必須 0 changes 才 apply
+#
+# Image lifecycle owned by apps/frontend/cloudbuild-frontend.yaml + manual
+# gcloud deploys. NEXT_PUBLIC_API_URL 是 build-time bundle 進去（見 cloudbuild
+# 內 --build-arg），所以這裡不需要 runtime env。
+
+resource "google_cloud_run_v2_service" "frontend" {
+  name     = "meetchi-frontend"
+  location = var.region
+
+  template {
+    service_account = google_service_account.cloudrun.email
+    timeout         = "300s"
+
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 20
+    }
+
+    containers {
+      image = var.frontend_image
+
+      ports {
+        container_port = 3000
+      }
+
+      resources {
+        limits = {
+          cpu    = "1000m"
+          memory = "512Mi"
+        }
+      }
+
+      # NEXT_PUBLIC_API_URL 是 build-time，不在 runtime env
+      # 其他 runtime env 視需要追加（目前無）
+    }
+  }
+
+  traffic {
+    percent = 100
+    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+  }
+
+  lifecycle {
+    # Image lifecycle owned by cloudbuild-frontend.yaml + manual gcloud
+    ignore_changes = [
+      template[0].containers[0].image,
+      template[0].containers[0].env,
+      client,
+      client_version,
+    ]
+  }
+
+  depends_on = [
+    google_project_service.apis,
+  ]
+}
+
+# ============================================
+# Cloud Run Job - DB Migrate (Alembic)
+# ============================================
+# 2026-05-25 (P0 IaC audit)：補上 db-migrate-v19 job 進 IaC。
+# 之前 gcloud 手動建 → image / cmd / cloudsql connector 散落 console。
+#
+# 用 backend image 因為含 alembic + app code；service account = meetchi-cloudrun
+# 才能透過 Cloud SQL Auth Proxy 連 meetchi-db-pg。
+#
+# IMPORTANT — first-time IaC adoption:
+#   terraform import google_cloud_run_v2_job.db_migrate \
+#     projects/${PROJECT_ID}/locations/${REGION}/jobs/db-migrate-v19
+
+resource "google_cloud_run_v2_job" "db_migrate" {
+  name     = "db-migrate-v19"
+  location = var.region
+
+  template {
+    template {
+      service_account = google_service_account.cloudrun.email
+
+      containers {
+        image   = var.backend_image
+        command = ["alembic"]
+        args    = ["upgrade", "head"]
+
+        env {
+          name  = "DATABASE_URL"
+          value = "postgresql+psycopg2://postgres:${random_password.db_password.result}@/meetchi?host=/cloudsql/${google_sql_database_instance.meetchi_pg.connection_name}"
+        }
+
+        volume_mounts {
+          name       = "cloudsql"
+          mount_path = "/cloudsql"
+        }
+      }
+
+      volumes {
+        name = "cloudsql"
+        cloud_sql_instance {
+          instances = [google_sql_database_instance.meetchi_pg.connection_name]
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    # Image 對齊 backend image lifecycle（cloudbuild + manual deploy）
+    # 不要每次 terraform plan 因 image 改變就觸發 job recreate
+    ignore_changes = [
+      template[0].template[0].containers[0].image,
+      client,
+      client_version,
+    ]
+  }
+
+  depends_on = [
+    google_project_service.apis,
+    google_sql_database_instance.meetchi_pg,
+    google_sql_user.default,
+  ]
+}
+
+# ============================================
 # IAM - Allow unauthenticated access (public API)
 # ============================================
 
 resource "google_cloud_run_v2_service_iam_member" "backend_public" {
   name     = google_cloud_run_v2_service.backend.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "frontend_public" {
+  name     = google_cloud_run_v2_service.frontend.name
   location = var.region
   role     = "roles/run.invoker"
   member   = "allUsers"
