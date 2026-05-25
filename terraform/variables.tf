@@ -37,8 +37,18 @@ variable "gpu_asr_image" {
   default     = "asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-gpu-asr@sha256:4a74a40ff6f510f54eae8116d89d13a41d5b1b7e85e4c0bb2ca461594d4cb4ad"
 }
 
+# 2026-05-25 (P0 IaC audit)：補上 frontend image var；image lifecycle 由
+# cloudbuild-frontend.yaml 擁有，這裡僅作為 first-time bootstrap default。
+variable "frontend_image" {
+  description = "Frontend (Next.js) Docker image URL"
+  type        = string
+  default     = "asia-southeast1-docker.pkg.dev/project-51769b5e-7f0f-4a2f-80c/meetchi/meetchi-frontend:latest"
+}
+
+# llm_service_image：保留 var 給歷史相容；資源已退役（2026-04 改 Gemini API
+# direct call，不再有 meetchi-llm-gpu Cloud Run service）。
 variable "llm_service_image" {
-  description = "LLM Service Docker image URL"
+  description = "[DEPRECATED] LLM Service Docker image URL（已改 Gemini API direct call，不再使用）"
   type        = string
   default     = "gcr.io/PROJECT_ID/meetchi-llm:latest"
 }
