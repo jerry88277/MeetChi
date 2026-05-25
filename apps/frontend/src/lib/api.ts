@@ -647,6 +647,8 @@ export interface RagResponse {
     citations: RagCitation[];
     segments_searched: number;
     question: string;
+    /** LLM 自評信心度：high / medium / low / no_answer */
+    confidence?: 'high' | 'medium' | 'low' | 'no_answer';
 }
 
 // Export singleton instance

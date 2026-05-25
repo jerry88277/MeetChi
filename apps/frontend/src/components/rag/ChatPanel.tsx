@@ -27,7 +27,14 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
     {
       id: "1",
       role: "ai",
-      text: "哈囉！我是您的跨會議助理。您可以問我任何在過去會議紀錄中出現過的討論，例如「之前的行銷週會決定了什麼 KPI？」或「產品架構規劃會議中提到的 RAG 模組在哪裡？」。",
+      text:
+        "哈囉！我是您的跨會議助理。我會搜尋並**彙整您所有過去會議中同一主題**的相關內容。\n\n" +
+        "💡 建議用「主題 / 關鍵字」提問，避免直接用會議檔名。例如：\n" +
+        "  • 彙整最近所有提到 AI 投資 ROI 的討論\n" +
+        "  • 各場會議對 RAG 架構的看法有什麼共識或分歧？\n" +
+        "  • 客服流程改善在哪幾場會議被提到？\n" +
+        "  • 比較不同會議對 KPI 的設定差異\n\n" +
+        "聚焦單一主題每次效果最好；找不到答案時我會提示可能的近似主題。",
       citations: []
     }
   ]);
@@ -53,9 +60,34 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
         throw new Error("尚未登入或無法取得使用者識別，請重新整理頁面後再試。");
       }
       const res = await api.askRag(userMsg.text, userUpn, history);
+      // 2026-05-25 (Y3) low-score fallback：當所有 citations similarity 都偏低
+      // (< 0.6) 或回應屬 no_answer，主動提供「最接近的相關段落 + 試另一個主題」
+      // 引導，避免使用者卡住不知道下一步。
+      let answerText = res.answer;
+      const hasCitations = res.citations && res.citations.length > 0;
+      const maxSim = hasCitations
+        ? Math.max(...res.citations.map(c => c.similarity ?? 0))
+        : 0;
+      const lowConfidence = (res.confidence === 'no_answer' || res.confidence === 'low')
+        || (hasCitations && maxSim < 0.6);
+      if (lowConfidence && hasCitations) {
+        // List unique meeting titles in top citations as topic suggestions
+        const uniqueMeetings = Array.from(
+          new Set(res.citations.slice(0, 5).map(c => c.meeting_title))
+        ).slice(0, 5);
+        const hint = (
+          "\n\n💡 我沒有找到很精準的答案，可能因為：\n" +
+          "  1. 提問主題與會議內容差距較大\n" +
+          "  2. 用了會議檔名而非主題關鍵字\n\n" +
+          "**最接近的相關會議**（相似度 " + (maxSim * 100).toFixed(0) + "% 以下）：\n" +
+          uniqueMeetings.map((t, i) => `  ${i + 1}. ${t}`).join('\n') +
+          "\n\n建議試試：聚焦該會議的具體主題（如 AI、KPI、流程改善）再問一次。"
+        );
+        answerText = answerText + hint;
+      }
       setMessages(prev => [
         ...prev,
-        { id: (Date.now() + 1).toString(), role: "ai", text: res.answer, citations: res.citations }
+        { id: (Date.now() + 1).toString(), role: "ai", text: answerText, citations: res.citations }
       ]);
     } catch (err) {
       console.error(err);
