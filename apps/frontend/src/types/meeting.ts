@@ -90,6 +90,7 @@ export interface Meeting {
     templateName?: string;              // 模板分類 (general/sales_bant/...)
     speakerCount?: number;              // 講者數（卡片顯示 dot 用）
     isConfidential?: boolean;           // Sprint 2e Phase 1：機密會議旗標
+    failureReason?: string | null;      // 2026-05-25 (Y7)：FAILED 時的具體原因
     // Summary V2 (2026-05-11)
     chapters?: Chapter[];
     speakerContributions?: SpeakerContribution[];

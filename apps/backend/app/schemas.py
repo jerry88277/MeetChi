@@ -59,6 +59,7 @@ class MeetingRead(BaseModel):
     summary_json: Optional[str]
     speaker_mappings: Optional[str] = None  # Phase 8.1.3
     is_confidential: bool = False  # Sprint 2e Phase 1 (2026-05-11)
+    failure_reason: Optional[str] = None  # 2026-05-25 (Y7)：給 FAILED meeting 顯示具體原因
 
     transcript_segments: List[TranscriptSegmentRead] = []  # Include segments for detail view
 
