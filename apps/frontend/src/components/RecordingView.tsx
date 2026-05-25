@@ -479,43 +479,45 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
     const currentPartial = transcriptEntries.find(e => e.type === 'partial');
 
     return (
-        <div className="h-full flex flex-col bg-white relative">
+        // 2026-05-25 Y4 dark mode audit：原本整頁硬編 bg-white + text-slate-*
+        // dark mode 下變白底黑字看不見。全改 semantic tokens (bg-card / text-foreground)。
+        <div className="h-full flex flex-col bg-card relative">
             {/* Overlay during upload */}
             {isUploading && (
-                <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
-                    <Loader2 className="w-12 h-12 text-indigo-600 animate-spin mb-4" />
-                    <h3 className="text-xl font-bold text-slate-800">音檔安穩上傳中...</h3>
-                    <p className="text-slate-500 mt-2">保障您的會議紀錄不遺失，請勿關閉視窗</p>
+                <div className="absolute inset-0 bg-card/85 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+                    <Loader2 className="w-12 h-12 text-brand-cta animate-spin mb-4" />
+                    <h3 className="text-xl font-bold text-foreground">音檔安穩上傳中...</h3>
+                    <p className="text-muted-foreground mt-2">保障您的會議紀錄不遺失，請勿關閉視窗</p>
                 </div>
             )}
 
             {/* Header */}
-            <div className="border-b border-slate-200 px-6 py-4 flex items-center gap-4 bg-white sticky top-0 z-10">
+            <div className="border-b border-border px-6 py-4 flex items-center gap-4 bg-card sticky top-0 z-10">
                 <button onClick={() => { if (isRecording) { stopRecording(); } else { onBack(); } }}
-                    className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors">
+                    className="p-2 hover:bg-muted rounded-full text-muted-foreground transition-colors">
                     <ChevronRight size={24} className="rotate-180" />
                 </button>
                 <div className="flex-1">
                     <div className="flex items-center gap-3">
-                        <h2 className="text-xl font-bold text-slate-900">{meetingTitle}</h2>
-                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-[10px] font-semibold border border-green-200">
+                        <h2 className="text-xl font-bold text-foreground">{meetingTitle}</h2>
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-status-success/10 text-status-success rounded-full text-[10px] font-semibold border border-status-success/30">
                             <Shield className="w-3 h-3" />
                             <span>地端機密錄音</span>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
                         {isRecording && (
                             <>
                                 <span className="flex items-center gap-1.5">
-                                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                                    <span className="w-2 h-2 rounded-full bg-status-error animate-pulse" />
                                     錄音中
                                 </span>
-                                <span className="w-1 h-1 rounded-full bg-slate-300" />
+                                <span className="w-1 h-1 rounded-full bg-muted-foreground/40" />
                                 <span className="font-mono">{formatTime(recordingTime)}</span>
                             </>
                         )}
-                        {wsStatus === 'connecting' && <span className="text-amber-500">連線中...</span>}
-                        {wsStatus === 'error' && <span className="text-red-500">連線錯誤</span>}
+                        {wsStatus === 'connecting' && <span className="text-status-warning">連線中...</span>}
+                        {wsStatus === 'error' && <span className="text-status-error">連線錯誤</span>}
                     </div>
                 </div>
             </div>
@@ -524,26 +526,26 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
             <div className="flex-1 overflow-y-auto p-6 space-y-3">
                 {!isRecording && transcriptEntries.length === 0 && (
                     <div className="flex flex-col items-center justify-center h-full text-center">
-                        <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mb-6">
-                            <Mic size={40} className="text-indigo-400" />
+                        <div className="w-20 h-20 bg-brand-cta/10 rounded-full flex items-center justify-center mb-6">
+                            <Mic size={40} className="text-brand-cta/70" />
                         </div>
-                        <h3 className="text-lg font-semibold text-slate-700 mb-2">準備開始錄音</h3>
-                        <p className="text-slate-500 max-w-sm mb-6">點擊下方按鈕開始錄音，系統將即時轉錄你的語音。</p>
-                        
-                        {/* Custom Context Input — P2: 視覺強調可選；optional badge 直接放 label 旁 */}
+                        <h3 className="text-lg font-semibold text-foreground mb-2">準備開始錄音</h3>
+                        <p className="text-muted-foreground max-w-sm mb-6">點擊下方按鈕開始錄音，系統將即時轉錄你的語音。</p>
+
+                        {/* Custom Context Input */}
                         <div className="w-full max-w-sm text-left">
-                            <label className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                            <label className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
                                 <span>專有名詞 / 背景資料</span>
                                 <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 bg-muted text-muted-foreground rounded font-normal">可選</span>
                             </label>
-                            <input 
+                            <input
                                 type="text"
                                 value={customContext}
                                 onChange={(e) => setCustomContext(e.target.value)}
                                 placeholder="例如: MeetChi, AI專案, Scrum..."
-                                className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all placeholder:text-slate-400 shadow-sm"
+                                className="w-full px-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand-cta/50 focus:border-brand-cta transition-all placeholder:text-muted-foreground/70 shadow-sm"
                             />
-                            <p className="text-xs text-slate-500 mt-2">提供關鍵字能幫助 AI 更好辨識生僻名詞</p>
+                            <p className="text-xs text-muted-foreground mt-2">提供關鍵字能幫助 AI 更好辨識生僻名詞</p>
                         </div>
                     </div>
                 )}
@@ -553,17 +555,17 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
                 )}
 
                 {finalizedEntries.map(entry => (
-                    <div key={entry.id} className="bg-slate-50 rounded-xl p-4">
-                        <p className="text-slate-900 leading-relaxed">{entry.content}</p>
+                    <div key={entry.id} className="bg-muted/50 rounded-xl p-4">
+                        <p className="text-foreground leading-relaxed">{entry.content}</p>
                         {entry.translated && (
-                            <p className="text-slate-500 text-sm mt-1 italic">{entry.translated}</p>
+                            <p className="text-muted-foreground text-sm mt-1 italic">{entry.translated}</p>
                         )}
                     </div>
                 ))}
 
                 {currentPartial && (
-                    <div className="bg-indigo-50/50 rounded-xl p-4 border border-indigo-100">
-                        <p className="text-indigo-700/70 leading-relaxed">{currentPartial.content}</p>
+                    <div className="bg-brand-cta/8 rounded-xl p-4 border border-brand-cta/20">
+                        <p className="text-brand-cta/80 leading-relaxed">{currentPartial.content}</p>
                     </div>
                 )}
 
@@ -571,14 +573,14 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
             </div>
 
             {/* Control Bar */}
-            <div className="border-t border-slate-200 bg-white px-6 py-5">
+            <div className="border-t border-border bg-card px-6 py-5">
                 <div className="flex items-center justify-center gap-6">
                     {/* Volume Indicator */}
                     <div className="flex items-center gap-2 w-24">
-                        <Volume2 size={18} className="text-slate-400" />
-                        <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <Volume2 size={18} className="text-muted-foreground" />
+                        <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
                             <div
-                                className="h-full bg-green-400 rounded-full transition-all duration-100"
+                                className="h-full bg-status-success rounded-full transition-all duration-100"
                                 style={{ width: `${Math.min(100, volumeLevel * 500)}%` }}
                             />
                         </div>
@@ -589,7 +591,7 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
                         <button
                             onClick={startRecording}
                             disabled={isPreparing}
-                            className="w-16 h-16 bg-red-500 hover:bg-red-600 disabled:bg-red-300 rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-200 group"
+                            className="w-16 h-16 bg-status-error hover:bg-status-error/90 disabled:opacity-50 rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-200 group"
                         >
                             {isPreparing ? (
                                 <Loader2 size={28} className="text-white animate-spin" />
@@ -600,16 +602,16 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
                     ) : (
                         <button
                             onClick={stopRecording}
-                            className="w-16 h-16 bg-slate-700 hover:bg-slate-800 rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-200 group"
+                            className="w-16 h-16 bg-foreground hover:bg-foreground/85 rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-200 group"
                         >
-                            <Square size={24} className="text-white fill-white group-hover:scale-110 transition-transform" />
+                            <Square size={24} className="text-background fill-background group-hover:scale-110 transition-transform" />
                         </button>
                     )}
 
                     {/* Timer display */}
                     <div className="w-24 text-center">
                         {isRecording && (
-                            <span className="font-mono text-lg text-slate-700">{formatTime(recordingTime)}</span>
+                            <span className="font-mono text-lg text-foreground">{formatTime(recordingTime)}</span>
                         )}
                     </div>
                 </div>
