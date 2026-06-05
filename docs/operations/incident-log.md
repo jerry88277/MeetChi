@@ -558,3 +558,55 @@ background_tasks.add_task(
 | Terraform 設定同步 | ⚠️ 待更新 | GPU ASR ingress、min-instances 設定尚未回寫 `terraform/cloudrun.tf` |
 | Dashboard 拖選 Bug | ⚠️ 待修 | 錯誤訊息出現時滑鼠進入「拖選會議卡片」模式，無法複製錯誤文字（feedback ea742c88） |
 | 長會議 map-reduce | ⚠️ 未來改善 | 目前 input 取樣策略；真正解法是 map-reduce summary（見 llm_utils.py 注解） |
+
+---
+
+## INC-015 GPU ASR inter_threads 錯誤參數名稱
+
+| 欄位 | 內容 |
+|------|------|
+| **時間** | 2026-06-05 |
+| **服務** | GPU ASR（meetchi-gpu-asr） |
+| **Severity** | Medium（新功能錯誤，未影響現有服務）|
+
+**症狀**
+
+部署 revision `meetchi-gpu-asr-00016-xen` 後，啟動 log 出現：
+
+```
+WARNING - Failed to pre-load ASR model: ctranslate2._ext.Whisper() got multiple values for keyword argument 'inter_threads'
+```
+
+**根本原因**
+
+`faster_whisper.WhisperModel` 的公開 API 不直接接受 `inter_threads` 參數；
+它內部透過 `num_workers` 參數對應到 CTranslate2 的 `inter_threads`。
+直接傳 `inter_threads=N` 導致 CTranslate2 C++ extension 收到重複的同名參數。
+
+```python
+# 錯誤寫法
+WhisperModel(model, device=device, inter_threads=3)  # ❌ 重複
+# 正確寫法
+WhisperModel(model, device=device, num_workers=3)    # ✅ faster-whisper 公開 API
+```
+
+**解決方案**
+
+`apps/backend/app/offline_asr.py` 修正：
+
+```python
+self._model = WhisperModel(
+    self.config.model_name,
+    device=device,
+    compute_type=compute_type,
+    num_workers=self.config.inter_threads,  # maps to CTranslate2 inter_threads
+)
+```
+
+config 欄位仍命名為 `inter_threads`（語意清楚），只在 `_load_model()` 呼叫時轉換為 `num_workers`。
+
+**結果**
+
+- 修正後 log：`Breeze ASR model loaded successfully. (inter_threads=3)` ✅
+- 部署 revision：`meetchi-gpu-asr-00017-woq`（containerConcurrency=3, ASR_INTER_THREADS=3）
+
