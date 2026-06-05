@@ -230,145 +230,67 @@ resource "google_cloud_run_v2_service" "backend" {
 #   env: DIARIZATION_MODEL=community-1, HF_AUTH_TOKEN/HF_TOKEN (Secret Manager)
 #   volume: /mnt/gcs -> ${audio bucket} via GCS Fuse
 #   timeout 3600s, concurrency 1, min 0 max 1, CPU always allocated
-resource "google_cloud_run_v2_service" "gpu_asr" {
-  provider     = google-beta
-  name         = "meetchi-gpu-asr"
-  location     = var.region
-  launch_stage = "GA"
-
-  template {
-    service_account = google_service_account.cloudrun.email
-    timeout         = "3600s"
-
-    scaling {
-      max_instance_count = 1
-    }
-
-    # GPU services must keep CPU always allocated; throttling causes the
-    # accelerator driver context to die between requests.
-    annotations = {
-      "run.googleapis.com/cpu-throttling"                = "false"
-      "run.googleapis.com/startup-cpu-boost"             = "true"
-      "run.googleapis.com/gpu-zonal-redundancy-disabled" = "true"
-    }
-
-    # GPU accelerator (nvidia-l4) is configured via the live service and
-    # NOT manageable from hashicorp/google v5.x (no node_selector block in
-    # google_cloud_run_v2_service). Listed in lifecycle.ignore_changes so
-    # Terraform won't try to remove it on plan. To upgrade GPU type, do it
-    # via gcloud or upgrade provider to google v6+.
-
-    containers {
-      name  = "meetchi-gpu-asr-1"
-      image = var.gpu_asr_image
-      ports {
-        container_port = 8080
-      }
-
-      resources {
-        limits = {
-          cpu              = "8000m"
-          memory           = "32Gi"
-          "nvidia.com/gpu" = "1"
-        }
-        startup_cpu_boost = true
-      }
-
-      # Env order MUST match the live service to avoid spurious diffs
-      # (Terraform compares env blocks positionally).
-      # HF tokens — sourced from Secret Manager. Two duplicate vars because
-      # different libraries (huggingface_hub vs pyannote) read different names.
-      env {
-        name = "HF_AUTH_TOKEN"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.hf_token.secret_id
-            version = "latest"
-          }
-        }
-      }
-      env {
-        name = "HF_TOKEN"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.hf_token.secret_id
-            version = "latest"
-          }
-        }
-      }
-      env {
-        name  = "DIARIZATION_MODEL"
-        value = "community-1"
-      }
-
-      volume_mounts {
-        name       = "gcs-data"
-        mount_path = "/mnt/gcs"
-      }
-
-      startup_probe {
-        http_get {
-          path = "/health"
-          port = 8080
-        }
-        initial_delay_seconds = 30
-        period_seconds        = 20
-        timeout_seconds       = 10
-        failure_threshold     = 10
-      }
-
-      liveness_probe {
-        http_get {
-          path = "/health"
-          port = 8080
-        }
-        period_seconds    = 60
-        timeout_seconds   = 1
-        failure_threshold = 3
-      }
-    }
-
-    volumes {
-      name = "gcs-data"
-      gcs {
-        bucket    = google_storage_bucket.audio.name
-        read_only = false
-      }
-    }
-  }
-
-  traffic {
-    percent = 100
-    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
-  }
-
-  lifecycle {
-    # Image lifecycle is owned by cloudbuild-gpu-asr.yaml + manual gcloud deploys.
-    # Traffic split (pinned revision vs LATEST + community1 tag) is owned by
-    # the cloudbuild deploy step and gcloud — Terraform must not fight with it.
-    # Annotations may include runtime-managed labels (deploy-version etc.).
-    ignore_changes = [
-      template[0].containers[0].image,
-      template[0].annotations,
-      traffic,
-      client,
-      client_version,
-    ]
-  }
-
-  depends_on = [
-    google_project_service.apis,
-    google_storage_bucket.audio,
-    google_secret_manager_secret_version.hf_token,
-  ]
-}
-
-resource "google_cloud_run_v2_service_iam_member" "gpu_asr_backend" {
-  name     = google_cloud_run_v2_service.gpu_asr.name
-  location = var.region
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.cloudrun.email}"
-}
+# ============================================
+# GPU ASR — Deployed via gcloud CLI (NOT Terraform)
+# ============================================
+# The hashicorp/google v5.x provider does not support the
+# gpu_zonal_redundancy_disabled property, and the Cloud Run v2 API
+# rejects run.googleapis.com/gpu-zonal-redundancy-disabled as a
+# service-level annotation. Deploy via gcloud CLI instead.
+#
+# resource "google_cloud_run_v2_service" "gpu_asr" {
+#   provider     = google-beta
+#   name         = "meetchi-gpu-asr"
+#   location     = var.region
+#   launch_stage = "GA"
+#
+#   annotations = {
+#     "run.googleapis.com/gpu-zonal-redundancy-disabled" = "true"
+#   }
+#
+#   template {
+#     service_account = google_service_account.cloudrun.email
+#     timeout         = "3600s"
+#
+#     scaling {
+#       max_instance_count = 1
+#     }
+#
+#     annotations = {
+#       "run.googleapis.com/cpu-throttling"    = "false"
+#       "run.googleapis.com/startup-cpu-boost" = "true"
+#     }
+#
+#     containers {
+#       name  = "meetchi-gpu-asr-1"
+#       image = var.gpu_asr_image
+#       ...
+#     }
+#
+#     volumes {
+#       name = "gcs-data"
+#       gcs {
+#         bucket    = google_storage_bucket.audio.name
+#         read_only = false
+#       }
+#     }
+#   }
+#
+#   traffic {
+#     percent = 100
+#     type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+#   }
+#
+#   lifecycle { ... }
+#   depends_on = [ ... ]
+# }
+#
+# resource "google_cloud_run_v2_service_iam_member" "gpu_asr_backend" {
+#   name     = google_cloud_run_v2_service.gpu_asr.name
+#   location = var.region
+#   role     = "roles/run.invoker"
+#   member   = "serviceAccount:${google_service_account.cloudrun.email}"
+# }
 
 
 
@@ -395,10 +317,8 @@ resource "google_cloud_run_v2_service" "frontend" {
   location = var.region
 
   template {
-    # 2026-05-25 align-live：保留 default compute SA（既有 gcloud deploy 沒指定
-    # SA 時的 GCP 自動分配）。frontend 不直接呼 GCP API（透過 backend），不必
-    # 統一到 meetchi-cloudrun。若未來需要統一 IAM，另開 PR + 切流量低峰時段做。
-    service_account = "705495828555-compute@developer.gserviceaccount.com"
+    # Changed to managed cloudrun service account to avoid 'actAs' permission denial on the default compute SA
+    service_account = google_service_account.cloudrun.email
     timeout         = "300s"
 
     scaling {
@@ -518,19 +438,21 @@ resource "google_cloud_run_v2_job" "db_migrate" {
 
 # ============================================
 # IAM - Allow unauthenticated access (public API)
+# Commented out due to GCP Org Policy constraints/iam.managed.allowedPolicyMembers
+# which prohibits public access (allUsers invoker).
 # ============================================
 
-resource "google_cloud_run_v2_service_iam_member" "backend_public" {
-  name     = google_cloud_run_v2_service.backend.name
-  location = var.region
-  role     = "roles/run.invoker"
-  member   = "allUsers"
-}
+# resource "google_cloud_run_v2_service_iam_member" "backend_public" {
+#   name     = google_cloud_run_v2_service.backend.name
+#   location = var.region
+#   role     = "roles/run.invoker"
+#   member   = "allUsers"
+# }
 
-resource "google_cloud_run_v2_service_iam_member" "frontend_public" {
-  name     = google_cloud_run_v2_service.frontend.name
-  location = var.region
-  role     = "roles/run.invoker"
-  member   = "allUsers"
-}
+# resource "google_cloud_run_v2_service_iam_member" "frontend_public" {
+#   name     = google_cloud_run_v2_service.frontend.name
+#   location = var.region
+#   role     = "roles/run.invoker"
+#   member   = "allUsers"
+# }
 

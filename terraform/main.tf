@@ -14,7 +14,7 @@ terraform {
 
   # Backend for state storage (remote GCS — no longer local-only single point of failure)
   backend "gcs" {
-    bucket = "meetchi-terraform-state"
+    bucket = "prj-ai-meetchi-du-terraform-state"
     prefix = "terraform/state"
   }
 }
@@ -41,6 +41,7 @@ resource "google_project_service" "apis" {
     "cloudtasks.googleapis.com",
     "vpcaccess.googleapis.com",
     "aiplatform.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
   ])
 
   service            = each.value

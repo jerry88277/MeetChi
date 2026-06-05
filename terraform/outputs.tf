@@ -4,6 +4,24 @@ output "backend_url" {
   value       = google_cloud_run_v2_service.backend.uri
 }
 
+# ── IAP + Load Balancer ───────────────────────────────────────────────────────
+
+output "lb_static_ip" {
+  description = "Global LB Static IP — 提供此 IP 給 IT 設定 DNS A record (meetchi.chimei.com.tw → <this IP>)"
+  value       = google_compute_global_address.lb_ip.address
+}
+
+output "iap_client_id" {
+  description = "IAP OAuth Client ID（前端 NEXT_AUTH 或 gcloud IAP proxy 設定用）"
+  value       = google_iap_client.meetchi.client_id
+  sensitive   = false
+}
+
+output "meetchi_url" {
+  description = "MeetChi 對外 URL（DNS + SSL 生效後可訪問）"
+  value       = "https://${var.custom_domain}"
+}
+
 
 
 # Cloud SQL outputs — REMOVED (migrated to SQLite on GCS FUSE)

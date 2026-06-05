@@ -367,7 +367,8 @@ def build_prompt_from_template(
 
     system_prompt = f"""你是專業的會議記錄助手。請根據以下會議逐字稿，生成結構化的會議摘要。
 請使用繁體中文撰寫回應，並以 JSON 格式輸出。
-{COT_ROLE_INFERENCE_BLOCK}
+注意：逐字稿中 SPEAKER_NN_cM 為說話者標籤（音檔分段後的 diarization ID），
+摘要描述請使用「說話者 A」/「說話者 B」等通稱，或根據內容推斷的角色名稱。
 
 ## 模板原有段落要求
 以下是模板「{template.display_name}」要求的 JSON 欄位：
@@ -398,10 +399,9 @@ def build_schema_from_template(template: TemplateSchema) -> Dict[str, Any]:
     # Import SpeakerRole from existing code
     from app.llm_utils import SpeakerRole
     
-    # Build dynamic fields
-    fields = {
-        "speaker_roles": (Optional[TypingList[SpeakerRole]], None),
-    }
+    # Build dynamic fields — speaker_roles excluded from main summary call;
+    # handled by infer_speaker_roles() in tasks.py (2026-06-03 MAX_TOKENS fix)
+    fields = {}
     
     type_mapping = {
         "string": (str, ...),

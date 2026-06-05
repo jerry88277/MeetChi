@@ -517,8 +517,13 @@ export default function DashboardPage() {
                 const meetingId = key.replace('meeting_audio_', '');
                 toast.info('開始恢復音檔上傳，請稍候...');
                 const file = new File([blob], 'audio.webm', { type: blob.type || 'audio/webm' });
-                const { uploadUrl } = await api.getUploadUrl(meetingId, 'audio.webm', blob.type || 'audio/webm');
-                await api.uploadToGcs(uploadUrl, file);
+                try {
+                    const { uploadUrl } = await api.getUploadUrl(meetingId, 'audio.webm', blob.type || 'audio/webm');
+                    await api.uploadToGcs(uploadUrl, file);
+                } catch (directErr) {
+                    console.warn('[MeetChi] Recovery direct upload failed, using chunked:', directErr);
+                    await api.chunkedUpload(meetingId, file);
+                }
                 await api.regenerateSummary(meetingId, 'general');
                 await del(key);
                 showSuccess('音檔恢復成功！預計幾分鐘後產出總結摘要。');

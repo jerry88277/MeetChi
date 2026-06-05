@@ -14,9 +14,9 @@ Usage:
 """
 import os, sys, time, json, requests, argparse
 
-BASE_URL = os.getenv("MEETCHI_BACKEND_URL", "https://meetchi-backend-705495828555.asia-southeast1.run.app")
-COMMUNITY1_URL = "https://meetchi-gpu-asr-wfqjx2j42q-as.a.run.app"
-GCS_BUCKET = "gs://project-51769b5e-7f0f-4a2f-80c-meetchi-audio"
+BASE_URL = os.getenv("MEETCHI_BACKEND_URL", "https://meetchi-backend-315688033208.asia-southeast1.run.app")
+COMMUNITY1_URL = os.getenv("MEETCHI_GPU_ASR_URL", "https://meetchi-gpu-asr-315688033208.asia-southeast1.run.app")
+GCS_BUCKET = "gs://prj-ai-meetchi-du-meetchi-audio"
 
 def main():
     parser = argparse.ArgumentParser(description="Test community-1 diarization")

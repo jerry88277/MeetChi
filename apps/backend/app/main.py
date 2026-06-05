@@ -235,9 +235,11 @@ is_e2e_mode = os.getenv("NEXT_PUBLIC_E2E_TEST_MODE", "false").lower() == "true"
 cors_origins = ["*"] if is_e2e_mode else [
     "http://localhost:3000",
     "https://meetchi-staging-test-wfqjx2j42q-de.a.run.app",
-    "https://your-production-domain.com", # TODO: Update this when deploying to actual prod domain
     "https://meetchi-frontend-705495828555.asia-southeast1.run.app",
-    "https://meetchi-frontend-wfqjx2j42q-as.a.run.app"
+    "https://meetchi-frontend-wfqjx2j42q-as.a.run.app",
+    "https://meetchi-frontend-atro34poxq-as.a.run.app",
+    "https://meetchi-frontend-315688033208.asia-southeast1.run.app",
+    "https://meetchi.chimei.com.tw",  # LB custom domain（未來）
 ]
 
 app.add_middleware(

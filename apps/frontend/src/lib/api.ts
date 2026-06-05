@@ -426,6 +426,137 @@ class ApiClient {
     }
 
     /**
+     * Upload audio via backend proxy (multipart POST → backend → GCS).
+     * Use this instead of getUploadUrl+uploadToGcs when direct GCS access is
+     * blocked by corporate proxies.
+     */
+    async proxyUpload(
+        meetingId: string,
+        file: File,
+        onProgress?: (percent: number, loaded: number, total: number) => void,
+    ): Promise<void> {
+        return new Promise<void>((resolve, reject) => {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `${this.baseUrl}/api/v1/meetings/${meetingId}/upload`, true);
+
+            if (onProgress) {
+                xhr.upload.onprogress = (e: ProgressEvent) => {
+                    if (e.lengthComputable && e.total > 0) {
+                        const percent = Math.min(100, Math.floor((e.loaded / e.total) * 100));
+                        onProgress(percent, e.loaded, e.total);
+                    }
+                };
+            }
+
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    if (onProgress) onProgress(100, file.size, file.size);
+                    resolve();
+                } else {
+                    reject(new Error(`Upload failed. Status: ${xhr.status} — ${xhr.responseText}`));
+                }
+            };
+            xhr.onerror = () => reject(new Error('Network error during proxy upload'));
+            xhr.onabort = () => reject(new Error('Upload aborted'));
+
+            xhr.send(formData);
+        });
+    }
+
+    /**
+     * Chunked upload: split file into 2 MB pieces and POST each piece to the backend
+     * as raw application/octet-stream. Uploads CONCURRENCY chunks in parallel with
+     * per-chunk retry to handle transient proxy drops.
+     */
+    async chunkedUpload(
+        meetingId: string,
+        file: File,
+        onProgress?: (percent: number, loaded: number, total: number) => void,
+    ): Promise<void> {
+        const CHUNK_SIZE = 2 * 1024 * 1024; // 2 MB per chunk
+        const CONCURRENCY = 2;              // 2 parallel — safe under corporate proxy
+        const MAX_RETRIES = 3;
+        const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
+
+        const uploadedBytes = new Array<number>(totalChunks).fill(0);
+
+        const reportProgress = () => {
+            if (!onProgress) return;
+            const loaded = uploadedBytes.reduce((a, b) => a + b, 0);
+            onProgress(Math.min(99, Math.floor(loaded / file.size * 100)), loaded, file.size);
+        };
+
+        const uploadChunkOnce = (i: number, chunk: Blob, url: string): Promise<void> =>
+            new Promise<void>((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', url, true);
+                xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+
+                xhr.upload.onprogress = (e: ProgressEvent) => {
+                    if (e.lengthComputable && e.total > 0) {
+                        uploadedBytes[i] = e.loaded;
+                        reportProgress();
+                    }
+                };
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        const start = i * CHUNK_SIZE;
+                        const end = Math.min(start + CHUNK_SIZE, file.size);
+                        uploadedBytes[i] = end - start;
+                        reportProgress();
+                        resolve();
+                    } else {
+                        reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText.slice(0, 200)}`));
+                    }
+                };
+                xhr.onerror = () => reject(new Error('Network error'));
+                xhr.onabort = () => reject(new Error('Aborted'));
+                xhr.send(chunk);
+            });
+
+        const uploadChunkWithRetry = async (i: number): Promise<void> => {
+            const start = i * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, file.size);
+            const chunk = file.slice(start, end);
+            const url = `${this.baseUrl}/api/v1/meetings/${meetingId}/upload-chunk` +
+                `?index=${i}&total=${totalChunks}&filename=${encodeURIComponent(file.name)}`;
+
+            let lastErr: Error | null = null;
+            for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+                if (attempt > 0) {
+                    // Exponential back-off: 1s, 2s
+                    await new Promise(r => setTimeout(r, 1000 * attempt));
+                    uploadedBytes[i] = 0; // reset progress for this chunk on retry
+                }
+                try {
+                    await uploadChunkOnce(i, chunk, url);
+                    return;
+                } catch (err) {
+                    lastErr = err as Error;
+                    console.warn(`[MeetChi] Chunk ${i}/${totalChunks} attempt ${attempt + 1} failed:`, err);
+                }
+            }
+            throw new Error(`Chunk ${i}/${totalChunks} failed after ${MAX_RETRIES} attempts: ${lastErr?.message}`);
+        };
+
+        // Upload with controlled concurrency: keep CONCURRENCY slots busy
+        let nextChunk = 0;
+        const runSlot = async (): Promise<void> => {
+            while (nextChunk < totalChunks) {
+                const i = nextChunk++;
+                await uploadChunkWithRetry(i);
+            }
+        };
+        const slots = Array.from({ length: Math.min(CONCURRENCY, totalChunks) }, runSlot);
+        await Promise.all(slots);
+
+        if (onProgress) onProgress(100, file.size, file.size);
+    }
+
+    /**
      * Trigger the background transcription and summarization task
      */
     async startTranscriptionTask(meetingId: string, templateType = 'general', context = '', length = 'medium', style = 'formal'): Promise<{ status: string }> {

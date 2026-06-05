@@ -111,3 +111,11 @@ variable "discord_webhook_url" {
   sensitive   = true
   default     = ""
 }
+
+# ── IAP + Load Balancer ───────────────────────────────────────────────────────
+
+variable "custom_domain" {
+  description = "Custom domain for IAP + Load Balancer (e.g. meetchi.chimei.com.tw). Requires DNS A record pointing to lb_static_ip output."
+  type        = string
+  default     = "meetchi.chimei.com.tw"
+}

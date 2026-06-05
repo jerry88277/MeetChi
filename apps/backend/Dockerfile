@@ -33,6 +33,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Ensure alembic.ini exists (it's gitignored so may not be in build context)
+RUN [ -f alembic.ini ] || cp alembic.ini.example alembic.ini
+
 # Create necessary directories
 RUN mkdir -p /app/audio_files /app/logs && chmod -R 777 /app/audio_files /app/logs
 

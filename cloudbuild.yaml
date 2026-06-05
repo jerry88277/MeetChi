@@ -1,9 +1,10 @@
 # ============================================
-# MeetChi Cloud Build - Build & Push Images
-# Simplified: Build images only, deploy via Terraform
+# MeetChi Cloud Build - Backend Only
+# Build & push: meetchi-backend image
+# Usage: gcloud builds submit . --config=cloudbuild.yaml
 # ============================================
 
-timeout: '3600s'  # 1 hour timeout
+timeout: '1800s'
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -13,9 +14,6 @@ substitutions:
   _TAG: 'latest'
 
 steps:
-  # ============================================
-  # Step 1: Build Backend Image
-  # ============================================
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build-backend'
     dir: 'apps/backend'
@@ -27,9 +25,6 @@ steps:
       - 'asia-southeast1-docker.pkg.dev/${PROJECT_ID}/meetchi/meetchi-backend:${_TAG}'
       - '.'
 
-  # ============================================
-  # Step 3: Push Backend Image
-  # ============================================
   - name: 'gcr.io/cloud-builders/docker'
     id: 'push-backend'
     args:
@@ -37,20 +32,6 @@ steps:
       - 'asia-southeast1-docker.pkg.dev/${PROJECT_ID}/meetchi/meetchi-backend:${_TAG}'
     waitFor:
       - 'build-backend'
-
-  # ============================================
-  # Step 4: List images
-  # ============================================
-  - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'list-images'
-    args:
-      - 'artifacts'
-      - 'docker'
-      - 'images'
-      - 'list'
-      - 'asia-southeast1-docker.pkg.dev/${PROJECT_ID}/meetchi'
-    waitFor:
-      - 'push-backend'
 
 images:
   - 'asia-southeast1-docker.pkg.dev/${PROJECT_ID}/meetchi/meetchi-backend:${_TAG}'

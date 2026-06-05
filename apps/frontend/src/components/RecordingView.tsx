@@ -410,10 +410,15 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
                         await set(`meeting_audio_${meetingId}`, blob);
                         console.log(`[MeetChi] Audio saved locally to IDB (meeting_audio_${meetingId})`);
                         
-                        // Phase 2: Upload to GCS
+                        // Phase 2: Upload to GCS (direct, with proxy fallback)
                         const file = new File([blob], 'audio.webm', { type: blob.type });
                         const { uploadUrl } = await api.getUploadUrl(meetingId, 'audio.webm', blob.type);
-                        await api.uploadToGcs(uploadUrl, file);
+                        try {
+                            await api.uploadToGcs(uploadUrl, file);
+                        } catch (directErr) {
+                            console.warn('[MeetChi] Direct GCS upload failed, trying chunked upload:', directErr);
+                            await api.chunkedUpload(meetingId, file);
+                        }
                         console.log(`[MeetChi] Audio uploaded safely to GCS`);
                         
                         // Phase 3: Trigger Background Summary Task

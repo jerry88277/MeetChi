@@ -291,7 +291,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                     <div className="flex items-center gap-2">
                         <button
                             type="button"
-                            onClick={() => onBulkDelete?.(Array.from(selectedIds))}
+                            onClick={() => { onBulkDelete?.(Array.from(selectedIds)); clearSelection(); }}
                             disabled={!onBulkDelete}
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-status-error hover:bg-status-error/90 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
                         >

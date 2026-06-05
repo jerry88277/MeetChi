@@ -1,0 +1,39 @@
+# ============================================
+# MeetChi Cloud Build - Frontend Only
+# Build & push: meetchi-frontend image
+# Usage: gcloud builds submit apps/frontend --config=cloudbuild.frontend.yaml
+# Note: submit from apps/frontend dir to bypass root .gcloudignore exclusion
+# ============================================
+
+timeout: '1800s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+
+substitutions:
+  _TAG: 'latest'
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-frontend'
+    args:
+      - 'build'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_API_URL=https://meetchi-backend-atro34poxq-as.a.run.app'
+      - '-f'
+      - 'Dockerfile'
+      - '-t'
+      - 'asia-southeast1-docker.pkg.dev/${PROJECT_ID}/meetchi/meetchi-frontend:${_TAG}'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-frontend'
+    args:
+      - 'push'
+      - 'asia-southeast1-docker.pkg.dev/${PROJECT_ID}/meetchi/meetchi-frontend:${_TAG}'
+    waitFor:
+      - 'build-frontend'
+
+images:
+  - 'asia-southeast1-docker.pkg.dev/${PROJECT_ID}/meetchi/meetchi-frontend:${_TAG}'

@@ -91,10 +91,17 @@ export function useRecording() {
             });
             
             const { uploadUrl } = await api.getUploadUrl(meeting.id, file.name, file.type || 'application/octet-stream');
-            // 2026-05-12：傳 onProgress callback 讓 overlay 即時顯示 % 進度
-            await api.uploadToGcs(uploadUrl, file, (percent) => {
-                setUploadProgress(percent);
-            });
+            // Try direct GCS first; fall back through proxy, then chunked upload
+            try {
+                await api.uploadToGcs(uploadUrl, file, (percent) => {
+                    setUploadProgress(percent);
+                });
+            } catch (directErr) {
+                console.warn('[MeetChi] Direct GCS upload failed, trying chunked upload:', directErr);
+                await api.chunkedUpload(meeting.id, file, (percent) => {
+                    setUploadProgress(percent);
+                });
+            }
 
             // Phase 9.1 Fix: Set state BEFORE triggering task so polling starts immediately.
             // The backend endpoint is synchronous (blocks until processing completes),

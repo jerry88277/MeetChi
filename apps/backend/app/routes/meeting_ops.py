@@ -3,7 +3,7 @@ Meeting Merge/Split API Routes
 Allows combining multiple meetings or splitting a meeting into parts
 """
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File, Request, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -448,6 +448,137 @@ def generate_upload_url(
     except Exception as e:
         logger.error(f"Failed to generate signed url: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate upload URL")
+
+
+@router.post("/{meeting_id}/upload", tags=["Meeting Operations"])
+async def upload_audio_proxy(
+    meeting_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Proxy audio upload: browser sends multipart to backend, backend streams to GCS.
+    Avoids direct browser→GCS connections that may be blocked by corporate proxies."""
+    meeting = db.query(Meeting).filter(
+        Meeting.id == meeting_id, Meeting.deleted_at.is_(None)
+    ).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    bucket_name = os.getenv("GCS_BUCKET")
+    if not bucket_name:
+        raise HTTPException(status_code=500, detail="GCS_BUCKET not configured on server")
+
+    try:
+        ext = os.path.splitext(file.filename or "audio.webm")[1] or ".webm"
+        blob_name = f"audio/{meeting_id}{ext}"
+
+        client = gcs_storage.Client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+
+        # Stream file directly to GCS — avoids loading entire file into RAM
+        blob.upload_from_file(
+            file.file,
+            content_type=file.content_type or "audio/webm",
+            rewind=True,
+        )
+
+        meeting.audio_url = f"gs://{bucket_name}/{blob_name}"
+        db.commit()
+
+        logger.info(f"[ProxyUpload] meeting={meeting_id} blob={blob_name} size={blob.size}")
+        return {"audio_url": meeting.audio_url, "message": "Upload successful"}
+    except Exception as e:
+        logger.error(f"[ProxyUpload] Failed for meeting {meeting_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+
+def _compose_blobs(bucket, sources: list, destination, temp_prefix: str) -> None:
+    """Compose source blobs into destination, handling GCS's 32-source limit recursively."""
+    if len(sources) <= 32:
+        destination.compose(sources)
+        return
+    groups = [sources[i:i + 32] for i in range(0, len(sources), 32)]
+    group_blobs = []
+    for idx, group in enumerate(groups):
+        temp = bucket.blob(f"{temp_prefix}group_{idx:04d}")
+        temp.compose(group)
+        group_blobs.append(temp)
+    _compose_blobs(bucket, group_blobs, destination, temp_prefix + "meta_")
+    for t in group_blobs:
+        try:
+            t.delete()
+        except Exception:
+            pass
+
+
+@router.post("/{meeting_id}/upload-chunk", tags=["Meeting Operations"])
+async def upload_chunk(
+    meeting_id: str,
+    request: Request,
+    chunk_index: int = Query(..., alias="index", ge=0),
+    total_chunks: int = Query(..., alias="total", ge=1),
+    filename: str = Query(default="audio.webm"),
+    db: Session = Depends(get_db),
+):
+    """Receive one binary chunk and store in GCS. On the last chunk, compose all parts
+    into the final audio file. Each chunk is 1 MB, safely under enterprise proxy limits."""
+    meeting = db.query(Meeting).filter(
+        Meeting.id == meeting_id, Meeting.deleted_at.is_(None)
+    ).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    bucket_name = os.getenv("GCS_BUCKET")
+    if not bucket_name:
+        raise HTTPException(status_code=500, detail="GCS_BUCKET not configured on server")
+
+    chunk_data = await request.body()
+    if not chunk_data:
+        raise HTTPException(status_code=400, detail="Empty chunk body")
+
+    try:
+        client = gcs_storage.Client()
+        bucket = client.bucket(bucket_name)
+
+        # Store chunk as a separate blob
+        chunk_blob = bucket.blob(f"audio/{meeting_id}/parts/{chunk_index:06d}")
+        chunk_blob.upload_from_string(chunk_data, content_type="application/octet-stream")
+        logger.info(f"[ChunkedUpload] meeting={meeting_id} chunk={chunk_index}/{total_chunks} size={len(chunk_data)}")
+
+        # If not the last chunk, just confirm receipt
+        if chunk_index < total_chunks - 1:
+            return {"status": "chunk_received", "index": chunk_index}
+
+        # Last chunk: compose all parts into final audio file
+        ext = os.path.splitext(filename)[1] if filename else ".webm"
+        if not ext:
+            ext = ".webm"
+        final_blob_name = f"audio/{meeting_id}{ext}"
+        source_blobs = [
+            bucket.blob(f"audio/{meeting_id}/parts/{i:06d}")
+            for i in range(total_chunks)
+        ]
+        final_blob = bucket.blob(final_blob_name)
+        _compose_blobs(bucket, source_blobs, final_blob, f"audio/{meeting_id}/meta/")
+
+        # Cleanup chunk files
+        for blob in source_blobs:
+            try:
+                blob.delete()
+            except Exception:
+                pass
+
+        meeting.audio_url = f"gs://{bucket_name}/{final_blob_name}"
+        db.commit()
+
+        logger.info(f"[ChunkedUpload] Complete: meeting={meeting_id} chunks={total_chunks} blob={final_blob_name}")
+        return {"status": "complete", "audio_url": meeting.audio_url}
+
+    except Exception as e:
+        logger.error(f"[ChunkedUpload] Failed for meeting {meeting_id} chunk {chunk_index}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Chunk upload failed: {str(e)}")
+
 
 class AudioUrlResponse(BaseModel):
     audio_url: str

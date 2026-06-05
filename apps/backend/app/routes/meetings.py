@@ -53,6 +53,21 @@ CORRECTIONS_CONFIG_PATH = os.path.join(
     os.path.dirname(os.path.dirname(__file__)), "..", "config", "corrections.json"
 )
 
+def _ensure_user_exists(db: Session, upn: str) -> None:
+    """Upsert a user record by ad_upn. Ensures FK constraints on meetings.owner_upn,
+    meetings.deleted_by etc. are always satisfiable for real login identities."""
+    if not upn or upn == "anonymous":
+        return
+    user = db.query(User).filter(User.ad_upn == upn).first()
+    if not user:
+        db.add(User(
+            id=str(uuid.uuid4()),
+            ad_upn=upn,
+            display_name=upn.split("@")[0],
+            is_admin=False,
+        ))
+        db.flush()
+
 
 # ============================================
 # Meeting CRUD
@@ -62,16 +77,7 @@ async def create_meeting(meeting_data: MeetingCreate, db: Session = Depends(get_
     """Create a new meeting entry (and ensure user / participant binding)."""
     upn = meeting_data.user_upn or 'test@company.com'
 
-    user_obj = db.query(User).filter(User.ad_upn == upn).first()
-    if not user_obj:
-        user_obj = User(
-            id=str(uuid.uuid4()),
-            ad_upn=upn,
-            display_name=upn.split('@')[0],
-            is_admin=True if upn == 'test@company.com' else False,
-        )
-        db.add(user_obj)
-        db.flush()
+    _ensure_user_exists(db, upn)
 
     db_meeting = Meeting(
         title=meeting_data.title,
@@ -196,6 +202,10 @@ async def bulk_delete_meetings(
     skipped_already = 0
     not_found: List[str] = []
     now = datetime.utcnow()
+
+    # Ensure the requester exists in users table before FK assignment
+    if payload.requester_upn:
+        _ensure_user_exists(db, payload.requester_upn)
 
     for mid in payload.meeting_ids:
         meeting = db.query(Meeting).filter(Meeting.id == mid).first()
@@ -396,6 +406,7 @@ async def regenerate_summary(
         request.context,
         "medium",
         "formal",
+        True,   # skip_asr=True — segments already exist; re-run summary only
     )
 
     return JSONResponse(
