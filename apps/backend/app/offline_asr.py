@@ -87,6 +87,9 @@ class BreezeASRConfig:
     min_speakers: int = 1
     max_speakers: int = 10
     hf_token: Optional[str] = None  # Required for pyannote diarization
+    # CTranslate2 concurrent inference streams (single GPU, shared weights)
+    # Set ASR_INTER_THREADS=N env var to allow N chunks to run in parallel on one GPU
+    inter_threads: int = field(default_factory=lambda: int(os.getenv("ASR_INTER_THREADS", "1")))
 
 
 # ============================================
@@ -204,9 +207,13 @@ class BreezeASRProvider(OfflineASRProvider):
             self.config.model_name,
             device=device,
             compute_type=compute_type,
+            num_workers=self.config.inter_threads,  # maps to CTranslate2 inter_threads
         )
         self._initialized = True
-        logger.info("Breeze ASR model loaded successfully.")
+        logger.info(
+            f"Breeze ASR model loaded successfully. "
+            f"(inter_threads={self.config.inter_threads})"
+        )
 
     def _transcribe_sync(self, audio_path: str, language: str) -> ASRResult:
         """
