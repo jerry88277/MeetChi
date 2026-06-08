@@ -171,14 +171,16 @@ export default function DashboardPage() {
 
     const { isRegenerating, regenerateSummary, regenerateTranscript } = useSummary(fetchMeetings);
 
-    // Sync session token with API client
+    // Sync session token with API client; re-fetch meetings after token is updated
+    // so the new account's data is loaded with the correct auth credential.
     useEffect(() => {
         if (session?.idToken) {
             api.setToken(session.idToken);
-        } else {
+            fetchMeetings();
+        } else if (session !== undefined) {
             api.setToken(null);
         }
-    }, [session?.idToken]);
+    }, [session?.idToken, fetchMeetings]);
 
     // --- Dashboard Refresh D3 Fix ---
     // D3-1: Visibility Refresh — refetch when tab becomes visible

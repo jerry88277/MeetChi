@@ -36,12 +36,9 @@ export function useMeetings() {
         }
     }, []);
 
-    // Re-fetch when the signed-in user changes (e.g., UAT → Google or vice versa),
-    // so the meeting list always reflects the current account.
-    const userEmail = session?.user?.email;
     useEffect(() => {
-        if (userEmail !== undefined) fetchMeetings();
-    }, [userEmail, fetchMeetings]);
+        fetchMeetings();
+    }, [fetchMeetings]);
 
     const showSuccess = useCallback((msg: string) => {
         setSuccessMessage(msg);
