@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Send, FileText, Loader2, History, ChevronDown, X } from "lucide-react";
+import { Send, FileText, Loader2, History, ChevronDown, X, Sparkles } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { api, RagCitation, RagHistoryItem } from "@/lib/api";
+import { api, RagCitation, RagHistoryItem, RagGreetingResponse } from "@/lib/api";
 
 interface ChatPanelProps {
   onCitationClick: (citation: RagCitation) => void;
@@ -63,6 +63,20 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
   }, [messages, storageKey]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  // 2026-06-08 g6: Personalized greeting card (five-star hotel check-in UX)
+  const [greeting, setGreeting] = useState<RagGreetingResponse | null>(null);
+  const [greetingLoading, setGreetingLoading] = useState(false);
+  const [greetingCollapsed, setGreetingCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (!userUpn) return;
+    setGreetingLoading(true);
+    api.getRagGreeting(userUpn)
+      .then(setGreeting)
+      .catch(() => {}) // silently hide on error — greeting is non-critical
+      .finally(() => setGreetingLoading(false));
+  }, [userUpn]);
 
   // 2026-05-25 Y5：RAG 查詢歷史。Drop-down 顯示近 90 天的查詢，點擊可 re-fire。
   const [historyItems, setHistoryItems] = useState<RagHistoryItem[]>([]);
@@ -259,6 +273,78 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
       )}
 
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+        {/* Greeting Card — loads once on mount, collapses after first interaction */}
+        {greetingLoading && (
+          <div className="mb-2 p-4 rounded-2xl border border-border bg-card animate-pulse">
+            <div className="h-4 bg-muted rounded w-3/4 mb-2" />
+            <div className="h-3 bg-muted rounded w-1/2" />
+          </div>
+        )}
+        {!greetingLoading && greeting && (
+          <div className="mb-2 rounded-2xl border border-brand-cta/20 bg-card shadow-sm overflow-hidden">
+            {/* Header — always visible, toggles collapse */}
+            <button
+              type="button"
+              onClick={() => setGreetingCollapsed(v => !v)}
+              className="w-full flex items-start justify-between gap-3 p-4 hover:bg-muted/50 transition-colors text-left"
+            >
+              <div className="flex items-start gap-2.5 min-w-0">
+                <Sparkles size={15} className="text-brand-cta mt-0.5 shrink-0" />
+                <p className="text-sm text-foreground leading-snug">{greeting.greeting_text}</p>
+              </div>
+              <ChevronDown
+                size={14}
+                className={`shrink-0 mt-1 text-muted-foreground transition-transform ${greetingCollapsed ? "" : "rotate-180"}`}
+              />
+            </button>
+
+            {/* Expanded body */}
+            {!greetingCollapsed && (
+              <div className="px-4 pb-4 space-y-3 border-t border-border/50">
+                {/* Top topic pills */}
+                {greeting.top_topics.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-3">
+                    {greeting.top_topics.map(topic => (
+                      <span
+                        key={topic}
+                        className="text-xs px-2.5 py-1 rounded-full bg-brand-cta/10 text-brand-cta border border-brand-cta/20"
+                      >
+                        {topic}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Pending action count */}
+                {greeting.pending_action_count > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    📌 您有{" "}
+                    <span className="font-semibold text-foreground">
+                      {greeting.pending_action_count}
+                    </span>{" "}
+                    項待辦行動項目尚未完成
+                  </p>
+                )}
+
+                {/* Suggested question chips → inject into input */}
+                {greeting.suggested_questions.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {greeting.suggested_questions.map(q => (
+                      <button
+                        key={q}
+                        type="button"
+                        onClick={() => setInput(q)}
+                        className="text-xs px-3 py-1.5 rounded-full border border-border bg-surface hover:bg-brand-cta/10 hover:border-brand-cta hover:text-brand-cta transition-colors text-muted-foreground text-left"
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-[85%] md:max-w-[75%] rounded-2xl p-4 md:p-5 ${msg.role === "user" ? "bg-brand-cta text-white rounded-br-none shadow-md" : "bg-card text-foreground rounded-bl-none shadow-sm border border-border"}`}>
