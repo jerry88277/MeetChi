@@ -610,3 +610,28 @@ config 欄位仍命名為 `inter_threads`（語意清楚），只在 `_load_mode
 - 修正後 log：`Breeze ASR model loaded successfully. (inter_threads=3)` ✅
 - 部署 revision：`meetchi-gpu-asr-00017-woq`（containerConcurrency=3, ASR_INTER_THREADS=3）
 
+
+## INC-016 — 後端改用 Cloud SQL（DATABASE_URL 未設定導致資料遺失）
+
+**日期**: 2026-06-08
+**嚴重度**: P0 (資料遺失)
+**影響**: 所有部署後會議記錄消失
+
+### 根本原因
+`database.py` 的預設值為 `sqlite:////tmp/sql_app.db`。Cloud Run 的 `/tmp` 在每次 revision 部署或 cold start 時清空，導致所有以 SQLite 儲存的會議資料消失。Cloud SQL instance (`meetchi-db-pg`) 早已存在但 `DATABASE_URL` env var 從未設定到 Cloud Run backend service。
+
+### 修復
+```
+DATABASE_URL=postgresql://postgres:<pass>@/meetchi?host=/cloudsql/prj-ai-meetchi-du:asia-southeast1:meetchi-db-pg
+```
+設定到 backend Cloud Run service，revision 00013 起生效。
+
+### 復原資料
+Cloud SQL 中有 3 筆歷史記錄（SQLite 中的較新資料無法還原）:
+- 勤威國際-奇美廠內自駕和導航雲端維護案合併議題討論 (COMPLETED)
+- 鴻才討論 (COMPLETED)
+- 錄製 (2) (COMPLETED)
+
+### 預防措施
+- `DATABASE_URL` 已移入 Cloud Run env var，不再依賴 default 值
+- 未來新增 startup check：若 DB 為 SQLite，在 log 中發出 WARNING
