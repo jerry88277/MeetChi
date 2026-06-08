@@ -386,27 +386,29 @@ export const FeedbackModal = ({
                             </div>
                         </div>
 
-                        {/* Buttons */}
-                        <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-border">
+                        {/* Buttons — DDG §4.1: 表單 submit → brand-cta primary；
+                            「補更多細節」為次要動作，使用 outline 樣式。
+                            submit 放右側（慣例 primary 位置）。 */}
+                        <div className="flex flex-col-reverse sm:flex-row gap-2 pt-2 border-t border-border">
+                            <button
+                                onClick={() => setStage(2)}
+                                disabled={!stage1Valid || submitting}
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-card text-muted-foreground border border-border hover:border-brand-cta/40 hover:text-brand-cta rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                補更多細節
+                                <ChevronRight size={14} />
+                            </button>
                             <button
                                 onClick={() => handleSubmit(true)}
                                 disabled={!stage1Valid || submitting}
-                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-card text-brand-cta border border-brand-cta/30 hover:bg-brand-cta/5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-cta text-white hover:bg-brand-cta/90 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {submitting ? (
                                     <Loader2 size={14} className="animate-spin" />
                                 ) : (
                                     <Send size={14} />
                                 )}
-                                直接送出
-                            </button>
-                            <button
-                                onClick={() => setStage(2)}
-                                disabled={!stage1Valid || submitting}
-                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-cta text-white hover:bg-brand-cta/90 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                補更多細節
-                                <ChevronRight size={14} />
+                                送出回報
                             </button>
                         </div>
                     </div>

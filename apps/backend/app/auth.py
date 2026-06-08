@@ -4,6 +4,7 @@ MeetChi Backend Authentication Module
 Supports two OAuth providers:
   - Google   : id_token issued by Google OAuth (accounts.google.com)
   - Microsoft: id_token issued by Microsoft Entra ID (login.microsoftonline.com)
+  - UAT      : HS256 token signed by MeetChi frontend with AUTH_SECRET (UAT only)
 
 Provider is auto-detected from the JWT `iss` claim — no extra header needed.
 If neither MS_CLIENT_ID nor GOOGLE_CLIENT_ID is configured, the module still
@@ -44,6 +45,11 @@ MS_TENANT_ID = os.getenv("MS_TENANT_ID", "common")  # use tenant UUID for single
 # Restrict sign-in to a specific email domain (e.g. "chimei.com.tw")
 AUTH_ALLOWED_DOMAIN = os.getenv("AUTH_ALLOWED_DOMAIN", "")
 
+# UAT mode: shared secret with NextAuth frontend (AUTH_SECRET env var)
+# When UAT_ENABLED=true on frontend, it mints HS256 tokens with iss="meetchi-uat"
+# Backend verifies them with this same secret.
+AUTH_SECRET = os.getenv("AUTH_SECRET", "")
+
 security = HTTPBearer(auto_error=False)
 
 # ── Microsoft JWKS cache ──────────────────────────────────────────────────────
@@ -73,13 +79,15 @@ async def _get_ms_jwks() -> dict:
 def _peek_token_provider(token: str) -> str:
     """
     Decode JWT payload without signature verification to determine the provider.
-    Returns "microsoft" or "google".
+    Returns "microsoft", "uat", or "google".
     """
     try:
         claims = jose_jwt.get_unverified_claims(token)
         iss = claims.get("iss", "")
         if "microsoftonline.com" in iss:
             return "microsoft"
+        if iss == "meetchi-uat":
+            return "uat"
     except Exception:
         pass
     return "google"
@@ -181,14 +189,57 @@ async def verify_microsoft_token(token: str) -> Optional[dict]:
         return None
 
 
+# ── UAT verification ──────────────────────────────────────────────────────────
+
+async def verify_uat_token(token: str) -> Optional[dict]:
+    """
+    Verify a UAT HS256 token minted by the MeetChi frontend.
+
+    The frontend signs this token with AUTH_SECRET when a user logs in via
+    the Credentials provider (UAT_ENABLED=true).  The token carries:
+      iss: "meetchi-uat"
+      sub / email / name from the UAT_USERS env list.
+
+    This path is ONLY active when AUTH_SECRET is configured on the backend.
+    UAT tokens are intentionally short-lived (8h) and bypass domain restriction.
+    """
+    if not AUTH_SECRET:
+        logger.warning("UAT token received but AUTH_SECRET is not set on backend")
+        return None
+    try:
+        payload = jose_jwt.decode(token, AUTH_SECRET, algorithms=["HS256"])
+        if payload.get("iss") != "meetchi-uat":
+            logger.warning(f"UAT token has unexpected iss: {payload.get('iss')}")
+            return None
+        email = payload.get("email", "")
+        return {
+            "id": payload.get("sub", email),
+            "email": email,
+            "name": payload.get("name", "UAT User"),
+            "picture": None,
+            "email_verified": True,
+            "provider": "uat",
+        }
+    except ExpiredSignatureError:
+        logger.warning("UAT token expired")
+        return None
+    except JWTError as e:
+        logger.warning(f"UAT token verification failed: {e}")
+        return None
+
+
 # ── Domain restriction ────────────────────────────────────────────────────────
 
 def _check_allowed_domain(user: dict) -> bool:
     """
     If AUTH_ALLOWED_DOMAIN is set, only allow emails from that domain.
     e.g. AUTH_ALLOWED_DOMAIN=chimei.com.tw → only @chimei.com.tw users pass.
+    UAT users (provider="uat") bypass domain restriction intentionally.
     """
     if not AUTH_ALLOWED_DOMAIN:
+        return True
+    # UAT users bypass domain restriction (they may use non-chimei test emails)
+    if user.get("provider") == "uat":
         return True
     email = user.get("email", "") or ""
     return email.lower().endswith(f"@{AUTH_ALLOWED_DOMAIN.lower()}")
@@ -241,6 +292,8 @@ async def get_current_user(
     provider = _peek_token_provider(credentials.credentials)
     if provider == "microsoft":
         user = await verify_microsoft_token(credentials.credentials)
+    elif provider == "uat":
+        user = await verify_uat_token(credentials.credentials)
     else:
         user = await verify_google_token(credentials.credentials)
 

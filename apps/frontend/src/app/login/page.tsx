@@ -3,9 +3,10 @@
 import { signIn } from "next-auth/react"
 import { useSearchParams } from "next/navigation"
 import { Suspense, useState } from "react"
-import { AlertCircle, Loader2 } from "lucide-react"
+import { AlertCircle, Loader2, TestTube2 } from "lucide-react"
 
 const MS_AUTH_ENABLED = process.env.NEXT_PUBLIC_MS_AUTH_ENABLED === "true"
+const UAT_ENABLED = process.env.NEXT_PUBLIC_UAT_ENABLED === "true"
 
 const ERROR_MESSAGES: Record<string, string> = {
     OAuthSignin: "啟動登入時發生錯誤，請稍後再試。",
@@ -15,12 +16,12 @@ const ERROR_MESSAGES: Record<string, string> = {
     Callback: "登入回呼失敗，請重新登入。",
     OAuthAccountNotLinked: "此 Email 已有其他登入方式，請改用原本的登入方式。",
     EmailSignin: "Email 登入連結寄送失敗。",
-    CredentialsSignin: "帳號或密碼錯誤。",
+    CredentialsSignin: "帳號或密碼錯誤，請確認測試帳號資訊。",
     SessionRequired: "請先登入再繼續。",
     Default: "登入失敗，請稍後再試。",
 };
 
-type SigningInProvider = "google" | "microsoft" | null
+type SigningInProvider = "google" | "microsoft" | "credentials" | null
 
 function LoginContent() {
     const searchParams = useSearchParams()
@@ -28,6 +29,8 @@ function LoginContent() {
     const errorParam = searchParams.get("error")
     const errorMessage = errorParam ? (ERROR_MESSAGES[errorParam] ?? ERROR_MESSAGES.Default) : null
     const [signingIn, setSigningIn] = useState<SigningInProvider>(null)
+    const [uatEmail, setUatEmail] = useState("")
+    const [uatPassword, setUatPassword] = useState("")
 
     const handleSignIn = async (provider: "google" | "microsoft") => {
         if (signingIn) return
@@ -40,28 +43,53 @@ function LoginContent() {
         }
     }
 
+    const handleUATSignIn = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (signingIn || !uatEmail || !uatPassword) return
+        setSigningIn("credentials")
+        try {
+            const result = await signIn("credentials", {
+                email: uatEmail,
+                password: uatPassword,
+                callbackUrl,
+                redirect: false,
+            })
+            if (result?.error) {
+                setSigningIn(null)
+            } else if (result?.url) {
+                window.location.href = result.url
+            }
+        } catch (e) {
+            console.error("UAT signIn error:", e)
+            setSigningIn(null)
+        }
+    }
+
     return (
-        <div className="min-h-screen bg-gradient-to-br from-brand-navy via-brand-cta to-brand-navy flex items-center justify-center p-6">
+        {/* DDG §1「永續×人文」: 底色改 surface (#FAFAF8) 減輕主色佔比；
+            品牌識別集中在 logo card（brand-navy 底），不再全版深色漸層。
+            參考 Granola calm productivity 低彩基調。*/}
+        <div className="min-h-screen bg-surface flex items-center justify-center p-6">
             <div className="w-full max-w-md">
-                {/* Logo */}
+                {/* Logo — brand-navy 集中於此，維持品牌識別但不佔滿畫面 */}
                 <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center w-16 h-16 bg-brand-cta rounded-2xl mb-4 shadow-lg">
+                    <div className="inline-flex items-center justify-center w-16 h-16 bg-brand-navy rounded-2xl mb-4 shadow-lg">
                         <span className="text-3xl font-bold text-white">M</span>
                     </div>
-                    <h1 className="text-3xl font-bold text-white">MeetChi</h1>
-                    <p className="text-white/60 mt-2">AI 會議助理</p>
+                    <h1 className="text-3xl font-bold text-foreground">MeetChi</h1>
+                    <p className="text-muted-foreground mt-2">AI 會議助理</p>
                 </div>
 
                 {/* Login Card */}
-                <div className="bg-card/10 backdrop-blur-xl rounded-2xl p-8 border border-white/20 shadow-2xl">
-                    <h2 className="text-xl font-semibold text-white text-center mb-6">
+                <div className="bg-card rounded-2xl p-8 border border-border shadow-lg">
+                    <h2 className="text-xl font-semibold text-foreground text-center mb-6">
                         登入您的帳戶
                     </h2>
 
                     {errorMessage && (
-                        <div role="alert" className="mb-5 bg-status-error/15 border border-status-error/30 rounded-xl p-3 flex items-start gap-2 text-sm">
+                        <div role="alert" className="mb-5 bg-status-error/10 border border-status-error/30 rounded-xl p-3 flex items-start gap-2 text-sm">
                             <AlertCircle className="w-4 h-4 text-status-error flex-shrink-0 mt-0.5" />
-                            <span className="text-white/90">{errorMessage}</span>
+                            <span className="text-foreground">{errorMessage}</span>
                         </div>
                     )}
 
@@ -73,7 +101,7 @@ function LoginContent() {
                                 onClick={() => handleSignIn("microsoft")}
                                 disabled={signingIn !== null}
                                 aria-label="使用奇美帳戶（Microsoft）登入"
-                                className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl font-medium transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-60 disabled:cursor-not-allowed text-white"
+                                className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed text-white"
                                 style={{ backgroundColor: signingIn === "microsoft" ? "#005a9e" : "#0078D4" }}
                             >
                                 {signingIn === "microsoft" ? (
@@ -103,7 +131,7 @@ function LoginContent() {
                             onClick={() => handleSignIn("google")}
                             disabled={signingIn !== null}
                             aria-label="使用 Google 帳戶登入"
-                            className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-card rounded-xl text-foreground font-medium hover:bg-muted transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-60 disabled:cursor-not-allowed"
+                            className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-muted rounded-xl text-foreground font-medium hover:bg-border transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                             {signingIn === "google" ? (
                                 <>
@@ -124,13 +152,57 @@ function LoginContent() {
                         </button>
                     </div>
 
-                    <p className="text-center text-white/60 text-sm mt-6">
+                    <p className="text-center text-muted-foreground text-sm mt-6">
                         登入即表示您同意我們的服務條款與隱私政策
                     </p>
                 </div>
 
+                {/* UAT 測試帳號登入 — 只在 NEXT_PUBLIC_UAT_ENABLED=true 時顯示 */}
+                {UAT_ENABLED && (
+                    <div className="mt-4 bg-card rounded-2xl p-6 border border-brand-amber/30 shadow-sm">
+                        <div className="flex items-center gap-2 mb-4">
+                            <TestTube2 size={16} className="text-brand-amber" />
+                            <span className="text-sm font-semibold text-foreground">UAT 測試帳號登入</span>
+                            <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-brand-amber/10 text-brand-amber rounded font-medium">
+                                測試環境
+                            </span>
+                        </div>
+                        <form onSubmit={handleUATSignIn} className="space-y-3">
+                            <input
+                                type="email"
+                                placeholder="測試 Email"
+                                value={uatEmail}
+                                onChange={(e) => setUatEmail(e.target.value)}
+                                required
+                                disabled={signingIn !== null}
+                                className="w-full px-4 py-3 bg-surface border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-cta disabled:opacity-60"
+                            />
+                            <input
+                                type="password"
+                                placeholder="密碼"
+                                value={uatPassword}
+                                onChange={(e) => setUatPassword(e.target.value)}
+                                required
+                                disabled={signingIn !== null}
+                                className="w-full px-4 py-3 bg-surface border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-cta disabled:opacity-60"
+                            />
+                            <button
+                                type="submit"
+                                disabled={signingIn !== null || !uatEmail || !uatPassword}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-brand-cta text-white rounded-xl text-sm font-medium hover:bg-brand-cta/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {signingIn === "credentials" ? (
+                                    <><Loader2 size={16} className="animate-spin" />登入中...</>
+                                ) : (
+                                    "以測試帳號登入"
+                                )}
+                            </button>
+                        </form>
+                    </div>
+                )}
+
                 {/* Footer */}
-                <p className="text-center text-white/50 text-sm mt-8">
+                <p className="text-center text-muted-foreground text-sm mt-8">
                     © 2026 MeetChi. All rights reserved.
                 </p>
             </div>

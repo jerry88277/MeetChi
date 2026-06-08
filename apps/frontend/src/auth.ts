@@ -1,6 +1,8 @@
 import NextAuth from "next-auth"
 import Google from "next-auth/providers/google"
 import MicrosoftEntraId from "next-auth/providers/microsoft-entra-id"
+import Credentials from "next-auth/providers/credentials"
+import crypto from "crypto"
 
 // Extend session types to include idToken and provider
 declare module "next-auth" {
@@ -14,6 +16,22 @@ declare module "next-auth" {
             image?: string | null;
         };
     }
+}
+
+/** Mint a HS256 JWT signed with AUTH_SECRET — verified by backend verify_uat_token(). */
+function mintUATToken(payload: Record<string, unknown>, secret: string): string {
+    const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url")
+    const body = Buffer.from(JSON.stringify({
+        ...payload,
+        iss: "meetchi-uat",
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 8 * 3600,  // 8h
+    })).toString("base64url")
+    const sig = crypto
+        .createHmac("sha256", secret)
+        .update(`${header}.${body}`)
+        .digest("base64url")
+    return `${header}.${body}.${sig}`
 }
 
 const providers = [
@@ -55,6 +73,31 @@ if (process.env.AUTH_MICROSOFT_ENTRA_ID_ID) {
     )
 }
 
+// UAT Credentials provider — enabled via UAT_ENABLED=true env var.
+// Accounts are stored server-side in UAT_USERS (JSON array, never exposed to client).
+// Each UAT login mints a short-lived HS256 token verified by the backend.
+if (process.env.UAT_ENABLED === "true") {
+    type UATUser = { email: string; password: string; name: string }
+    const uatUsers: UATUser[] = JSON.parse(process.env.UAT_USERS || "[]")
+
+    providers.push(
+        Credentials({
+            id: "credentials",
+            name: "測試帳號",
+            credentials: {
+                email: { label: "Email", type: "email" },
+                password: { label: "密碼", type: "password" },
+            },
+            async authorize(credentials) {
+                const user = uatUsers.find(
+                    (u) => u.email === credentials.email && u.password === credentials.password
+                )
+                return user ? { id: user.email, email: user.email, name: user.name } : null
+            },
+        }) as never
+    )
+}
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
     providers,
     pages: {
@@ -68,6 +111,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             }
             if (account?.provider) {
                 token.provider = account.provider
+            }
+            // UAT Credentials: mint a HS256 token the backend can verify.
+            // Google/MS have real id_tokens; credentials provider has none.
+            if (account?.provider === "credentials" && token.email && process.env.AUTH_SECRET) {
+                token.idToken = mintUATToken(
+                    { sub: token.sub ?? token.email, email: token.email, name: token.name },
+                    process.env.AUTH_SECRET
+                )
             }
             return token
         },
@@ -84,8 +135,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             }
             return session
         },
-        // Restrict sign-in to the allowed domain when AUTH_ALLOWED_DOMAIN is set
-        async signIn({ user }) {
+        // Restrict sign-in to the allowed domain when AUTH_ALLOWED_DOMAIN is set.
+        // UAT credentials users bypass this check (they may use non-company emails).
+        async signIn({ user, account }) {
+            if (account?.provider === "credentials") return true
             const allowedDomain = process.env.AUTH_ALLOWED_DOMAIN
             if (allowedDomain) {
                 return user.email?.toLowerCase().endsWith(`@${allowedDomain.toLowerCase()}`) ?? false
