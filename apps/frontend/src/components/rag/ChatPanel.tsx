@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Send, FileText, Loader2, History, ChevronDown, X, Sparkles } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { api, RagCitation, RagHistoryItem, RagGreetingResponse } from "@/lib/api";
+import { RAG_INACTIVITY_MS } from "@/lib/config";
 
 interface ChatPanelProps {
   onCitationClick: (citation: RagCitation) => void;
@@ -42,8 +43,25 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
   const storageKey = userUpn ? `rag_messages_${userUpn}` : null;
 
   const [messages, setMessages] = useState<Message[]>(() => {
-    if (typeof window === "undefined" || !storageKey) return [WELCOME_MESSAGE];
+    if (typeof window === "undefined" || !storageKey || !userUpn) return [WELCOME_MESSAGE];
     try {
+      // Clear on page reload (navigation type = reload)
+      const navEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+      const isReload = navEntries[0]?.type === 'reload';
+      if (isReload) {
+        sessionStorage.removeItem(storageKey);
+        localStorage.removeItem(`rag_last_active_${userUpn}`);
+        return [WELCOME_MESSAGE];
+      }
+
+      // Clear on 30min inactivity
+      const lastActive = localStorage.getItem(`rag_last_active_${userUpn}`);
+      if (lastActive && Date.now() - parseInt(lastActive, 10) > RAG_INACTIVITY_MS) {
+        sessionStorage.removeItem(storageKey);
+        localStorage.removeItem(`rag_last_active_${userUpn}`);
+        return [WELCOME_MESSAGE];
+      }
+
       const saved = sessionStorage.getItem(storageKey);
       if (saved) return JSON.parse(saved) as Message[];
     } catch {
@@ -105,6 +123,10 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
     if (!input.trim() || isLoading) return;
     
     const userMsg: Message = { id: Date.now().toString(), role: "user", text: input, citations: [] };
+    // Update last active timestamp for 30min inactivity tracking
+    if (userUpn) {
+      try { localStorage.setItem(`rag_last_active_${userUpn}`, Date.now().toString()); } catch {}
+    }
     setMessages(prev => [...prev, userMsg]);
     setInput("");
     setIsLoading(true);

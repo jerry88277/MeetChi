@@ -24,6 +24,8 @@ import { keys, get, del } from 'idb-keyval';
 import type { Meeting } from '@/types/meeting';
 import { transformMeeting } from '@/lib/transform';
 import { Sidebar } from '@/components/Sidebar';
+import { UATBanner } from '@/components/UATBanner';
+import { TourOverlay } from '@/components/TourOverlay';
 import { DashboardView } from '@/components/DashboardView';
 import { DetailView } from '@/components/DetailView';
 import { RecordingView } from '@/components/RecordingView';
@@ -41,6 +43,7 @@ import { useFontSize } from '@/hooks/useFontSize';
 import { installConsoleErrorHook } from '@/lib/feedback-metadata';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { TOUR_STORAGE_KEY } from '@/lib/config';
 
 // --- Main App Component ---
 export default function DashboardPage() {
@@ -58,6 +61,13 @@ export default function DashboardPage() {
     const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isRagSidebarOpen, setIsRagSidebarOpen] = useState(false);
+    const [tourOpen, setTourOpen] = useState(false);
+
+    // Auto-open tour for first-time users
+    React.useEffect(() => {
+        const done = localStorage.getItem(TOUR_STORAGE_KEY);
+        if (!done) setTourOpen(true);
+    }, []);
 
     // Custom hooks
     const {
@@ -675,10 +685,13 @@ export default function DashboardPage() {
                     user={session?.user}
                     provider={(session as { provider?: string } | null)?.provider}
                     onOpenFeedback={() => setFeedbackContext({})}
+                    onStartTour={() => setTourOpen(true)}
                 />
             )}
 
             <main className="flex-1 flex flex-col relative overflow-hidden">
+                <UATBanner />
+                <TourOverlay open={tourOpen} onClose={() => setTourOpen(false)} />
                 {currentView !== 'record' && (
                     <div className="md:hidden bg-background border-b border-border p-4 flex items-center justify-between z-20">
                         <div className="flex items-center gap-2">

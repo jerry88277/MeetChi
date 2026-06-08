@@ -141,6 +141,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
 
                         {/* Primary: upload audio file — direct action, no dropdown */}
                         <button
+                            data-tour="upload-cta"
                             onClick={() => !isProcessing && onUploadClick?.()}
                             disabled={isProcessing}
                             aria-label="上傳音檔"
@@ -235,6 +236,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
             {!isLoading && (
                 <div
                     className="relative grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+                    data-tour="meetings-grid"
                 >
                     {filteredMeetings.map((meeting, index) => {
                         const isSelected = selectedIds.has(meeting.id);

@@ -11,7 +11,6 @@ import {
     Type,
     RotateCcw,
 } from 'lucide-react';
-import { API_BASE_URL } from '@/lib/api';
 // 2026-05-25 (Y1)：原 useTheme 用 data-theme attribute，與 providers 掛的
 // next-themes (.dark class) 不相容 → toggle 無視覺變化。改用 next-themes 統一。
 import { useTheme } from 'next-themes';
@@ -84,13 +83,13 @@ export const SettingsView = ({ onBack, isConnected, isLoadingConnection = false 
                             </div>
                         )}
                         <div>
-                            <label className="block text-sm font-medium text-foreground/70 mb-1">Backend URL</label>
-                            <input
-                                type="text"
-                                value={API_BASE_URL}
-                                readOnly
-                                className="w-full px-4 py-2 bg-muted border border-border rounded-lg text-muted-foreground font-mono text-sm"
-                            />
+                            <label className="block text-sm font-medium text-foreground/70 mb-1">服務連線</label>
+                            <div className="flex items-center gap-2 px-4 py-2.5 bg-muted border border-border rounded-lg">
+                                <div className={`w-2 h-2 rounded-full shrink-0 ${isConnected ? 'bg-status-success animate-pulse' : 'bg-status-error'}`} />
+                                <span className="text-sm text-muted-foreground">
+                                    {isConnected ? 'AI 服務連線正常' : '服務暫時無法連線'}
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </div>
