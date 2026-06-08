@@ -181,7 +181,7 @@ export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
 
             {/* 顆粒細：計數 chips（只在 completed 顯示） */}
             {meeting.status === 'completed' && (
-                <div className="px-5 mt-4 mb-4 flex items-center gap-3 text-xs">
+                <div className="px-5 mt-4 pb-5 flex items-center gap-3 text-xs">
                     <Chip
                         icon={<CheckCircle2 size={12} />}
                         label={`${decisionsCount}`}
@@ -203,7 +203,7 @@ export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
                 </div>
             )}
             {/* 非 completed 狀態：空白佔位讓不同 status 卡片同高 */}
-            {meeting.status !== 'completed' && <div className="h-4" />}
+            {meeting.status !== 'completed' && <div className="h-5" />}
         </div>
     );
 };
