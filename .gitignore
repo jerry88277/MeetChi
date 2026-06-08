@@ -176,3 +176,7 @@ scratch/
 
 # Personal notes / HackMD imports / reference materials (含版權內容，不入 git)
 .claude/notes/
+
+
+# UAT test account credentials — never commit
+UAT_TEST_ACCOUNTS.md
