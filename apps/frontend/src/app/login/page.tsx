@@ -159,48 +159,55 @@ function LoginContent() {
                     </p>
                 </div>
 
-                {/* UAT 測試帳號登入 — 只在 NEXT_PUBLIC_UAT_ENABLED=true 時顯示 */}
+                {/* UAT 測試帳號登入 — 分隔線後獨立卡片，視覺語言與主卡一致 */}
                 {UAT_ENABLED && (
-                    <div className="mt-4 bg-card rounded-2xl p-6 border border-brand-amber/30 shadow-sm">
-                        <div className="flex items-center gap-2 mb-4">
-                            <TestTube2 size={16} className="text-brand-amber" />
-                            <span className="text-sm font-semibold text-foreground">UAT 測試帳號登入</span>
-                            <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-brand-amber/10 text-brand-amber rounded font-medium">
-                                測試環境
-                            </span>
+                    <>
+                        <div className="flex items-center gap-3 my-2">
+                            <div className="flex-1 h-px bg-border" />
+                            <span className="text-xs text-muted-foreground px-2">或使用測試帳號</span>
+                            <div className="flex-1 h-px bg-border" />
                         </div>
-                        <form onSubmit={handleUATSignIn} className="space-y-3">
-                            <input
-                                type="email"
-                                placeholder="測試 Email"
-                                value={uatEmail}
-                                onChange={(e) => setUatEmail(e.target.value)}
-                                required
-                                disabled={signingIn !== null}
-                                className="w-full px-4 py-3 bg-surface border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-cta disabled:opacity-60"
-                            />
-                            <input
-                                type="password"
-                                placeholder="密碼"
-                                value={uatPassword}
-                                onChange={(e) => setUatPassword(e.target.value)}
-                                required
-                                disabled={signingIn !== null}
-                                className="w-full px-4 py-3 bg-surface border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-cta disabled:opacity-60"
-                            />
-                            <button
-                                type="submit"
-                                disabled={signingIn !== null || !uatEmail || !uatPassword}
-                                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-brand-cta text-white rounded-xl text-sm font-medium hover:bg-brand-cta/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {signingIn === "credentials" ? (
-                                    <><Loader2 size={16} className="animate-spin" />登入中...</>
-                                ) : (
-                                    "以測試帳號登入"
-                                )}
-                            </button>
-                        </form>
-                    </div>
+                        <div className="bg-card rounded-2xl p-6 border border-border shadow-sm">
+                            <div className="flex items-center gap-2 mb-4">
+                                <TestTube2 size={14} className="text-muted-foreground" />
+                                <span className="text-sm font-medium text-foreground">UAT 測試帳號</span>
+                                <span className="ml-auto text-[10px] px-2 py-0.5 bg-muted text-muted-foreground rounded-full font-medium tracking-wide">
+                                    測試專用
+                                </span>
+                            </div>
+                            <form onSubmit={handleUATSignIn} className="space-y-3">
+                                <input
+                                    type="email"
+                                    placeholder="測試 Email"
+                                    value={uatEmail}
+                                    onChange={(e) => setUatEmail(e.target.value)}
+                                    required
+                                    disabled={signingIn !== null}
+                                    className="w-full px-4 py-3 bg-surface border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-cta disabled:opacity-60"
+                                />
+                                <input
+                                    type="password"
+                                    placeholder="密碼"
+                                    value={uatPassword}
+                                    onChange={(e) => setUatPassword(e.target.value)}
+                                    required
+                                    disabled={signingIn !== null}
+                                    className="w-full px-4 py-3 bg-surface border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-cta disabled:opacity-60"
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={signingIn !== null || !uatEmail || !uatPassword}
+                                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-brand-cta text-white rounded-xl text-sm font-medium hover:bg-brand-cta/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {signingIn === "credentials" ? (
+                                        <><Loader2 size={16} className="animate-spin" />登入中...</>
+                                    ) : (
+                                        "以測試帳號登入"
+                                    )}
+                                </button>
+                            </form>
+                        </div>
+                    </>
                 )}
 
                 {/* Footer */}

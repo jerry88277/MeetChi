@@ -7,12 +7,11 @@ import {
     Settings,
     X,
     LogOut,
-    Shield,
     LayoutTemplate,
     MessageSquare,
     MessageSquareWarning,
+    FlaskConical,
 } from 'lucide-react';
-import { API_BASE_URL } from '@/lib/api';
 import { ThemeToggle } from './ThemeToggle';
 
 interface SidebarProps {
@@ -26,17 +25,18 @@ interface SidebarProps {
         email?: string | null;
         image?: string | null;
     };
-    /** 2026-05-11：FeedbackModal 升級到 page 層統一管理；Sidebar 只觸發 callback。
-     *  callback 不帶 meeting_id → 一般回報；detail 頁的「回報這個會議」帶 id。 */
+    /** provider = "credentials" 表示 UAT 測試帳號 */
+    provider?: string | null;
     onOpenFeedback?: () => void;
 }
 
-export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen, isConnected, user, onOpenFeedback }: SidebarProps) => {
+export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen, isConnected, user, provider, onOpenFeedback }: SidebarProps) => {
+    const isUAT = provider === "credentials";
+
     const menuItems = [
         { id: 'dashboard', icon: FileText, label: '所有會議', primary: true },
         { id: 'rag', icon: MessageSquare, label: '跨會議知識庫' },
         { id: 'templates', icon: LayoutTemplate, label: '模板管理' },
-        { id: 'admin', icon: Shield, label: '管理' },
         { id: 'settings', icon: Settings, label: '系統設定' },
     ];
 
@@ -88,7 +88,7 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen
                     ))}
                 </nav>
 
-                {/* PR24: 回報問題入口 — 一般回報（無 meeting context） */}
+                {/* 回報問題入口 */}
                 {onOpenFeedback && (
                     <div className="px-4 pb-2">
                         <button
@@ -115,7 +115,14 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen
                                 </div>
                             )}
                             <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-white truncate">{user.name}</p>
+                                <div className="flex items-center gap-1.5">
+                                    <p className="text-sm font-medium text-white truncate">{user.name}</p>
+                                    {isUAT && (
+                                        <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-white/10 rounded text-[10px] text-white/60 shrink-0">
+                                            <FlaskConical size={9} />UAT
+                                        </span>
+                                    )}
+                                </div>
                                 <p className="text-xs text-white/40 truncate">{user.email}</p>
                             </div>
                         </div>
@@ -130,22 +137,17 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen
                     </div>
                 )}
 
-                {/* Backend Status */}
-                <div className="p-4 border-t border-white/10">
-                    <div className="bg-white/5 rounded-xl p-4">
-                        <p className="text-xs text-white/40 mb-2">後端狀態</p>
-                        <div className="flex items-center gap-2 mb-1">
-                            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-status-success animate-pulse' : 'bg-status-error'}`}></div>
-                            <span className="text-xs font-mono text-white/70">
-                                {isConnected ? '已連線' : '未連線'}
-                            </span>
-                        </div>
-                        <p className="text-xs text-white/30 truncate" title={API_BASE_URL}>
-                            {API_BASE_URL.replace('https://', '').substring(0, 25)}...
-                        </p>
+                {/* 系統狀態 — 使用者友善（不暴露 API URL） */}
+                <div className="px-4 pb-4">
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5">
+                        <div className={`w-2 h-2 rounded-full shrink-0 ${isConnected ? 'bg-status-success animate-pulse' : 'bg-status-error'}`} />
+                        <span className="text-xs text-white/50">
+                            {isConnected ? '系統運作正常' : '系統暫時無法連線'}
+                        </span>
                     </div>
                 </div>
             </div>
         </>
     );
 };
+

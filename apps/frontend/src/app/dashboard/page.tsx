@@ -45,7 +45,16 @@ import { toast } from 'sonner';
 // --- Main App Component ---
 export default function DashboardPage() {
     const { data: session } = useSession();
-    const [currentView, setCurrentView] = useState<'dashboard' | 'record' | 'detail' | 'settings' | 'templates' | 'admin' | 'rag'>('dashboard');
+
+    // Read initial view from URL ?view= param (for direct links and browser back/forward)
+    const getInitialView = (): 'dashboard' | 'record' | 'detail' | 'settings' | 'templates' | 'admin' | 'rag' => {
+        if (typeof window === 'undefined') return 'dashboard';
+        const v = new URLSearchParams(window.location.search).get('view');
+        if (v === 'settings' || v === 'templates' || v === 'rag') return v;
+        return 'dashboard';
+    };
+
+    const [currentView, setCurrentView] = useState<'dashboard' | 'record' | 'detail' | 'settings' | 'templates' | 'admin' | 'rag'>(getInitialView);
     const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isRagSidebarOpen, setIsRagSidebarOpen] = useState(false);
@@ -189,14 +198,15 @@ export default function DashboardPage() {
     //   修法：popstate event 同步 URL 與 currentView。
     //     URL 變回 /dashboard → setCurrentView('dashboard') + 清空 selectedMeeting
     //     URL 進 /dashboard/meetings/{id} → setCurrentView('detail')（前進按鈕）
+    //     URL 帶 ?view=xxx → 回到對應 tab
     useEffect(() => {
         if (typeof window === 'undefined') return;
         const handler = () => {
             const path = window.location.pathname;
+            const search = window.location.search;
             const m = path.match(/^\/dashboard\/meetings\/([0-9a-f-]{36})/i);
             if (m) {
                 const targetId = m[1];
-                // 前進到 detail：若已有 selectedMeeting 且 id 對得上就直接切；否則 refetch
                 if (selectedMeeting?.id === targetId) {
                     setCurrentView('detail');
                 } else {
@@ -208,8 +218,13 @@ export default function DashboardPage() {
                         .catch(() => setCurrentView('dashboard'));
                 }
             } else {
-                setSelectedMeeting(null);
-                setCurrentView('dashboard');
+                const viewParam = new URLSearchParams(search).get('view');
+                if (viewParam === 'settings' || viewParam === 'templates' || viewParam === 'rag') {
+                    setCurrentView(viewParam);
+                } else {
+                    setSelectedMeeting(null);
+                    setCurrentView('dashboard');
+                }
             }
         };
         window.addEventListener('popstate', handler);
@@ -440,9 +455,11 @@ export default function DashboardPage() {
     const handleBackToDashboard = () => {
         setSelectedMeeting(null);
         setCurrentView('dashboard');
-        // 2026-05-22 (feedback #8) 配對 handleViewDetail：返回 dashboard 時還原 URL
-        if (typeof window !== 'undefined' && window.location.pathname.startsWith('/dashboard/meetings/')) {
-            window.history.pushState(null, '', '/dashboard');
+        if (typeof window !== 'undefined') {
+            const loc = window.location;
+            if (loc.pathname.startsWith('/dashboard/meetings/') || loc.search.includes('view=')) {
+                window.history.pushState(null, '', '/dashboard');
+            }
         }
     };
 
@@ -552,12 +569,16 @@ export default function DashboardPage() {
     const handleTabChange = (tab: string) => {
         if (tab === 'settings') {
             setCurrentView('settings');
+            window.history.pushState(null, '', '/dashboard?view=settings');
         } else if (tab === 'templates') {
             setCurrentView('templates');
+            window.history.pushState(null, '', '/dashboard?view=templates');
         } else if (tab === 'admin') {
             setCurrentView('admin');
+            window.history.pushState(null, '', '/dashboard?view=admin');
         } else if (tab === 'rag') {
             setCurrentView('rag');
+            window.history.pushState(null, '', '/dashboard?view=rag');
         } else {
             handleBackToDashboard();
         }
@@ -650,6 +671,7 @@ export default function DashboardPage() {
                     setIsMobileOpen={setIsMobileMenuOpen}
                     isConnected={isConnected}
                     user={session?.user}
+                    provider={(session as { provider?: string } | null)?.provider}
                     onOpenFeedback={() => setFeedbackContext({})}
                 />
             )}

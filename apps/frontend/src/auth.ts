@@ -124,9 +124,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         },
         // Expose idToken and provider to the session (used by API client)
         async session({ session, token }) {
-            if (token.sub) {
-                session.user.id = token.sub
-            }
+            if (token.sub) session.user.id = token.sub
+            // Explicitly propagate name/email so UAT credentials users show their own info,
+            // not a stale Google session.
+            if (token.name) session.user.name = token.name as string
+            if (token.email) session.user.email = token.email as string
             if (token.idToken && typeof token.idToken === "string") {
                 session.idToken = token.idToken
             }
