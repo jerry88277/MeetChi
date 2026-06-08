@@ -117,7 +117,11 @@ export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
     return (
         <div
             onClick={() => onClick(meeting)}
-            className={`group bg-card border border-border rounded-xl cursor-pointer hover:shadow-lg hover:border-brand-cta/30 transition-all border-l-4 active:scale-[0.99] ${config.border}`}
+            className={`group bg-card rounded-2xl cursor-pointer
+                shadow-sm hover:shadow-[0_4px_24px_-4px_rgba(45,66,139,0.14)]
+                hover:border-l-brand-cta/60
+                transition-[shadow,transform,border-color] duration-200 ease-brand
+                border-l-4 active:scale-[0.98] active:duration-100 ${config.border}`}
             title={`Meeting ID: ${meeting.id}`}
         >
             {/* 顆粒大 1：模板 chip + 標題 + status badge */}

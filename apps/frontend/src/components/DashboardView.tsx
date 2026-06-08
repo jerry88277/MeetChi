@@ -105,24 +105,23 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <div className="flex items-center gap-3 mb-1">
-                        <h1 className="text-2xl font-bold text-foreground">我的會議記錄</h1>
+                        <h1 className="text-3xl font-bold tracking-tight text-foreground">我的會議記錄</h1>
                         <div className="flex items-center gap-1.5 px-2.5 py-1 bg-status-success/10 text-status-success border border-status-success/30 rounded-full text-xs font-medium" title="此平台的錄音與摘要處理完全在本地端或私有網路的 GPU 上運行，不會將機密對話外洩至任何第三方雲端服務。">
                             <Shield className="w-3.5 h-3.5" />
-                            <span>地端機密處理</span>
+                            <span>資料安全保護</span>
                         </div>
                     </div>
                     <p className="text-muted-foreground">管理並搜尋所有的會議內容</p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex items-center gap-2">
                     <button
                         onClick={onRefresh}
                         aria-label="重新整理會議列表"
                         title="重新整理會議列表"
-                        className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-foreground/70 hover:bg-muted font-medium transition-colors"
+                        className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-black/5 transition-colors duration-150 disabled:opacity-40"
                         disabled={isLoading}
                     >
                         <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
-                        <span className="hidden sm:inline">重新整理</span>
                     </button>
 
                     {/* Unified CTA Dropdown */}
@@ -134,7 +133,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                             aria-expanded={isMenuOpen}
                             aria-label="新增會議記錄"
                             title="新增會議記錄"
-                            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-brand-cta to-brand-cta/80 text-white rounded-lg hover:shadow-lg hover:shadow-brand-cta/30 font-medium transition-all disabled:opacity-70"
+                            className="flex items-center gap-2 px-4 py-2 bg-brand-cta text-white rounded-lg hover:bg-brand-cta/90 hover:shadow-[0_4px_16px_-2px_rgba(45,66,139,0.35)] font-medium transition-[colors,shadow] duration-200 disabled:opacity-70"
                         >
                             {isProcessing ? (
                                 <>
@@ -264,13 +263,13 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
 
             {/* Search Bar */}
             <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={20} />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
                 <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="搜尋會議標題、關鍵字或參與者..."
-                    className="w-full pl-12 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-cta focus:border-transparent shadow-sm transition-all"
+                    className="w-full pl-11 pr-4 py-3 bg-card border border-border rounded-full focus:outline-none focus:ring-2 focus:ring-brand-cta/40 focus:border-brand-cta/40 shadow-sm transition-[border-color,box-shadow] duration-200"
                 />
             </div>
 
