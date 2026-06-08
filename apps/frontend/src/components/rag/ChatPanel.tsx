@@ -23,21 +23,44 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
   const { data: session } = useSession();
   const userUpn = session?.user?.email ?? undefined;
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      role: "ai",
-      text:
-        "哈囉！我是您的跨會議助理。我會搜尋並**彙整您所有過去會議中同一主題**的相關內容。\n\n" +
-        "💡 建議用「主題 / 關鍵字」提問，避免直接用會議檔名。例如：\n" +
-        "  • 彙整最近所有提到 AI 投資 ROI 的討論\n" +
-        "  • 各場會議對 RAG 架構的看法有什麼共識或分歧？\n" +
-        "  • 客服流程改善在哪幾場會議被提到？\n" +
-        "  • 比較不同會議對 KPI 的設定差異\n\n" +
-        "聚焦單一主題每次效果最好；找不到答案時我會提示可能的近似主題。",
-      citations: []
+  const WELCOME_MESSAGE: Message = {
+    id: "welcome",
+    role: "ai",
+    text:
+      "哈囉！我是您的跨會議助理。我會搜尋並**彙整您所有過去會議中同一主題**的相關內容。\n\n" +
+      "💡 建議用「主題 / 關鍵字」提問，避免直接用會議檔名。例如：\n" +
+      "  • 彙整最近所有提到 AI 投資 ROI 的討論\n" +
+      "  • 各場會議對 RAG 架構的看法有什麼共識或分歧？\n" +
+      "  • 客服流程改善在哪幾場會議被提到？\n" +
+      "  • 比較不同會議對 KPI 的設定差異\n\n" +
+      "聚焦單一主題每次效果最好；找不到答案時我會提示可能的近似主題。",
+    citations: []
+  };
+
+  // 2026-06-08: Restore messages from sessionStorage so conversation survives tab switching.
+  // Key is scoped to userUpn so switching accounts always starts fresh.
+  const storageKey = userUpn ? `rag_messages_${userUpn}` : null;
+
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (typeof window === "undefined" || !storageKey) return [WELCOME_MESSAGE];
+    try {
+      const saved = sessionStorage.getItem(storageKey);
+      if (saved) return JSON.parse(saved) as Message[];
+    } catch {
+      // ignore parse errors
     }
-  ]);
+    return [WELCOME_MESSAGE];
+  });
+
+  // Sync messages to sessionStorage on every change
+  React.useEffect(() => {
+    if (!storageKey) return;
+    try {
+      sessionStorage.setItem(storageKey, JSON.stringify(messages));
+    } catch {
+      // quota exceeded or private browsing — silently ignore
+    }
+  }, [messages, storageKey]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 

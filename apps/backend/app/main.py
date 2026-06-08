@@ -196,25 +196,29 @@ if DATABASE_URL.startswith("postgresql"):
         ))
         conn.commit()
         
-        # BACKFILL: Find meetings with no participants and assign them to 'test@company.com'
+        # BACKFILL: Find meetings with no participants and bind to their owner_upn.
+        # 2026-06-08 fix: previously hardcoded 'test@company.com' which broke RAG access
+        # control — users querying with real UPN couldn't see their own meetings.
+        # Now we use the meeting's owner_upn as the participant so RAG JOIN works correctly.
         conn.execute(text("""
             INSERT INTO users (id, ad_upn, display_name, is_admin)
-            VALUES (:id, 'test@company.com', 'Test User', true)
+            SELECT gen_random_uuid()::varchar(36), m.owner_upn,
+                   split_part(m.owner_upn, '@', 1), false
+            FROM meetings m
+            WHERE m.owner_upn IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM users u WHERE u.ad_upn = m.owner_upn)
             ON CONFLICT (ad_upn) DO NOTHING;
-        """), {"id": str(uuid.uuid4())})
-        
-        conn.execute(text("""
-            UPDATE meetings SET owner_upn = 'test@company.com'
-            WHERE owner_upn IS NULL;
         """))
-        
+
         conn.execute(text("""
             INSERT INTO meeting_participants (id, meeting_id, user_upn, role, access_source, granted_at)
-            SELECT gen_random_uuid()::varchar(36), m.id, 'test@company.com', 'owner', 'upload', NOW()
+            SELECT gen_random_uuid()::varchar(36), m.id, m.owner_upn, 'owner', 'upload', NOW()
             FROM meetings m
-            WHERE NOT EXISTS (
+            WHERE m.owner_upn IS NOT NULL
+              AND NOT EXISTS (
                 SELECT 1 FROM meeting_participants mp WHERE mp.meeting_id = m.id
-            );
+            )
+            ON CONFLICT DO NOTHING;
         """))
         conn.commit()
         
