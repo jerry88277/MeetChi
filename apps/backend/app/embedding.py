@@ -316,9 +316,14 @@ def find_cross_meeting_refs(
 
 def backfill_all_embeddings(db: Session) -> dict:
     """
-    One-time backfill: generate embeddings for all existing meetings
-    that have NULL embeddings.
-    
+    Backfill: generate embeddings for meetings/segments with NULL embeddings.
+
+    Two-pass strategy:
+      Pass 1 — meetings with summary_json but no summary_embedding
+      Pass 2 — ALL COMPLETED meetings that still have un-embedded segments
+               (covers cases where summary_embedding was set but segment
+               embedding never ran, e.g. after pipeline was added later)
+
     Returns:
         Summary dict with counts of processed items
     """
@@ -326,27 +331,40 @@ def backfill_all_embeddings(db: Session) -> dict:
     if not client:
         logger.error("[Embedding] Cannot backfill: Gemini client unavailable")
         return {"error": "Gemini client unavailable"}
-    
-    # Find meetings with NULL summary_embedding
-    meetings = db.query(Meeting).filter(
-        Meeting.summary_embedding == None,  # noqa: E711
-        Meeting.summary_json != None  # noqa: E711
-    ).all()
-    
+
+    from sqlalchemy import text as sa_text
+    from app.models import MeetingStatus
+
     summary_count = 0
     segment_count = 0
-    
-    for meeting in meetings:
-        # Embed summary
+    meetings_touched: set = set()
+
+    # Pass 1: meetings with summary_json but no summary_embedding
+    meetings_need_summary = db.query(Meeting).filter(
+        Meeting.summary_embedding == None,  # noqa: E711
+        Meeting.summary_json != None,       # noqa: E711
+    ).all()
+    for meeting in meetings_need_summary:
+        meetings_touched.add(meeting.id)
         if embed_meeting_summary(db, meeting.id):
             summary_count += 1
-        
-        # Embed segments
-        seg_embedded = embed_transcript_segments(db, meeting.id)
-        segment_count += seg_embedded
-    
+
+    # Pass 2: COMPLETED meetings that have un-embedded segments
+    # Subquery: meeting_ids with at least one segment lacking content_embedding
+    rows = db.execute(sa_text(
+        "SELECT DISTINCT meeting_id FROM transcript_segments "
+        "WHERE content_embedding IS NULL"
+    )).fetchall()
+    meeting_ids_with_unembedded = {r[0] for r in rows}
+
+    for mid in meeting_ids_with_unembedded:
+        seg_embedded = embed_transcript_segments(db, mid)
+        if seg_embedded:
+            segment_count += seg_embedded
+            meetings_touched.add(mid)
+
     result = {
-        "meetings_processed": len(meetings),
+        "meetings_processed": len(meetings_touched),
         "summaries_embedded": summary_count,
         "segments_embedded": segment_count,
     }

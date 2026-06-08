@@ -395,9 +395,9 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
         )
 
     # Step 2.5: Sentence-window expansion (劇本 2 - app.rag.chunker)
-    # 對 top-K 命中段各自取前後 2 個 segments，提供 LLM 完整上下文
+    # window=5: 短會議口語 segment 平均 5-8 字，需更大視窗才能涵蓋因果上下文
     try:
-        expanded_rows = expand_with_context(db, results, window=2)
+        expanded_rows = expand_with_context(db, results, window=5)
     except Exception as e:
         logger.warning(
             f"[RAG] expand_with_context failed: {e}; falling back to raw rows"
