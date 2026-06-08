@@ -289,7 +289,7 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
               className="w-full flex items-start justify-between gap-3 p-4 hover:bg-muted/50 transition-colors text-left"
             >
               <div className="flex items-start gap-2.5 min-w-0">
-                <Sparkles size={15} className="text-brand-cta mt-0.5 shrink-0" />
+                <Sparkles size={15} className="text-brand-chimei-orange mt-0.5 shrink-0" />
                 <p className="text-sm text-foreground leading-snug">{greeting.greeting_text}</p>
               </div>
               <ChevronDown

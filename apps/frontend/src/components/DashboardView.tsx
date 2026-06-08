@@ -176,9 +176,9 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
 
             {/* Success Banner */}
             <div className={`transition-all duration-500 ease-in-out overflow-hidden ${successMessage ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'}`}>
-                <div className="bg-status-success/10 border border-status-success/30 rounded-xl p-4 flex items-center gap-3 mb-0">
-                    <CheckCircle2 className="text-status-success flex-shrink-0" size={20} />
-                    <p className="font-medium text-status-success">{successMessage}</p>
+                <div className="bg-brand-chimei-green/10 border border-brand-chimei-green/30 rounded-xl p-4 flex items-center gap-3 mb-0">
+                    <CheckCircle2 className="text-brand-chimei-green flex-shrink-0" size={20} />
+                    <p className="font-medium text-brand-chimei-green">{successMessage}</p>
                 </div>
             </div>
 

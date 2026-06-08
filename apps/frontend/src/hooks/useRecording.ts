@@ -120,7 +120,13 @@ export function useRecording() {
         } catch (err) {
             console.error('Upload failed:', err);
             setUploadState('error');
-            onError(err instanceof Error ? err.message : '上傳檔案失敗');
+            // Sanitize raw infrastructure errors (GCS bucket URLs, googleapis, etc.)
+            // to avoid exposing internal URLs that confuse end users.
+            const rawMsg = err instanceof Error ? err.message : '';
+            const isInfraError = /gcs|bucket|googleapis|storage\.cloud|signed.url|cors|access denied/i.test(rawMsg);
+            onError(isInfraError
+                ? '音檔上傳失敗，請確認網路連線後重試。若持續發生請透過回報功能通知管理員。'
+                : (rawMsg || '上傳檔案失敗'));
         }
     }, []);
 

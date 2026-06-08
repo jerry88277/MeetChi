@@ -34,7 +34,7 @@ interface MeetingCardProps {
  * 模板 label 對應（與 PR18 + PR21 SYSTEM_TEMPLATES 對齊）：
  */
 const TEMPLATE_LABEL_MAP: Record<string, { label: string; color: string }> = {
-    general:    { label: '通用',    color: 'bg-brand-cta/10 text-brand-cta' },
+    general:    { label: '通用',    color: 'bg-brand-chimei-teal/10 text-brand-chimei-teal' },
     sales_bant: { label: '銷售',    color: 'bg-brand-orange/10 text-brand-orange' },
     hr_star:    { label: '面試',    color: 'bg-brand-violet/10 text-brand-violet' },
     rd:         { label: '研發',    color: 'bg-brand-azure/10 text-brand-azure' },
@@ -48,8 +48,8 @@ const STATUS_CONFIG = {
         label: '已完成',
     },
     processing: {
-        color: 'bg-status-warning/15 text-status-warning',
-        border: 'border-l-status-warning',
+        color: 'bg-brand-chimei-orange/15 text-brand-chimei-orange',
+        border: 'border-l-brand-chimei-orange',
         label: 'AI 處理中',
     },
     failed: {
@@ -58,8 +58,8 @@ const STATUS_CONFIG = {
         label: '處理失敗',
     },
     pending: {
-        color: 'bg-muted text-muted-foreground',
-        border: 'border-l-muted-foreground',
+        color: 'bg-brand-chimei-teal/15 text-brand-chimei-teal',
+        border: 'border-l-brand-chimei-teal',
         label: '等待處理',
     },
 };
@@ -138,7 +138,7 @@ export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
                                 🔒 機密
                             </span>
                         )}
-                        <h3 className="font-bold text-foreground group-hover:text-brand-cta transition-colors break-words">
+            <h3 className="font-bold text-foreground group-hover:text-brand-cta transition-colors break-words line-clamp-2">
                             {meeting.title}
                         </h3>
                     </div>
@@ -155,6 +155,8 @@ export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
                 </span>
             </div>
 
+            {/* Body: min-h ensures consistent card height across all statuses */}
+            <div className="min-h-[3.5rem]">
             {/* 顆粒中：TL;DR */}
             {tldr && (
                 <p className="px-5 mt-3 text-foreground/80 text-sm line-clamp-2 leading-relaxed">
@@ -162,13 +164,13 @@ export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
                 </p>
             )}
             {meeting.status === 'pending' && (
-                <p className="px-5 mt-3 text-sm text-muted-foreground italic">
+                <p className="px-5 mt-3 text-sm text-brand-chimei-teal italic">
                     音檔已收到，系統正準備整理本場重點
                 </p>
             )}
             {meeting.status === 'processing' && (
                 <p className="px-5 mt-3 text-sm text-muted-foreground flex items-center gap-1.5">
-                    <Loader2 size={14} className="animate-spin text-status-warning" />
+                    <Loader2 size={14} className="animate-spin text-brand-chimei-orange" />
                     正在整理這場會議的決策、待辦與風險
                 </p>
             )}
@@ -178,6 +180,7 @@ export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
                     這次整理沒有完成，打開詳情可查看原因並重新產生
                 </p>
             )}
+            </div>
 
             {/* 顆粒細：計數 chips（只在 completed 顯示） */}
             {meeting.status === 'completed' && (
