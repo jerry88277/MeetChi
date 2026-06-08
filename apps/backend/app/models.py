@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Enum, Float, Boolean, Table, Index, JSON
+from sqlalchemy import Column, Integer, String, DateTime, Date, ForeignKey, Text, Enum, Float, Boolean, Table, Index, JSON, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 # TSVECTOR removed — SQLite compatible
@@ -158,6 +158,7 @@ class Meeting(Base):
     task_statuses       = relationship("TaskStatus", back_populates="meeting")
     owner               = relationship("User", back_populates="owned_meetings", foreign_keys=[owner_upn])
     participants        = relationship("MeetingParticipant", back_populates="meeting", cascade="all, delete-orphan")
+    action_items        = relationship("MeetingActionItem", back_populates="meeting", cascade="all, delete-orphan")
 
 # GIN Index removed (PostgreSQL-only)
 
@@ -390,3 +391,31 @@ class AuditLog(Base):
     __table_args__ = (
         Index("idx_audit_user_action_created", "user_upn", "action_type", "created_at"),
     )
+
+class MeetingActionItem(Base):
+    """
+    Normalized action items parsed from meeting summary_json.
+    Enables reliable pending_action_count for RAG greeting (2026-06-08).
+    """
+    __tablename__ = "meeting_action_items"
+
+    id               = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    meeting_id       = Column(String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_upn         = Column(String(255), nullable=True, index=True)
+    source_type      = Column(String(20), nullable=False, default="action_item")  # action_item | next_step
+    text             = Column(Text, nullable=False)
+    normalized_text  = Column(Text, nullable=True)
+    assignee         = Column(String(255), nullable=True)
+    due_date         = Column(Date, nullable=True)
+    status           = Column(String(20), nullable=False, default="pending", index=True)  # pending | done | cancelled
+    created_at       = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at       = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    resolved_at      = Column(DateTime(timezone=True), nullable=True)
+
+    meeting = relationship("Meeting", back_populates="action_items")
+
+    __table_args__ = (
+        Index("idx_mai_user_status", "user_upn", "status"),
+        Index("idx_mai_meeting_status", "meeting_id", "status"),
+    )
+

@@ -56,6 +56,22 @@ PR20 (Sprint 2a, commit `7b22cf0`) 與使用者進行 8 題結構化訪談確認
 | `brand-coral` | `#C5283D` | 莓紅：重要／警示 | 主管簡報重點、不到 error 等級的高度提醒 |
 | `brand-azure` | `#4A90E2` | 海藍：流動／資訊 | 研發類分類、info 資訊提示 |
 
+### 3.1.1 官方 CHIMEI 核心色（品牌準確層）
+
+從品牌手冊 / logo 原始檔提取（2026-06-08 新增）。
+
+| Token | HEX | 用途 |
+|---|---|---|
+| `brand-chimei-navy` | `#001f63` | CHIMEI logo 官方深藍；用於 logo 區、品牌識別區 |
+| `brand-chimei-orange` | `#e68b11` | CHIMEI 官方暖橙；品牌溝通素材 |
+| `brand-chimei-green` | `#33b371` | CHIMEI 官方青綠；ESG / 永續相關識別 |
+| `brand-chimei-red` | `#d93640` | CHIMEI 官方莓紅；重要強調、品牌識別 |
+| `brand-chimei-yellow` | `#fff227` | CHIMEI 官方暖黃；活力補色 |
+| `brand-chimei-teal` | `#5eb8ab` | CHIMEI 官方青藍；材料科技識別 |
+
+> **雙層色彩架構**：`brand-chimei-*` = 品牌準確層（官方色）；`brand-*` = 產品互動層（可用性優化色）。
+> 品牌識別區用官方色，互動元素（按鈕/連結/焦點）用產品互動色。這讓品牌準確性與產品可用性可以獨立演化。
+
 **Alias（向後相容，逐步淘汰）**：
 
 | Alias | 實際指向 | 為何保留 |
@@ -153,6 +169,9 @@ PR20 (Sprint 2a, commit `7b22cf0`) 與使用者進行 8 題結構化訪談確認
 | 高重要性提醒（不到 error） | `brand-coral` |
 | 研發類分類 / info | `brand-azure` |
 | 失敗 / 刪除確認 | `status-error` |
+
+> ⚠️ `brand-orange #FF6B35` 與 `brand-green #06D6A0` 是「產品延伸色」，非官方品牌色。
+> 官方暖橙 = `brand-chimei-orange #e68b11`；官方青綠 = `brand-chimei-green #33b371`。
 
 ### 4.2 卡片結構標準
 

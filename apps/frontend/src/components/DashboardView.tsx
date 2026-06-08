@@ -111,7 +111,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                             <span>資料安全保護</span>
                         </div>
                     </div>
-                    <p className="text-muted-foreground">管理並搜尋所有的會議內容</p>
+                    <p className="text-muted-foreground">把分散的會議內容整理成可追蹤的進展</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <button
@@ -124,15 +124,27 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                         <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
                     </button>
 
-                    {/* Unified CTA Dropdown */}
-                    <div className="relative" ref={menuRef}>
+                    {/* P0 Fix: Split CTA — primary = upload directly, secondary = record audio.
+                        Dropdown removed; template/confidential/context stay in upload modal (step 2). */}
+                    <div className="flex items-center gap-2">
+                        {/* Secondary: record audio */}
                         <button
-                            onClick={() => !isProcessing && setIsMenuOpen(!isMenuOpen)}
+                            onClick={onCreateMeeting}
                             disabled={isProcessing}
-                            aria-haspopup="menu"
-                            aria-expanded={isMenuOpen}
-                            aria-label="新增會議記錄"
-                            title="新增會議記錄"
+                            aria-label="即時錄音"
+                            title="即時錄音（開發中）"
+                            className="flex items-center gap-2 px-3 py-2 border border-border bg-card text-foreground rounded-lg hover:bg-muted text-sm font-medium transition-colors duration-150 disabled:opacity-50"
+                        >
+                            <Mic size={16} className="text-brand-cta" />
+                            <span className="hidden sm:inline">即時錄音</span>
+                        </button>
+
+                        {/* Primary: upload audio file — direct action, no dropdown */}
+                        <button
+                            onClick={() => !isProcessing && onUploadClick?.()}
+                            disabled={isProcessing}
+                            aria-label="上傳音檔"
+                            title="上傳會議音檔"
                             className="flex items-center gap-2 px-4 py-2 bg-brand-cta text-white rounded-lg hover:bg-brand-cta/90 hover:shadow-[0_4px_16px_-2px_rgba(45,66,139,0.35)] font-medium transition-[colors,shadow] duration-200 disabled:opacity-70"
                         >
                             {isProcessing ? (
@@ -144,100 +156,11 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                                 </>
                             ) : (
                                 <>
-                                    <Plus size={18} />
-                                    <span className="hidden sm:inline">新增會議記錄</span>
-                                    <ChevronDown size={14} className={`transition-transform ${isMenuOpen ? 'rotate-180' : ''}`} />
+                                    <Upload size={18} />
+                                    <span className="hidden sm:inline">上傳音檔</span>
                                 </>
                             )}
                         </button>
-
-                        {/* Dropdown Menu */}
-                        {isMenuOpen && (
-                            <div className="absolute right-0 mt-2 w-48 bg-card border border-border rounded-xl shadow-lg overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-                                <button
-                                    onClick={() => { setIsMenuOpen(false); onCreateMeeting(); }}
-                                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-foreground hover:bg-muted transition-colors"
-                                >
-                                    <Mic size={16} className="text-brand-cta" />
-                                    <span>即時錄音</span>
-                                </button>
-                                {onUploadClick && (
-                                    <button
-                                        onClick={() => { setIsMenuOpen(false); onUploadClick(); }}
-                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-foreground hover:bg-muted transition-colors border-t border-border"
-                                    >
-                                        <Upload size={16} className="text-brand-violet" />
-                                        <span>上傳音檔</span>
-                                    </button>
-                                )}
-                                {/* Phase C: Template selector */}
-                                {availableTemplates.length > 0 && onTemplateChange && (
-                                    <div className="border-t border-border px-4 py-2">
-                                        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">摘要模板</label>
-                                        <select
-                                            value={selectedTemplateName}
-                                            onChange={(e) => onTemplateChange(e.target.value)}
-                                            className="mt-1 w-full px-2 py-1.5 text-xs bg-muted border border-border rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-brand-cta"
-                                        >
-                                            {availableTemplates.filter(t => t.is_active).map(t => (
-                                                <option key={t.id} value={t.name}>{t.display_name}</option>
-                                            ))}
-                                        </select>
-                                        
-                                        {/* Sprint 2e Phase 1: 機密會議 toggle */}
-                                        {onUploadConfidentialChange && (
-                                            <div className="mt-3 px-3 py-2 rounded-lg bg-status-error/5 border border-status-error/20">
-                                                <label className="flex items-center gap-2 cursor-pointer">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={uploadConfidential}
-                                                        onChange={(e) => onUploadConfidentialChange(e.target.checked)}
-                                                        className="w-4 h-4 accent-status-error cursor-pointer"
-                                                    />
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-xs font-semibold text-status-error">
-                                                            🔒 標記為機密會議
-                                                        </p>
-                                                        <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
-                                                            機密會議將鎖定複製、顯示浮水印，並由 IT 受控管。可上傳後在會議詳情頁切換。
-                                                        </p>
-                                                    </div>
-                                                </label>
-                                            </div>
-                                        )}
-                                        {/* Phase C: Context Input */}
-                                        {onUploadContextChange && (
-                                            <div className="mt-3">
-                                                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">專有名詞 / 背景提示 (可選)</label>
-                                                <input
-                                                    type="text"
-                                                    placeholder="例如: Scrum, Jira, 產品規劃..."
-                                                    value={uploadContext}
-                                                    onChange={(e) => onUploadContextChange(e.target.value)}
-                                                    className="mt-1 w-full px-2 py-1.5 text-xs bg-muted border border-border rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-brand-cta placeholder:text-muted-foreground/50"
-                                                />
-                                                {/* Phase C.3: Supplementary file upload UI Foundation (OCR) */}
-                                        <div className="mt-3 pt-3 border-t border-border/50">
-                                            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center justify-between">
-                                                <span>補充資料 (白板/簡報)</span>
-                                                <span className="bg-brand-cta/10 text-brand-cta px-1.5 py-0.5 rounded text-[8px]">開發中</span>
-                                            </label>
-                                            <div className="mt-1 flex items-center gap-2">
-                                                <button
-                                                    disabled
-                                                    className="w-full flex items-center justify-center gap-2 px-2 py-1.5 text-xs bg-muted/50 border border-border border-dashed rounded-lg text-muted-foreground opacity-60 cursor-not-allowed"
-                                                >
-                                                    <Upload size={14} />
-                                                    <span>選擇圖片 (.jpg, .png)</span>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        )}
                     </div>
                 </div>
             </div>
@@ -268,7 +191,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="搜尋會議標題、關鍵字或參與者..."
+                    placeholder="搜尋會議標題或摘要重點"
                     className="w-full pl-11 pr-4 py-3 bg-card border border-border rounded-full focus:outline-none focus:ring-2 focus:ring-brand-cta/40 focus:border-brand-cta/40 shadow-sm transition-[border-color,box-shadow] duration-200"
                 />
             </div>
@@ -355,8 +278,13 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                 <div className="text-center py-16">
                     <FileText size={48} className="mx-auto text-muted-foreground/30 mb-4" />
                     <p className="text-muted-foreground">
-                        {searchQuery ? '沒有找到符合的會議記錄' : '還沒有會議記錄，點擊「新增會議記錄」開始第一場會議'}
+                        {searchQuery ? '沒有找到符合的會議記錄' : '上傳第一場會議，系統會在背景自動整理重點、決策與下一步'}
                     </p>
+                    {!searchQuery && (
+                        <p className="mt-2 text-sm text-muted-foreground/80">
+                            完成上傳後，您可直接搜尋摘要、決策與待辦重點。
+                        </p>
+                    )}
                 </div>
             )}
         </div>

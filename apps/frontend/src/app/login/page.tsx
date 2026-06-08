@@ -6,8 +6,8 @@ import { Suspense, useState } from "react"
 import { AlertCircle, Loader2, TestTube2 } from "lucide-react"
 
 const MS_AUTH_ENABLED = process.env.NEXT_PUBLIC_MS_AUTH_ENABLED === "true"
-// UAT form is always rendered; it only works when backend has UAT_USERS configured.
-// NEXT_PUBLIC_* vars are baked at build time, so we cannot rely on runtime env here.
+// UAT_ENABLED: hidden from main flow — only visible via ?uat=1 query param.
+// Prevents normal employees from seeing the test path; testers/admins still accessible.
 const UAT_ENABLED = true
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -33,6 +33,8 @@ function LoginContent() {
     const [signingIn, setSigningIn] = useState<SigningInProvider>(null)
     const [uatEmail, setUatEmail] = useState("")
     const [uatPassword, setUatPassword] = useState("")
+    // UAT form only visible when ?uat=1 is in the URL — keeps main path clean for real users
+    const showUAT = UAT_ENABLED && searchParams.get("uat") === "1"
 
     const handleSignIn = async (provider: "google" | "microsoft") => {
         if (signingIn) return
@@ -79,13 +81,13 @@ function LoginContent() {
                         <span className="text-3xl font-bold text-white">M</span>
                     </div>
                     <h1 className="text-3xl font-bold text-foreground">MeetChi</h1>
-                    <p className="text-muted-foreground mt-2">AI 會議助理</p>
+                    <p className="text-muted-foreground mt-2">把每場討論整理成下一步</p>
                 </div>
 
                 {/* Login Card */}
                 <div className="bg-card rounded-2xl p-8 border border-border shadow-lg">
                     <h2 className="text-xl font-semibold text-foreground text-center mb-6">
-                        登入您的帳戶
+                        使用奇美帳戶繼續
                     </h2>
 
                     {errorMessage && (
@@ -155,12 +157,12 @@ function LoginContent() {
                     </div>
 
                     <p className="text-center text-muted-foreground text-sm mt-6">
-                        登入即表示您同意我們的服務條款與隱私政策
+                        僅供奇美集團內部同仁使用
                     </p>
                 </div>
 
-                {/* UAT 測試帳號登入 — 分隔線後獨立卡片，視覺語言與主卡一致 */}
-                {UAT_ENABLED && (
+                {/* UAT 測試帳號登入 — 隱藏於主路徑，僅 ?uat=1 可見 */}
+                {showUAT && (
                     <>
                         <div className="flex items-center gap-3 my-2">
                             <div className="flex-1 h-px bg-border" />

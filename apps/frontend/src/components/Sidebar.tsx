@@ -54,6 +54,7 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen
 
             <div className={sidebarClass}>
                 <div className="p-6 border-b border-white/10 flex items-center justify-between">
+                    {/* brand-chimei-navy: official CHIMEI deep blue */}
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 bg-brand-cta rounded-lg flex items-center justify-center">
                             <span className="font-bold text-white">M</span>
@@ -142,7 +143,7 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, setIsMobileOpen
                     <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5">
                         <div className={`w-2 h-2 rounded-full shrink-0 ${isConnected ? 'bg-status-success animate-pulse' : 'bg-status-error'}`} />
                         <span className="text-xs text-white/50">
-                            {isConnected ? '系統運作正常' : '系統暫時無法連線'}
+                            {isConnected ? '可正常上傳、摘要與查詢' : '目前無法連線，請稍後再試'}
                         </span>
                     </div>
                 </div>

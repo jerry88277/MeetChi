@@ -163,19 +163,19 @@ export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
             )}
             {meeting.status === 'pending' && (
                 <p className="px-5 mt-3 text-sm text-muted-foreground italic">
-                    音檔已上傳，等待 AI 開始處理…
+                    音檔已收到，系統正準備整理本場重點
                 </p>
             )}
             {meeting.status === 'processing' && (
                 <p className="px-5 mt-3 text-sm text-muted-foreground flex items-center gap-1.5">
                     <Loader2 size={14} className="animate-spin text-status-warning" />
-                    AI 正在分析會議內容…
+                    正在整理這場會議的決策、待辦與風險
                 </p>
             )}
             {meeting.status === 'failed' && (
                 <p className="px-5 mt-3 text-sm text-status-error flex items-center gap-1.5">
                     <AlertCircle size={14} />
-                    處理失敗，點擊查看詳情並重試
+                    這次整理沒有完成，打開詳情可查看原因並重新產生
                 </p>
             )}
 

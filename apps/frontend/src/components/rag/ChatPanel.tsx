@@ -140,7 +140,7 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
       console.error(err);
       setMessages(prev => [
         ...prev,
-        { id: (Date.now() + 1).toString(), role: "ai", text: "抱歉，發生異常錯誤，無法取得回答。", citations: [] }
+        { id: (Date.now() + 1).toString(), role: "ai", text: "這次查詢沒有順利完成，請稍後再試。若持續失敗，可透過右上角回報問題。", citations: [] }
       ]);
     } finally {
       setIsLoading(false);
@@ -292,7 +292,7 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
         {isLoading && (
           <div className="flex justify-start">
             <div className="bg-card text-foreground rounded-2xl rounded-bl-none p-4 shadow-sm border border-border flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 size={16} className="animate-spin" /> 正在搜尋文獻並生成回答...
+              <Loader2 size={16} className="animate-spin" /> 正在整理相關會議內容並生成回答...
             </div>
           </div>
         )}

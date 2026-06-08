@@ -82,6 +82,22 @@ class RAGResponse(BaseModel):
     )
 
 
+class LastMeetingSummary(BaseModel):
+    title: str
+    date: str
+    key_actions: List[str]
+
+
+class RagGreetingResponse(BaseModel):
+    display_name: str
+    meeting_count: int
+    top_topics: List[str]
+    last_meeting: Optional[LastMeetingSummary] = None
+    pending_action_count: int
+    greeting_text: str
+    suggested_questions: List[str]
+
+
 # ============================================
 # RAG Pipeline Core
 # ============================================
@@ -614,6 +630,41 @@ async def trigger_backfill(db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"[RAG] Backfill failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/greeting", response_model=RagGreetingResponse)
+async def get_rag_greeting(
+    user_upn: str,
+    db: Session = Depends(get_db),
+):
+    """
+    GET /api/v1/rag/greeting?user_upn=xxx
+    Personalized "five-star hotel check-in" greeting for the RAG workspace.
+    Returns user's meeting stats, top topics, pending actions, and suggested questions.
+    Always returns 200 with fallback content — never 500 on data issues.
+    2026-06-08: Greeting Feature Phase 1 (Approach A: DB + template, no LLM)
+    """
+    if not user_upn or "@" not in user_upn:
+        raise HTTPException(status_code=400, detail="user_upn must be a valid email address")
+
+    user_upn = user_upn.strip().lower()
+
+    from app.services.rag_greeting import build_greeting_payload
+    payload = build_greeting_payload(db, user_upn)
+
+    # Normalize last_meeting to Pydantic model
+    lm = payload.get("last_meeting")
+    last_meeting_obj = LastMeetingSummary(**lm) if lm and lm.get("title") else None
+
+    return RagGreetingResponse(
+        display_name=payload["display_name"],
+        meeting_count=payload["meeting_count"],
+        top_topics=payload["top_topics"],
+        last_meeting=last_meeting_obj,
+        pending_action_count=payload["pending_action_count"],
+        greeting_text=payload["greeting_text"],
+        suggested_questions=payload["suggested_questions"],
+    )
 
 
 @router.get("/status")

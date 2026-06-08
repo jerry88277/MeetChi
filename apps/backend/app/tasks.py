@@ -558,7 +558,8 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
             if "error" in summary_data:
                  raise Exception(summary_data["error"])
 
-            meeting.summary_json = json.dumps(summary_data, ensure_ascii=False)
+            summary_json_data = summary_data
+            meeting.summary_json = json.dumps(summary_json_data, ensure_ascii=False)
             # Store full text snapshot
             meeting.transcript_raw = transcript_text
             
@@ -600,6 +601,14 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
             
             db.commit()
             logger.info(f"Successfully generated summary for {meeting_id}")
+
+            try:
+                count = _sync_action_items(db, meeting.id, summary_json_data)
+                db.commit()
+                logger.info(f"[greeting] synced {count} action items for meeting {meeting.id}")
+            except Exception as e:
+                logger.warning(f"[greeting] action item sync failed for {meeting.id}: {e}")
+                db.rollback()
             
             # Phase RAG: Auto-embed transcript segments + summary for cross-meeting search
             try:
@@ -671,6 +680,62 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
         return {"status": "failed", "error": str(e)}
     finally:
         db.close()
+
+
+def _sync_action_items(db, meeting_id: str, summary_json: dict) -> int:
+    """
+    Parse action_items / next_steps from summary_json and upsert into meeting_action_items.
+    Idempotent: deletes existing items for the meeting first, then re-inserts.
+    Returns count of items inserted.
+    """
+    from app.models import MeetingActionItem
+    import uuid as _uuid
+
+    # Delete stale items
+    db.query(MeetingActionItem).filter(MeetingActionItem.meeting_id == meeting_id).delete()
+
+    items = []
+    # Parse action_items list
+    for raw in (summary_json.get("action_items") or []):
+        text = raw if isinstance(raw, str) else str(raw)
+        text = text.strip()
+        if not text:
+            continue
+        items.append(MeetingActionItem(
+            id=str(_uuid.uuid4()),
+            meeting_id=meeting_id,
+            source_type="action_item",
+            text=text,
+            normalized_text=text.lower(),
+            status="pending",
+        ))
+
+    # Parse next_steps list (may be dicts with assignee/due_date)
+    for raw in (summary_json.get("next_steps") or []):
+        if isinstance(raw, dict):
+            text = (raw.get("action") or raw.get("text") or str(raw)).strip()
+            assignee = raw.get("assignee") or raw.get("owner")
+            due = raw.get("due_date") or raw.get("due")
+        else:
+            text = str(raw).strip()
+            assignee = None
+            due = None
+        if not text:
+            continue
+        items.append(MeetingActionItem(
+            id=str(_uuid.uuid4()),
+            meeting_id=meeting_id,
+            source_type="next_step",
+            text=text,
+            normalized_text=text.lower(),
+            assignee=assignee,
+            status="pending",
+        ))
+
+    for item in items:
+        db.add(item)
+    db.flush()
+    return len(items)
 
 
 def generate_meeting_minutes(meeting_id: str, template_type: str = "general", context: str = "", length: str = "", style: str = "", skip_asr: bool = False, suppress_fail_notification: bool = False):

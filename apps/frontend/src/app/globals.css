@@ -16,6 +16,20 @@
 @theme {
   /* --- Brand Colors —— 既有奇美深藍體系（保留） --- */
   --color-brand-navy: #041E42;
+
+  /* ── CHIMEI Official Brand Colors (from brand handbook / logo files) ──────────
+     Source of truth: Material/品牌手冊_tc.pdf, Material/淺色底_logo左上.png
+     These are the EXACT colors from the official CHIMEI Visual Identity.
+     Use for: logo area, brand identification zones, brand communication materials.
+     Do NOT use directly for interactive UI elements — use brand-cta/brand-orange etc.
+     ──────────────────────────────────────────────────────────────────────────── */
+  --color-brand-chimei-navy:   #001f63;  /* Official CHIMEI deep navy (logo primary) */
+  --color-brand-chimei-orange: #e68b11;  /* Official warm amber-orange */
+  --color-brand-chimei-green:  #33b371;  /* Official fresh green */
+  --color-brand-chimei-red:    #d93640;  /* Official berry red */
+  --color-brand-chimei-yellow: #fff227;  /* Official warm yellow */
+  --color-brand-chimei-teal:   #5eb8ab;  /* Official teal-blue */
+
   --color-brand-cta: #2D428B;
 
   /* --- DDG 8 色活力延伸（Q2=b）---
@@ -24,8 +38,8 @@
      對齊「工業×人文×永續」tone）。
      上 staging 後可微調，優先取得 DDG 公開設計指南再校色。
   */
-  --color-brand-orange:  #FF6B35;  /* 暖橙：能量、行動 */
-  --color-brand-green:   #06D6A0;  /* 亮綠：永續、清新 */
+  --color-brand-orange:  #FF6B35;  /* Product action orange (energetic; ≠ chimei-orange #e68b11) */
+  --color-brand-green:   #06D6A0;  /* Product mint accent (fresh; ≠ chimei-green #33b371) */
   --color-brand-forest:  #1E5128;  /* 深綠：材料、自然 */
   --color-brand-amber:   #F2C14E;  /* 暖黃：溫度、人文 */
   --color-brand-violet:  #4D5CB7;  /* 靛紫：科技延伸（取代舊 #7C3AED） */

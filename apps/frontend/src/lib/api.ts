@@ -693,6 +693,11 @@ class ApiClient {
         return this.fetch(`/api/v1/rag/history?${q.toString()}`);
     }
 
+    getRagGreeting(userUpn: string): Promise<RagGreetingResponse> {
+        const q = new URLSearchParams({ user_upn: userUpn });
+        return this.fetch(`/api/v1/rag/greeting?${q.toString()}`);
+    }
+
     async askRag(question: string, userUpn: string = 'global_test@company.com', history?: RagChatMessage[], meetingIds?: string[]): Promise<RagResponse> {
         return this.fetch('/api/v1/rag/ask', {
             method: 'POST',
@@ -801,6 +806,22 @@ export interface RagHistoryItem {
     confidence: string | null;
     response_time_ms: number | null;
     created_at: string;
+}
+
+export interface LastMeetingSummary {
+    title: string;
+    date: string;
+    key_actions: string[];
+}
+
+export interface RagGreetingResponse {
+    display_name: string;
+    meeting_count: number;
+    top_topics: string[];
+    last_meeting: LastMeetingSummary | null;
+    pending_action_count: number;
+    greeting_text: string;
+    suggested_questions: string[];
 }
 
 // Export singleton instance
