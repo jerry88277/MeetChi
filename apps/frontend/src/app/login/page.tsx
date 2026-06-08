@@ -6,7 +6,9 @@ import { Suspense, useState } from "react"
 import { AlertCircle, Loader2, TestTube2 } from "lucide-react"
 
 const MS_AUTH_ENABLED = process.env.NEXT_PUBLIC_MS_AUTH_ENABLED === "true"
-const UAT_ENABLED = process.env.NEXT_PUBLIC_UAT_ENABLED === "true"
+// UAT form is always rendered; it only works when backend has UAT_USERS configured.
+// NEXT_PUBLIC_* vars are baked at build time, so we cannot rely on runtime env here.
+const UAT_ENABLED = true
 
 const ERROR_MESSAGES: Record<string, string> = {
     OAuthSignin: "啟動登入時發生錯誤，請稍後再試。",
@@ -66,10 +68,10 @@ function LoginContent() {
     }
 
     return (
-        {/* DDG §1「永續×人文」: 底色改 surface (#FAFAF8) 減輕主色佔比；
-            品牌識別集中在 logo card（brand-navy 底），不再全版深色漸層。
-            參考 Granola calm productivity 低彩基調。*/}
         <div className="min-h-screen bg-surface flex items-center justify-center p-6">
+            {/* DDG §1「永續×人文」: 底色改 surface (#FAFAF8) 減輕主色佔比；
+                品牌識別集中在 logo card（brand-navy 底），不再全版深色漸層。
+                參考 Granola calm productivity 低彩基調。*/}
             <div className="w-full max-w-md">
                 {/* Logo — brand-navy 集中於此，維持品牌識別但不佔滿畫面 */}
                 <div className="text-center mb-8">
