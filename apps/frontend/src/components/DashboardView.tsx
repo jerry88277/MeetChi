@@ -254,7 +254,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                                     }
                                     onSelectMeeting(meeting);
                                 }}
-                                className={`relative animate-in fade-in slide-in-from-bottom-4 duration-500 rounded-xl transition-all ${
+                                className={`relative h-full animate-in fade-in slide-in-from-bottom-4 duration-500 rounded-xl transition-all ${
                                     isSelected ? 'ring-2 ring-brand-cta ring-offset-2 ring-offset-surface' : ''
                                 }`}
                             >

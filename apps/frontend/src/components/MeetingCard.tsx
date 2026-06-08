@@ -117,7 +117,7 @@ export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
     return (
         <div
             onClick={() => onClick(meeting)}
-            className={`group bg-card rounded-2xl cursor-pointer
+            className={`group bg-card rounded-2xl cursor-pointer h-full flex flex-col
                 shadow-sm hover:shadow-[0_4px_24px_-4px_rgba(45,66,139,0.14)]
                 hover:border-l-brand-cta/60
                 transition-[shadow,transform,border-color] duration-200 ease-brand
@@ -155,8 +155,8 @@ export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
                 </span>
             </div>
 
-            {/* Body: min-h ensures consistent card height across all statuses */}
-            <div className="min-h-[3.5rem]">
+            {/* Body: flex-1 fills remaining space so all cards in a grid row are equal height */}
+            <div className="flex-1 min-h-[3.5rem]">
             {/* 顆粒中：TL;DR */}
             {tldr && (
                 <p className="px-5 mt-3 text-foreground/80 text-sm line-clamp-2 leading-relaxed">

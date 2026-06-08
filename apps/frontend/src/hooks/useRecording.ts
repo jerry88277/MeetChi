@@ -60,6 +60,8 @@ export function useRecording() {
         setUploadProgress(0);
         setUploadFileName(file.name);
         setUploadFileSize(file.size);
+        // Hoist meeting ref so catch block can clean up orphan on upload failure
+        let createdMeetingId: string | undefined;
         try {
             // Get audio duration using HTMLAudioElement
             const getDuration = (file: File): Promise<number> => {
@@ -89,6 +91,7 @@ export function useRecording() {
                 user_upn: sessionUpn,
                 is_confidential: isConfidential,
             });
+            createdMeetingId = meeting.id;
             
             const { uploadUrl } = await api.getUploadUrl(meeting.id, file.name, file.type || 'application/octet-stream');
             // Try direct GCS first; fall back through proxy, then chunked upload
@@ -121,12 +124,18 @@ export function useRecording() {
             console.error('Upload failed:', err);
             setUploadState('error');
             // Sanitize raw infrastructure errors (GCS bucket URLs, googleapis, etc.)
-            // to avoid exposing internal URLs that confuse end users.
             const rawMsg = err instanceof Error ? err.message : '';
             const isInfraError = /gcs|bucket|googleapis|storage\.cloud|signed.url|cors|access denied/i.test(rawMsg);
             onError(isInfraError
                 ? '音檔上傳失敗，請確認網路連線後重試。若持續發生請透過回報功能通知管理員。'
                 : (rawMsg || '上傳檔案失敗'));
+            // Clean up orphan meeting if it was created but upload failed.
+            // Prevents confusing "failed" card appearing after an upload error.
+            if (createdMeetingId) {
+                api.deleteMeeting(createdMeetingId, sessionUpn).catch((delErr) => {
+                    console.warn('[MeetChi] Orphan meeting cleanup failed:', delErr);
+                });
+            }
         }
     }, []);
 

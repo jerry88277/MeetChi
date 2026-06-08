@@ -313,7 +313,7 @@ export const FeedbackModal = ({
                                         onClick={() => setIssueType(opt.value)}
                                         className={`flex items-start gap-3 p-3 text-left rounded-xl border-2 transition-all ${
                                             issueType === opt.value
-                                                ? "border-brand-cta bg-brand-cta/5 text-brand-cta"
+                                                ? "border-brand-cta bg-brand-cta/10 text-brand-cta shadow-sm"
                                                 : "border-border hover:border-brand-cta/40 text-foreground"
                                         }`}
                                     >
@@ -326,6 +326,9 @@ export const FeedbackModal = ({
                                                 {opt.desc}
                                             </span>
                                         </span>
+                                        {issueType === opt.value && (
+                                            <span className="mt-0.5 flex-shrink-0 w-4 h-4 rounded-full bg-brand-cta text-white flex items-center justify-center text-[9px] font-bold">✓</span>
+                                        )}
                                     </button>
                                 ))}
                             </div>
@@ -369,12 +372,15 @@ export const FeedbackModal = ({
                                         key={opt.value}
                                         type="button"
                                         onClick={() => setSeverity(opt.value)}
-                                        className={`p-3 text-center rounded-xl border-2 transition-all ${
+                                        className={`p-3 text-center rounded-xl border-2 transition-all relative ${
                                             severity === opt.value
-                                                ? `${opt.cls} ring-2 ring-current/20`
+                                                ? `${opt.cls} shadow-sm`
                                                 : "border-border text-muted-foreground hover:border-current"
                                         }`}
                                     >
+                                        {severity === opt.value && (
+                                            <span className="absolute top-1.5 right-1.5 w-3.5 h-3.5 rounded-full bg-current text-white flex items-center justify-center text-[8px] font-bold">✓</span>
+                                        )}
                                         <span className="block text-sm font-medium">
                                             {opt.label}
                                         </span>
