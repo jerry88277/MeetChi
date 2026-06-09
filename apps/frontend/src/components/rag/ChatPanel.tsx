@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { Send, FileText, Loader2, History, ChevronDown, X, Sparkles } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { api, RagCitation, RagHistoryItem, RagGreetingResponse } from "@/lib/api";
@@ -81,6 +81,12 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
   }, [messages, storageKey]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when messages change or loading state changes
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
 
   // 2026-06-08 g6: Personalized greeting card (five-star hotel check-in UX)
   const [greeting, setGreeting] = useState<RagGreetingResponse | null>(null);
@@ -176,7 +182,7 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
       console.error(err);
       setMessages(prev => [
         ...prev,
-        { id: (Date.now() + 1).toString(), role: "ai", text: "這次查詢沒有順利完成，請稍後再試。若持續失敗，可透過右上角回報問題。", citations: [] }
+        { id: (Date.now() + 1).toString(), role: "ai", text: "這次查詢沒有順利完成，請稍後再試。若持續失敗，可透過左側邊欄「回報問題」按鈕反饋。", citations: [] }
       ]);
     } finally {
       setIsLoading(false);
@@ -268,12 +274,31 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
                   key={item.id}
                   className="p-3 hover:bg-muted cursor-pointer transition-colors"
                   onClick={() => {
-                    setInput(item.query);
+                    // 載入歷史對話（問 + 答），而非僅填入輸入框
+                    const historyMessages: Message[] = [
+                      { id: `h-${item.id}-q`, role: "user", text: item.query, citations: [] },
+                    ];
+                    if (item.answer_preview) {
+                      historyMessages.push({
+                        id: `h-${item.id}-a`,
+                        role: "ai",
+                        text: item.answer_preview,
+                        citations: [],
+                      });
+                    }
+                    setMessages(prev => {
+                      // 保留第一則歡迎訊息，加入歷史對話
+                      const welcome = prev.length > 0 ? [prev[0]] : [];
+                      return [...welcome, ...historyMessages];
+                    });
                     setIsHistoryOpen(false);
                   }}
-                  title="點擊填入提問框"
+                  title="點擊載入歷史對話"
                 >
                   <p className="text-sm text-foreground line-clamp-2 mb-1">{item.query}</p>
+                  {item.answer_preview && (
+                    <p className="text-xs text-muted-foreground line-clamp-1 mb-1">{item.answer_preview}</p>
+                  )}
                   <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
                     <span>{new Date(item.created_at).toLocaleString('zh-TW', { hour12: false })}</span>
                     <span>·</span>
@@ -404,6 +429,7 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
             </div>
           </div>
         )}
+        <div ref={messagesEndRef} />
       </div>
 
       <div className="p-4 bg-card border-t border-border">

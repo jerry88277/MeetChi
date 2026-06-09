@@ -419,3 +419,41 @@ class MeetingActionItem(Base):
         Index("idx_mai_meeting_status", "meeting_id", "status"),
     )
 
+
+# ============================================
+# Glossary Models (C1: ASR Hotwords/Correction)
+# ============================================
+
+class UserGlossary(Base):
+    """使用者級全域對照表 — 所有會議共用的專有名詞修正"""
+    __tablename__ = "user_glossary"
+
+    id           = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_upn     = Column(String(255), nullable=False, index=True)
+    wrong_text   = Column(String(255), nullable=False)
+    correct_text = Column(String(255), nullable=False)
+    category     = Column(String(50), default="company")  # company/person/product/other
+    usage_count  = Column(Integer, default=0)
+    created_at   = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("uq_user_glossary", "user_upn", "wrong_text", unique=True),
+    )
+
+
+class MeetingGlossary(Base):
+    """單一會議對照表 — 該會議特有的專有名詞修正"""
+    __tablename__ = "meeting_glossary"
+
+    id           = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    meeting_id   = Column(String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False, index=True)
+    wrong_text   = Column(String(255), nullable=False)
+    correct_text = Column(String(255), nullable=False)
+    created_at   = Column(DateTime, default=datetime.utcnow)
+
+    meeting = relationship("Meeting")
+
+    __table_args__ = (
+        Index("uq_meeting_glossary", "meeting_id", "wrong_text", unique=True),
+    )
+

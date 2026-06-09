@@ -35,6 +35,7 @@ import { RagWorkspace } from '@/components/rag/RagWorkspace';
 import { RagDrawer } from '@/components/rag/RagDrawer';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FeedbackModal } from '@/components/FeedbackModal';
+import { AdminFeedbackPanel } from '@/components/AdminFeedbackPanel';
 import { useMeetings } from '@/hooks/useMeetings';
 import { useRecording } from '@/hooks/useRecording';
 import { useSummary } from '@/hooks/useSummary';
@@ -53,7 +54,7 @@ export default function DashboardPage() {
     const getInitialView = (): 'dashboard' | 'record' | 'detail' | 'settings' | 'templates' | 'admin' | 'rag' => {
         if (typeof window === 'undefined') return 'dashboard';
         const v = new URLSearchParams(window.location.search).get('view');
-        if (v === 'settings' || v === 'templates' || v === 'rag') return v;
+        if (v === 'settings' || v === 'templates' || v === 'rag' || v === 'admin') return v;
         return 'dashboard';
     };
 
@@ -62,12 +63,22 @@ export default function DashboardPage() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isRagSidebarOpen, setIsRagSidebarOpen] = useState(false);
     const [tourOpen, setTourOpen] = useState(false);
+    const [isAdmin, setIsAdmin] = useState(false);
 
     // Auto-open tour for first-time users
     React.useEffect(() => {
         const done = localStorage.getItem(TOUR_STORAGE_KEY);
         if (!done) setTourOpen(true);
     }, []);
+
+    // Check admin status
+    React.useEffect(() => {
+        const email = session?.user?.email;
+        if (!email) return;
+        api.listAdminFeedback(email, undefined, undefined, 0, 1)
+            .then(() => setIsAdmin(true))
+            .catch(() => setIsAdmin(false));
+    }, [session?.user?.email]);
 
     // Custom hooks
     const {
@@ -179,7 +190,7 @@ export default function DashboardPage() {
         handlePollingStatusChange,
     );
 
-    const { isRegenerating, regenerateSummary, regenerateTranscript } = useSummary(fetchMeetings);
+    const { isRegenerating, regenerateSummary, regenerateTranscript } = useSummary(fetchMeetings, session?.user?.email || undefined);
 
     // Sync session token with API client; re-fetch meetings after token is updated
     // so the new account's data is loaded with the correct auth credential.
@@ -682,6 +693,7 @@ export default function DashboardPage() {
                     isMobileOpen={isMobileMenuOpen}
                     setIsMobileOpen={setIsMobileMenuOpen}
                     isConnected={isConnected}
+                    isAdmin={isAdmin}
                     user={session?.user}
                     provider={(session as { provider?: string } | null)?.provider}
                     onOpenFeedback={() => setFeedbackContext({})}
@@ -800,7 +812,7 @@ export default function DashboardPage() {
                             onBack={handleBackToDashboard}
                             onFinish={async (mid) => {
                                 await fetchMeetings();
-                                const freshMeetings = await api.listMeetings();
+                                const freshMeetings = await api.listMeetings(0, 100, session?.user?.email || undefined);
                                 const target = freshMeetings.find(m => m.id === mid);
                                 if (target) {
                                     handleViewDetail(transformMeeting(target));
@@ -829,6 +841,7 @@ export default function DashboardPage() {
                             onBack={handleBackToDashboard}
                             isConnected={isConnected}
                             isLoadingConnection={isLoading}
+                            userEmail={session?.user?.email || undefined}
                         />
                     )}
 
@@ -907,6 +920,11 @@ export default function DashboardPage() {
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* Admin Feedback Panel */}
+                            <div className="bg-card rounded-xl border border-border p-6 mb-6">
+                                <AdminFeedbackPanel userUpn={session?.user?.email || ''} />
                             </div>
 
                             {/* Coming Soon */}

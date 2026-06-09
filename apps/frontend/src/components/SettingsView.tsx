@@ -15,15 +15,18 @@ import {
 // next-themes (.dark class) 不相容 → toggle 無視覺變化。改用 next-themes 統一。
 import { useTheme } from 'next-themes';
 import { useFontSize, MIN_FONT_PCT, MAX_FONT_PCT, DEFAULT_FONT_PCT } from '@/hooks/useFontSize';
+import { GlossaryManager } from './GlossaryManager';
 
 interface SettingsViewProps {
     onBack: () => void;
     isConnected: boolean;
     /** P1 (audit 2026-05-10)：父層尚未完成 health check 時為 true，避免顯示假 Offline */
     isLoadingConnection?: boolean;
+    /** User email for glossary management */
+    userEmail?: string;
 }
 
-export const SettingsView = ({ onBack, isConnected, isLoadingConnection = false }: SettingsViewProps) => {
+export const SettingsView = ({ onBack, isConnected, isLoadingConnection = false, userEmail }: SettingsViewProps) => {
     // next-themes：resolvedTheme 含 system → light/dark 已 resolve；setTheme 直接寫 .dark class
     const { resolvedTheme, setTheme } = useTheme();
     const [mounted, setMounted] = React.useState(false);
@@ -230,6 +233,9 @@ export const SettingsView = ({ onBack, isConnected, isLoadingConnection = false 
                         <p className="text-xs text-muted-foreground italic mt-2">※ 設定調整功能開發中，目前使用後端預設值</p>
                     </div>
                 </div>
+
+                {/* C1: Global Glossary Management */}
+                {userEmail && <GlossaryManager userUpn={userEmail} />}
             </div>
         </div>
     );

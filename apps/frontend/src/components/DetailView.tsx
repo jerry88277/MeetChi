@@ -21,6 +21,7 @@ import {
     MessageSquareWarning,
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import type { Meeting } from '@/types/meeting';
 import { exportAsTxt, exportAsSrt, exportAsJson } from '@/lib/export';
 import { api } from '@/lib/api';
@@ -32,6 +33,7 @@ import { NextStepsTable } from './detail/NextStepsTable';
 import { CrossMeetingRefList } from './detail/CrossMeetingRefList';
 import { QuoteCard } from './detail/QuoteCard';
 import { SecurityWrapper } from './SecurityWrapper';
+import { MeetingGlossaryPanel } from './MeetingGlossaryPanel';
 
 interface DetailViewProps {
     meeting: Meeting | null;
@@ -62,6 +64,8 @@ interface DetailViewProps {
  */
 export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateTranscript, isRegenerating = false, onDelete, isDeleting = false, onReportThisMeeting }: DetailViewProps) => {
     const searchParams = useSearchParams();
+    const { data: session } = useSession();
+    const userUpn = session?.user?.email || '';
     const [templates, setTemplates] = useState<TemplateDTO[]>([]);
     const [selectedTemplate, setSelectedTemplate] = useState('general');
     const [showTemplateSelector, setShowTemplateSelector] = useState(false);
@@ -670,6 +674,11 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                 })}
                             </div>
                         </section>
+                    )}
+
+                    {/* === Section 4.5: 本會議專有名詞對照表 === */}
+                    {isCompleted && userUpn && (
+                        <MeetingGlossaryPanel meetingId={meeting.id} userUpn={userUpn} />
                     )}
 
                     {/* === Section 5: 完整逐字稿（折疊） === */}

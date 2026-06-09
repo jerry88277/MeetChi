@@ -71,6 +71,16 @@ async def handle_asr_done(payload: ASRDonePayload, background_tasks: BackgroundT
         meeting.transcript_raw = "\n".join(lines)
         db.commit()
         logger.info(f"[Callback] Updated DB with remote GPU ASR results for {meeting_id}")
+
+        # C1: Apply glossary-based post-correction
+        try:
+            from app.tasks import apply_glossary_correction
+            user_upn = meeting.owner_upn
+            corrected = apply_glossary_correction(db, meeting_id, user_upn)
+            if corrected > 0:
+                logger.info(f"[Callback] Glossary correction applied to {corrected} segments for {meeting_id}")
+        except Exception as e:
+            logger.warning(f"[Callback] Glossary correction failed (non-fatal): {e}")
         
     elif payload.status == "failed":
         logger.error(f"[Callback] Remote GPU ASR failed: {payload.error}")

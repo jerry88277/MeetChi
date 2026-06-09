@@ -52,6 +52,89 @@ def _update_task_status(db: Session, meeting_id: str, task_name: str, status: st
     db.commit()
 
 
+def get_glossary_map(db: Session, meeting_id: str, user_upn: str = None) -> dict:
+    """
+    C1: Build merged glossary map (wrong_text → correct_text) for post-correction.
+    Union of Global (user-level) + Local (meeting-level), Local overrides on conflict.
+    """
+    from app.models import UserGlossary, MeetingGlossary
+    
+    merged = {}
+    
+    # Global entries (if user_upn provided)
+    if user_upn:
+        global_entries = db.query(UserGlossary).filter(
+            UserGlossary.user_upn == user_upn.lower().strip()
+        ).all()
+        for e in global_entries:
+            merged[e.wrong_text] = e.correct_text
+    
+    # Local entries (always, override global)
+    local_entries = db.query(MeetingGlossary).filter(
+        MeetingGlossary.meeting_id == meeting_id
+    ).all()
+    for e in local_entries:
+        merged[e.wrong_text] = e.correct_text
+    
+    return merged
+
+
+def get_whisper_prompt(db: Session, meeting_id: str, user_upn: str = None) -> str:
+    """
+    C1: Generate Whisper initial_prompt with glossary hotwords.
+    Injects correct terms into prompt so ASR recognizes them better.
+    """
+    glossary_map = get_glossary_map(db, meeting_id, user_upn)
+    if not glossary_map:
+        return ""
+    
+    correct_terms = list(set(glossary_map.values()))
+    return "以下是本次會議可能出現的專有名詞：" + "、".join(correct_terms)
+
+
+def apply_glossary_correction(db: Session, meeting_id: str, user_upn: str = None) -> int:
+    """
+    C1: Apply glossary-based post-correction to all segments of a meeting.
+    Replaces wrong_text with correct_text in content_raw and content_polished.
+    
+    Returns number of segments modified.
+    """
+    from app.models import TranscriptSegment
+    
+    glossary_map = get_glossary_map(db, meeting_id, user_upn)
+    if not glossary_map:
+        return 0
+    
+    segments = db.query(TranscriptSegment).filter(
+        TranscriptSegment.meeting_id == meeting_id
+    ).all()
+    
+    modified_count = 0
+    for seg in segments:
+        changed = False
+        raw = seg.content_raw or ""
+        polished = seg.content_polished or ""
+        
+        for wrong, correct in glossary_map.items():
+            if wrong in raw:
+                raw = raw.replace(wrong, correct)
+                changed = True
+            if wrong in polished:
+                polished = polished.replace(wrong, correct)
+                changed = True
+        
+        if changed:
+            seg.content_raw = raw
+            seg.content_polished = polished
+            modified_count += 1
+    
+    if modified_count > 0:
+        db.commit()
+        logger.info(f"[Glossary] Applied corrections to {modified_count} segments for meeting {meeting_id}")
+    
+    return modified_count
+
+
 def _process_split_audio_sync(
     meeting_id: str,
     audio_url: str,
@@ -90,8 +173,8 @@ def _process_split_audio_sync(
     from app.audio_split import split_audio_to_chunks, cleanup_chunks
     from app.models import TranscriptSegment
 
-    # Semaphore 上限：對齊 Cloud Run GPU max-instances (目前 quota=2)
-    GPU_PARALLELISM = int(os.getenv("ASR_PARALLELISM", "2"))
+    # Semaphore 上限：對齊 Cloud Run GPU concurrency=3
+    GPU_PARALLELISM = int(os.getenv("ASR_PARALLELISM", "3"))
 
     chunks: list = []  # for finally cleanup
     cleanup_done = False
@@ -226,6 +309,15 @@ def _process_split_audio_sync(
             f"(from {n_chunks} chunks)"
         )
 
+        # C1: Apply glossary-based post-correction after writing segments
+        try:
+            user_upn = meeting.owner_upn
+            corrected = apply_glossary_correction(db, meeting_id, user_upn)
+            if corrected > 0:
+                logger.info(f"[ParallelASR] Glossary correction applied to {corrected} segments")
+        except Exception as e:
+            logger.warning(f"[ParallelASR] Glossary correction failed (non-fatal): {e}")
+
         # 5. Cleanup chunks from GCS — 只在所有 chunk 都 settled 後執行
         # （Phase A.1 修：原版 cleanup 在 failed_chunks 觸發 raise 前就跑，
         # 與 Cloud Run queue 中仍在等的 chunk race，造成 404 連鎖失敗）
@@ -349,6 +441,15 @@ def run_offline_asr_refinement(meeting_id: str, audio_path: str, language: str =
         meeting.transcript_raw = result.to_transcript_text(include_speaker=True)
         meeting.status = MeetingStatus.COMPLETED
         db.commit()
+
+        # C1: Apply glossary-based post-correction
+        try:
+            user_upn = meeting.owner_upn
+            corrected = apply_glossary_correction(db, meeting_id, user_upn)
+            if corrected > 0:
+                logger.info(f"[Offline ASR] Glossary correction applied to {corrected} segments")
+        except Exception as e:
+            logger.warning(f"[Offline ASR] Glossary correction failed (non-fatal): {e}")
 
         _update_task_status(
             db, meeting_id, "offline_asr", "COMPLETED",

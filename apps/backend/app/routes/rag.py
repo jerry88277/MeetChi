@@ -248,6 +248,100 @@ def _find_similar_segments(
     return results, total_searched
 
 
+def _find_similar_summaries(
+    db: Session,
+    query_embedding: list,
+    user_upn: Optional[str] = None,
+    meeting_ids: Optional[List[str]] = None,
+    top_k: int = 3,
+) -> list:
+    """
+    Search meetings.summary_embedding for high-level meeting-matching.
+    
+    Returns list of rows with: meeting_id, title, summary_json, distance.
+    Summary embeddings contain title + decisions + action_items → excellent for
+    "which meeting discussed X?" type questions.
+    """
+    embedding_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
+
+    if user_upn:
+        if meeting_ids:
+            placeholders = ",".join(f":mid_{i}" for i in range(len(meeting_ids)))
+            sql = text(f"""
+                SELECT
+                    m.id as meeting_id,
+                    m.title as meeting_title,
+                    m.summary_json,
+                    (m.summary_embedding <=> CAST(:query_embedding AS vector)) as distance
+                FROM meetings m
+                JOIN meeting_participants mp
+                    ON m.id = mp.meeting_id AND mp.user_upn = :user_upn
+                WHERE m.summary_embedding IS NOT NULL
+                  AND m.deleted_at IS NULL
+                  AND m.id IN ({placeholders})
+                ORDER BY m.summary_embedding <=> CAST(:query_embedding AS vector)
+                LIMIT :top_k
+            """)
+            params = {"query_embedding": embedding_str, "top_k": top_k, "user_upn": user_upn}
+            for i, mid in enumerate(meeting_ids):
+                params[f"mid_{i}"] = mid
+        else:
+            sql = text("""
+                SELECT
+                    m.id as meeting_id,
+                    m.title as meeting_title,
+                    m.summary_json,
+                    (m.summary_embedding <=> CAST(:query_embedding AS vector)) as distance
+                FROM meetings m
+                JOIN meeting_participants mp
+                    ON m.id = mp.meeting_id AND mp.user_upn = :user_upn
+                WHERE m.summary_embedding IS NOT NULL
+                  AND m.deleted_at IS NULL
+                ORDER BY m.summary_embedding <=> CAST(:query_embedding AS vector)
+                LIMIT :top_k
+            """)
+            params = {"query_embedding": embedding_str, "top_k": top_k, "user_upn": user_upn}
+    elif meeting_ids:
+        placeholders = ",".join(f":mid_{i}" for i in range(len(meeting_ids)))
+        sql = text(f"""
+            SELECT
+                m.id as meeting_id,
+                m.title as meeting_title,
+                m.summary_json,
+                (m.summary_embedding <=> CAST(:query_embedding AS vector)) as distance
+            FROM meetings m
+            WHERE m.summary_embedding IS NOT NULL
+              AND m.deleted_at IS NULL
+              AND m.id IN ({placeholders})
+            ORDER BY m.summary_embedding <=> CAST(:query_embedding AS vector)
+            LIMIT :top_k
+        """)
+        params = {"query_embedding": embedding_str, "top_k": top_k}
+        for i, mid in enumerate(meeting_ids):
+            params[f"mid_{i}"] = mid
+    else:
+        sql = text("""
+            SELECT
+                m.id as meeting_id,
+                m.title as meeting_title,
+                m.summary_json,
+                (m.summary_embedding <=> CAST(:query_embedding AS vector)) as distance
+            FROM meetings m
+            WHERE m.summary_embedding IS NOT NULL
+              AND m.deleted_at IS NULL
+            ORDER BY m.summary_embedding <=> CAST(:query_embedding AS vector)
+            LIMIT :top_k
+        """)
+        params = {"query_embedding": embedding_str, "top_k": top_k}
+
+    try:
+        results = db.execute(sql, params).fetchall()
+        return results
+    except Exception as e:
+        logger.warning(f"[RAG] Summary search failed (non-fatal): {e}")
+        return []
+
+
 def _build_rag_prompt(question: str, citations: List[Citation], history: Optional[List[ChatMessage]] = None) -> str:
     """
     Build a Gemini prompt with retrieved context, conversation history, and clear citation instructions.
@@ -384,8 +478,67 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
             status_code=500, 
             detail=f"Vector search failed. Ensure pgvector extension is enabled: {str(e)}"
         )
+
+    # Step 2.1: Also search meeting summaries (A1 optimization)
+    # Summary embeddings contain title + decisions + action_items → great for
+    # "which meeting discussed X?" or "what were the decisions in meeting Y?"
+    summary_citations: List[Citation] = []
+    try:
+        summary_results = _find_similar_summaries(
+            db, query_embedding,
+            user_upn=request.user_upn,
+            meeting_ids=request.meeting_ids,
+            top_k=3,
+        )
+        for sr in summary_results:
+            sim = 1.0 - float(sr.distance)
+            if sim < 0.3:
+                continue  # skip low-relevance summaries
+            # Extract meaningful content from summary_json
+            summary_content = ""
+            try:
+                sdata = json.loads(sr.summary_json) if sr.summary_json else {}
+                parts = []
+                if sdata.get("summary"):
+                    parts.append(sdata["summary"])
+                if sdata.get("decisions"):
+                    decisions = sdata["decisions"]
+                    dec_texts = []
+                    for d in decisions:
+                        if isinstance(d, str):
+                            dec_texts.append(d)
+                        elif isinstance(d, dict):
+                            dec_texts.append(d.get("decision", ""))
+                    if dec_texts:
+                        parts.append("決議事項：" + "；".join(filter(None, dec_texts)))
+                if sdata.get("action_items"):
+                    items = sdata["action_items"]
+                    item_texts = []
+                    for item in items[:5]:
+                        if isinstance(item, str):
+                            item_texts.append(item)
+                        elif isinstance(item, dict):
+                            item_texts.append(item.get("task", ""))
+                    if item_texts:
+                        parts.append("行動項目：" + "；".join(filter(None, item_texts)))
+                summary_content = "\n".join(filter(None, parts))
+            except Exception:
+                summary_content = sr.summary_json[:500] if sr.summary_json else ""
+
+            if summary_content:
+                summary_citations.append(Citation(
+                    meeting_id=sr.meeting_id,
+                    meeting_title=sr.meeting_title or "未命名會議",
+                    speaker=None,
+                    start_time=None,
+                    end_time=None,
+                    content=f"[會議摘要] {summary_content}",
+                    similarity=round(sim, 4),
+                ))
+    except Exception as e:
+        logger.warning(f"[RAG] Summary citation build failed (non-fatal): {e}")
     
-    if not results:
+    if not results and not summary_citations:
         return RAGResponse(
             answer="根據現有會議記錄，未找到與您問題相關的段落。可能尚未有會議記錄被索引。",
             citations=[],
@@ -396,13 +549,15 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
 
     # Step 2.5: Sentence-window expansion (劇本 2 - app.rag.chunker)
     # window=5: 短會議口語 segment 平均 5-8 字，需更大視窗才能涵蓋因果上下文
-    try:
-        expanded_rows = expand_with_context(db, results, window=5)
-    except Exception as e:
-        logger.warning(
-            f"[RAG] expand_with_context failed: {e}; falling back to raw rows"
-        )
-        expanded_rows = results  # graceful fallback
+    expanded_rows = []
+    if results:
+        try:
+            expanded_rows = expand_with_context(db, results, window=5)
+        except Exception as e:
+            logger.warning(
+                f"[RAG] expand_with_context failed: {e}; falling back to raw rows"
+            )
+            expanded_rows = results  # graceful fallback
 
     # Build citations from expanded rows (送 LLM) 與 raw rows (回 frontend)
     # 2026-05-25 (Y2): citation merge — 把同一場會議內間隔 < MERGE_GAP_SEC
@@ -411,7 +566,7 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
     # content 用 \n 串接；similarity 取群組內最高分（最具代表性）。
     MERGE_GAP_SEC = 120
 
-    sorted_results = sorted(results, key=lambda r: (r.meeting_id, r.start_time or 0))
+    sorted_results = sorted(results, key=lambda r: (r.meeting_id, r.start_time or 0)) if results else []
 
     citations: List[Citation] = []
     # 群組臨時狀態（避免 pydantic 即時 mutate；最後一次性 build）
@@ -465,6 +620,9 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
 
     # 用 expanded content 組 prompt（讓 LLM 看到更完整上下文）
     prompt_citations = []
+    # A1: Prepend summary citations first (highest semantic density)
+    for sc in summary_citations:
+        prompt_citations.append(sc)
     for er in expanded_rows:
         prompt_citations.append(Citation(
             meeting_id=getattr(er, "meeting_id", ""),
@@ -475,6 +633,9 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
             content=getattr(er, "content", "") or "",
             similarity=1.0 - float(getattr(er, "distance", 0.0)),
         ))
+
+    # A1: Merge summary_citations into frontend citations (prepend for priority)
+    citations = summary_citations + citations
 
     # Step 3: Generate answer with Gemini using app.rag.prompt.build_grounded_prompt
     # 取代既有 _build_rag_prompt（軟規則） → grounded 5 條硬規則 + 4 級 confidence
@@ -629,6 +790,22 @@ async def trigger_backfill(db: Session = Depends(get_db)):
         return {"status": "ok", **result}
     except Exception as e:
         logger.error(f"[RAG] Backfill failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reembed")
+async def trigger_reembed(db: Session = Depends(get_db)):
+    """
+    Force re-embed ALL segments with windowed strategy.
+    Use after upgrading embedding approach (e.g., window size change).
+    WARNING: This clears all existing segment embeddings and regenerates them.
+    """
+    from app.embedding import force_reembed_all
+    try:
+        result = force_reembed_all(db)
+        return {"status": "ok", **result}
+    except Exception as e:
+        logger.error(f"[RAG] Re-embed failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

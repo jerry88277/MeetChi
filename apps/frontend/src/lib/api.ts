@@ -311,8 +311,10 @@ class ApiClient {
     /**
      * List all meetings
      */
-    async listMeetings(skip = 0, limit = 100): Promise<Meeting[]> {
-        return this.fetch<Meeting[]>(`/api/v1/meetings?skip=${skip}&limit=${limit}`);
+    async listMeetings(skip = 0, limit = 100, userUpn?: string): Promise<Meeting[]> {
+        const params = new URLSearchParams({ skip: String(skip), limit: String(limit) });
+        if (userUpn) params.set('user_upn', userUpn);
+        return this.fetch<Meeting[]>(`/api/v1/meetings?${params.toString()}`);
     }
 
     /**
@@ -683,6 +685,21 @@ class ApiClient {
         return this.fetch(`/api/v1/feedback?${q.toString()}`);
     }
 
+    async listAdminFeedback(requesterUpn: string, statusFilter?: string, issueType?: string, skip = 0, limit = 100): Promise<FeedbackRead[]> {
+        const q = new URLSearchParams({ requester_upn: requesterUpn, skip: String(skip), limit: String(limit) });
+        if (statusFilter) q.set('status', statusFilter);
+        if (issueType) q.set('issue_type', issueType);
+        return this.fetch(`/api/v1/feedback/admin?${q.toString()}`);
+    }
+
+    async patchFeedback(id: string, requesterUpn: string, patch: { status?: string; assigned_to?: string; admin_notes?: string }): Promise<FeedbackRead> {
+        const q = new URLSearchParams({ requester_upn: requesterUpn });
+        return this.fetch(`/api/v1/feedback/${id}?${q.toString()}`, {
+            method: 'PATCH',
+            body: JSON.stringify(patch),
+        });
+    }
+
     // --- RAG API ---
     /**
      * 2026-05-25 Y5：取得使用者 RAG 查詢歷史
@@ -710,9 +727,58 @@ class ApiClient {
             }),
         });
     }
-}
 
-// Phase 8.2: Template types
+    // ==========================================
+    // Glossary API (C1: Global + Local terminology)
+    // ==========================================
+
+    async listGlobalGlossary(userUpn: string): Promise<GlossaryEntry[]> {
+        return this.fetch(`/api/v1/glossary/global?user_upn=${encodeURIComponent(userUpn)}`);
+    }
+
+    async createGlobalEntry(userUpn: string, wrongText: string, correctText: string, category = 'company'): Promise<GlossaryEntry> {
+        return this.fetch(`/api/v1/glossary/global?user_upn=${encodeURIComponent(userUpn)}`, {
+            method: 'POST',
+            body: JSON.stringify({ wrong_text: wrongText, correct_text: correctText, category }),
+        });
+    }
+
+    async deleteGlobalEntry(userUpn: string, entryId: string): Promise<void> {
+        return this.fetch(`/api/v1/glossary/global/${entryId}?user_upn=${encodeURIComponent(userUpn)}`, {
+            method: 'DELETE',
+        });
+    }
+
+    async updateGlobalEntry(userUpn: string, entryId: string, wrongText: string, correctText: string, category: string): Promise<GlossaryEntry> {
+        return this.fetch(`/api/v1/glossary/global/${entryId}?user_upn=${encodeURIComponent(userUpn)}`, {
+            method: 'PUT',
+            body: JSON.stringify({ wrong_text: wrongText, correct_text: correctText, category }),
+        });
+    }
+
+    async listMeetingGlossary(meetingId: string): Promise<GlossaryEntry[]> {
+        return this.fetch(`/api/v1/glossary/meeting/${meetingId}`);
+    }
+
+    async createMeetingEntry(meetingId: string, wrongText: string, correctText: string): Promise<GlossaryEntry> {
+        return this.fetch(`/api/v1/glossary/meeting/${meetingId}`, {
+            method: 'POST',
+            body: JSON.stringify({ wrong_text: wrongText, correct_text: correctText }),
+        });
+    }
+
+    async deleteMeetingEntry(meetingId: string, entryId: string): Promise<void> {
+        return this.fetch(`/api/v1/glossary/meeting/${meetingId}/${entryId}`, {
+            method: 'DELETE',
+        });
+    }
+
+    async applyGlossaryCorrection(meetingId: string, userUpn: string): Promise<{ meeting_id: string; segments_corrected: number }> {
+        return this.fetch(`/api/v1/glossary/apply/${meetingId}?user_upn=${encodeURIComponent(userUpn)}`, {
+            method: 'POST',
+        });
+    }
+}
 export interface TemplateSectionDTO {
     title: string;
     instruction: string;
@@ -781,6 +847,15 @@ export interface RagCitation {
     end_time: number | null;
     content: string;
     similarity: number;
+}
+
+// Glossary Types (C1)
+export interface GlossaryEntry {
+    id: string;
+    wrong_text: string;
+    correct_text: string;
+    category?: string | null;
+    usage_count?: number;
 }
 
 export interface RagChatMessage {

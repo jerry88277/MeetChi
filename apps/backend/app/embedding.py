@@ -89,7 +89,17 @@ def embed_single_text(client: genai.Client, text: str) -> Optional[List[float]]:
 def embed_transcript_segments(db: Session, meeting_id: str) -> int:
     """
     Generate and store embeddings for all TranscriptSegments of a meeting.
-    Only processes segments that don't have embeddings yet.
+    
+    Strategy (2026-06-09 改良):
+      每個 segment 的 embedding 不再只用自身 5-8 字的短文做向量，
+      而是用「滑動視窗合併文字」(sliding window paragraph) 產生 embedding，
+      讓每個 segment 的向量同時包含前後文語意上下文。
+      
+      視窗大小: EMBED_WINDOW (env, default=5) — 前後各取 5 個 segment 合併成
+      ~100-300 字的段落後做 embedding。
+      
+      效果: retrieval 時 cosine similarity 更能匹配語意完整的段落，
+      而非只匹配零散短句。
     
     Called automatically after transcription completes (tasks.py integration).
     
@@ -100,44 +110,78 @@ def embed_transcript_segments(db: Session, meeting_id: str) -> int:
     Returns:
         Number of segments successfully embedded
     """
+    EMBED_WINDOW = int(os.getenv("EMBED_WINDOW", "5"))
+    
     client = get_gemini_client()
     if not client:
         logger.error(f"[Embedding] Cannot embed segments for {meeting_id}: Gemini client unavailable")
         return 0
     
-    # Query segments without embeddings
-    segments = db.query(TranscriptSegment).filter(
+    # Query ALL segments (ordered) to build context windows
+    all_segments = db.query(TranscriptSegment).filter(
         TranscriptSegment.meeting_id == meeting_id,
-        TranscriptSegment.content_embedding == None  # noqa: E711
     ).order_by(TranscriptSegment.order).all()
     
-    if not segments:
-        logger.info(f"[Embedding] No un-embedded segments for {meeting_id}")
+    if not all_segments:
+        logger.info(f"[Embedding] No segments for {meeting_id}")
         return 0
     
-    # Prepare texts (prefer polished, fallback to raw)
-    texts = []
-    for seg in segments:
-        content = seg.content_polished or seg.content_raw or ""
-        # Prepend speaker label for better context in embeddings
-        if seg.speaker:
-            content = f"[{seg.speaker}] {content}"
-        texts.append(content)
+    # Filter to only un-embedded segments for actual embedding
+    segments_to_embed = [s for s in all_segments if s.content_embedding is None]
+    if not segments_to_embed:
+        logger.info(f"[Embedding] No un-embedded segments for {meeting_id}")
+        return 0
+
+    # A2 Optimization: Fetch meeting title to prepend as context prefix
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    title_prefix = f"[會議：{meeting.title}] " if meeting and meeting.title else ""
     
-    logger.info(f"[Embedding] Generating embeddings for {len(texts)} segments of meeting {meeting_id}")
+    # Build order→index map for fast window lookup
+    order_to_idx = {seg.order: i for i, seg in enumerate(all_segments)}
+    
+    def _get_segment_text(seg) -> str:
+        content = seg.content_polished or seg.content_raw or ""
+        if seg.speaker:
+            return f"[{seg.speaker}] {content}"
+        return content
+    
+    # Build windowed text for each segment to embed
+    texts = []
+    for seg in segments_to_embed:
+        idx = order_to_idx.get(seg.order)
+        if idx is None:
+            texts.append(_get_segment_text(seg))
+            continue
+        
+        # Collect window: [idx - EMBED_WINDOW, ..., idx, ..., idx + EMBED_WINDOW]
+        start_idx = max(0, idx - EMBED_WINDOW)
+        end_idx = min(len(all_segments) - 1, idx + EMBED_WINDOW)
+        
+        window_parts = []
+        for wi in range(start_idx, end_idx + 1):
+            window_parts.append(_get_segment_text(all_segments[wi]))
+        
+        # Join with space (Chinese doesn't need word separators but newline preserves flow)
+        # A2: Prepend meeting title as context prefix for better semantic matching
+        texts.append(title_prefix + " ".join(window_parts))
+    
+    logger.info(
+        f"[Embedding] Generating embeddings for {len(texts)} segments of meeting {meeting_id} "
+        f"(window={EMBED_WINDOW}, avg_len={sum(len(t) for t in texts)//max(len(texts),1)} chars)"
+    )
     
     embeddings = embed_texts(client, texts)
     
     # Write embeddings back to DB
     embedded_count = 0
-    for seg, embedding in zip(segments, embeddings):
+    for seg, embedding in zip(segments_to_embed, embeddings):
         if embedding is not None:
             seg.content_embedding = embedding
             embedded_count += 1
     
     try:
         db.commit()
-        logger.info(f"[Embedding] Successfully embedded {embedded_count}/{len(segments)} segments for {meeting_id}")
+        logger.info(f"[Embedding] Successfully embedded {embedded_count}/{len(segments_to_embed)} segments for {meeting_id}")
     except Exception as e:
         logger.error(f"[Embedding] Failed to commit segment embeddings for {meeting_id}: {e}")
         db.rollback()
@@ -369,4 +413,27 @@ def backfill_all_embeddings(db: Session) -> dict:
         "segments_embedded": segment_count,
     }
     logger.info(f"[Embedding] Backfill complete: {result}")
+    return result
+
+
+def force_reembed_all(db: Session) -> dict:
+    """
+    Force re-embed ALL segments with the new windowed strategy.
+    Clears existing embeddings first, then triggers full backfill.
+    
+    Use after changing EMBED_WINDOW or embedding strategy.
+    """
+    from sqlalchemy import text as sa_text
+    
+    # Clear all segment embeddings
+    cleared = db.execute(sa_text(
+        "UPDATE transcript_segments SET content_embedding = NULL WHERE content_embedding IS NOT NULL"
+    ))
+    db.commit()
+    cleared_count = cleared.rowcount
+    logger.info(f"[Embedding] Cleared {cleared_count} segment embeddings for force re-embed")
+    
+    # Run backfill (will now re-embed all with windowed strategy)
+    result = backfill_all_embeddings(db)
+    result["cleared_embeddings"] = cleared_count
     return result

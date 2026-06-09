@@ -14,6 +14,7 @@ from app.routes.meetings import router as meetings_router
 from app.routes.intent import router as intent_router
 from app.routes.feedback import router as feedback_router
 from app.routes.admin import router as admin_router
+from app.routes.glossary import router as glossary_router
 
 # Main router that includes all sub-routers
 api_router = APIRouter()
@@ -28,4 +29,5 @@ api_router.include_router(meetings_router)
 api_router.include_router(intent_router)
 api_router.include_router(feedback_router)
 api_router.include_router(admin_router)
+api_router.include_router(glossary_router)
 
