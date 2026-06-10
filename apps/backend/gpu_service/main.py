@@ -230,12 +230,24 @@ async def asr_refine(request: ASRRefineRequest):
 
         backoff_s = [0, 5, 15]  # 第 1 次立刻；失敗後等 5s；再失敗等 15s；總 3 次
         callback_ok = False
+        
+        # Cloud Run service-to-service auth: fetch OIDC ID token
+        auth_headers = {}
+        try:
+            import google.auth.transport.requests
+            import google.oauth2.id_token
+            auth_req = google.auth.transport.requests.Request()
+            token = google.oauth2.id_token.fetch_id_token(auth_req, request.callback_url)
+            auth_headers = {"Authorization": f"Bearer {token}"}
+        except Exception as auth_err:
+            logger.warning(f"[ASR Refine] Could not fetch ID token for callback: {auth_err}")
+        
         for attempt, wait_s in enumerate(backoff_s, start=1):
             if wait_s > 0:
                 await asyncio.sleep(wait_s)
             try:
                 async with httpx.AsyncClient(timeout=120.0) as client:
-                    resp = await client.post(request.callback_url, json=payload_dict)
+                    resp = await client.post(request.callback_url, json=payload_dict, headers=auth_headers)
                 if resp.status_code >= 400:
                     logger.warning(
                         f"[ASR Refine] Callback attempt {attempt}/3 failed "

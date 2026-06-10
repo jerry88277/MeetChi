@@ -126,12 +126,63 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
         tldr = extractFirstSentence(summary);
     }
 
-    // Transform transcript segments
-    const transcript: TranscriptLine[] = (apiMeeting.transcript_segments || []).map(seg => ({
-        time: formatSeconds(seg.start_time),
-        speaker: seg.speaker || "Unknown",
-        text: seg.content_polished || seg.content_raw
-    }));
+    // Transform transcript segments — aggregate consecutive same-speaker segments
+    // into paragraphs (target 150-250 chars) for better readability.
+    // Each paragraph retains the start_time of the first segment.
+    const rawSegments = (apiMeeting.transcript_segments || []);
+    const transcript: TranscriptLine[] = [];
+    const PARA_MIN_CHARS = 100;
+    const PARA_MAX_CHARS = 300;
+
+    let paraText = "";
+    let paraStartTime = 0;
+    let paraSpeaker = "";
+
+    for (let i = 0; i < rawSegments.length; i++) {
+        const seg = rawSegments[i];
+        const segText = seg.content_polished || seg.content_raw || "";
+        const segSpeaker = seg.speaker || "Unknown";
+
+        if (paraText === "") {
+            // Start a new paragraph
+            paraText = segText;
+            paraStartTime = seg.start_time;
+            paraSpeaker = segSpeaker;
+        } else if (segSpeaker === paraSpeaker && paraText.length + segText.length <= PARA_MAX_CHARS) {
+            // Same speaker and within char limit — append
+            paraText += segText;
+        } else {
+            // Flush current paragraph
+            transcript.push({
+                time: formatSeconds(paraStartTime),
+                speaker: paraSpeaker,
+                text: paraText
+            });
+            // Start new paragraph with current segment
+            paraText = segText;
+            paraStartTime = seg.start_time;
+            paraSpeaker = segSpeaker;
+        }
+
+        // Force flush if paragraph exceeds min and next segment is different speaker
+        const nextSeg = rawSegments[i + 1];
+        if (paraText.length >= PARA_MIN_CHARS && nextSeg && (nextSeg.speaker || "Unknown") !== paraSpeaker) {
+            transcript.push({
+                time: formatSeconds(paraStartTime),
+                speaker: paraSpeaker,
+                text: paraText
+            });
+            paraText = "";
+        }
+    }
+    // Flush final paragraph
+    if (paraText) {
+        transcript.push({
+            time: formatSeconds(paraStartTime),
+            speaker: paraSpeaker,
+            text: paraText
+        });
+    }
 
     // Parse speaker mappings (Phase 8.1.3)
     let speakerMappings: SpeakerMappings | undefined;

@@ -793,39 +793,49 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
             )
             expanded_rows = results  # graceful fallback
 
-    # Build citations from expanded rows (送 LLM) 與 raw rows (回 frontend)
+    # Build citations from EXPANDED rows for frontend display
+    # (expanded content provides 150-250 char paragraphs for better user context)
     # 2026-05-25 (Y2): citation merge — 把同一場會議內間隔 < MERGE_GAP_SEC
     # 的連續 segments 合成單一 citation，避免「10 個來源時間零散」UX 痛點。
     # 同會議內按 start_time 排序，gap < 120s 合併；speakers 用 set 統計，
     # content 用 \n 串接；similarity 取群組內最高分（最具代表性）。
     MERGE_GAP_SEC = 120
 
-    sorted_results = sorted(results, key=lambda r: (r.meeting_id, r.start_time or 0)) if results else []
+    # Use expanded rows for citation content (richer context)
+    citation_source = expanded_rows if expanded_rows else results
+    sorted_results = sorted(citation_source, key=lambda r: (getattr(r, 'meeting_id', ''), getattr(r, 'start_time', 0) or 0)) if citation_source else []
 
     citations: List[Citation] = []
     # 群組臨時狀態（避免 pydantic 即時 mutate；最後一次性 build）
     groups: List[dict] = []
     for row in sorted_results:
-        content = row.content_polished or row.content_raw or ""
-        similarity = 1.0 - float(row.distance)
+        # Use expanded content for richer citations (ExpandedRow.content includes window context)
+        content = getattr(row, 'content', '') or getattr(row, 'content_polished', '') or getattr(row, 'content_raw', '') or ""
+        similarity = 1.0 - float(getattr(row, 'distance', 0.0))
+        meeting_id = getattr(row, 'meeting_id', '')
+        start_time = getattr(row, 'start_time', None)
+        end_time = getattr(row, 'end_time', None)
+        meeting_title = getattr(row, 'meeting_title', None) or "未命名會議"
+        speaker = getattr(row, 'speaker', None)
+        
         if (
             groups
-            and groups[-1]["meeting_id"] == row.meeting_id
-            and (row.start_time or 0) - (groups[-1]["end_time"] or 0) < MERGE_GAP_SEC
+            and groups[-1]["meeting_id"] == meeting_id
+            and (start_time or 0) - (groups[-1]["end_time"] or 0) < MERGE_GAP_SEC
         ):
             g = groups[-1]
-            g["end_time"] = max(g["end_time"] or 0, row.end_time or 0)
+            g["end_time"] = max(g["end_time"] or 0, end_time or 0)
             g["content"] = (g["content"] + "\n" + content).strip()
             g["similarity"] = max(g["similarity"], similarity)
-            if row.speaker and row.speaker not in g["speakers"]:
-                g["speakers"].append(row.speaker)
+            if speaker and speaker not in g["speakers"]:
+                g["speakers"].append(speaker)
         else:
             groups.append({
-                "meeting_id": row.meeting_id,
-                "meeting_title": row.meeting_title or "未命名會議",
-                "speakers": [row.speaker] if row.speaker else [],
-                "start_time": row.start_time,
-                "end_time": row.end_time,
+                "meeting_id": meeting_id,
+                "meeting_title": meeting_title,
+                "speakers": [speaker] if speaker else [],
+                "start_time": start_time,
+                "end_time": end_time,
                 "content": content,
                 "similarity": similarity,
             })

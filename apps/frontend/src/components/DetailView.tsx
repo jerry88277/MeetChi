@@ -855,6 +855,8 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                                             <p
                                                                 className="text-foreground/80 text-sm leading-relaxed hover:bg-brand-green/10 rounded px-2 -ml-2 transition-colors cursor-pointer"
                                                                 style={{ borderLeft: `2px solid ${speaker.color}30`, paddingLeft: '10px' }}
+                                                                onClick={() => handleTimestampClick(line.time)}
+                                                                title="點擊播放這段發言"
                                                             >
                                                                 {line.text}
                                                             </p>
