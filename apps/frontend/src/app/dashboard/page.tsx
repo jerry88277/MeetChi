@@ -33,11 +33,13 @@ import { SettingsView } from '@/components/SettingsView';
 import { TemplateGallery } from '@/components/TemplateGallery';
 import { RagWorkspace } from '@/components/rag/RagWorkspace';
 import { RagDrawer } from '@/components/rag/RagDrawer';
+import { UploadTray } from '@/components/UploadTray';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FeedbackModal } from '@/components/FeedbackModal';
 import { AdminFeedbackPanel } from '@/components/AdminFeedbackPanel';
 import { useMeetings } from '@/hooks/useMeetings';
 import { useRecording } from '@/hooks/useRecording';
+import { useUploadQueue } from '@/hooks/useUploadQueue';
 import { useSummary } from '@/hooks/useSummary';
 import { useMeetingPolling } from '@/hooks/useMeetingPolling';
 import { useFontSize } from '@/hooks/useFontSize';
@@ -103,6 +105,9 @@ export default function DashboardPage() {
         lastUploadedMeetingId, fileInputRef, startRecording, triggerFileInput,
         uploadFile, resetUploadState,
     } = useRecording();
+
+    // Upload queue (Google Drive-style concurrent uploads)
+    const uploadQueue = useUploadQueue();
 
     // Phase C: Upload template & context selection
     const [uploadTemplateName, setUploadTemplateName] = useState('general');
@@ -197,7 +202,7 @@ export default function DashboardPage() {
 
     useMeetingPolling(
         lastUploadedMeetingId,
-        hasProcessingMeeting || uploadState === 'processing',
+        hasProcessingMeeting || uploadState === 'processing' || uploadQueue.tasks.some(t => t.status === 'processing'),
         handlePollingStatusChange,
     );
 
@@ -270,8 +275,9 @@ export default function DashboardPage() {
     //   數位時代 70+ MB 影片上傳需數分鐘，使用者很容易誤重整 → 整個 PUT 中斷。
     //   uploadState='uploading' 期間阻擋 reload / close tab（顯示瀏覽器原生
     //   confirm dialog）。'processing' 不必擋——audio 已在 GCS，重整不會丟。
+    // beforeunload protection: block when any upload is in progress (old hook OR new queue)
     useEffect(() => {
-        if (uploadState !== 'uploading') return;
+        if (uploadState !== 'uploading' && !uploadQueue.hasActiveUploads) return;
         const handler = (e: BeforeUnloadEvent) => {
             // 現代瀏覽器不再顯示自訂訊息，但 returnValue 必須設才會跳確認 dialog
             e.preventDefault();
@@ -279,8 +285,7 @@ export default function DashboardPage() {
         };
         window.addEventListener('beforeunload', handler);
         return () => window.removeEventListener('beforeunload', handler);
-    }, [uploadState]);
-
+    }, [uploadState, uploadQueue.hasActiveUploads]);
     // D3-2: Smart Interval Safety Net (v15)
     // Only activates when there's a processing meeting but NO active single-meeting poll.
     // This handles: (1) page refresh losing lastUploadedMeetingId, (2) uploads from other devices.
@@ -356,9 +361,7 @@ export default function DashboardPage() {
         }
     };
 
-    // 2026-05-25 (Y6) 批次上傳：files 多選 → 依序執行單筆 uploadFile。
-    // 序列化（非平行）原因：avoid GCS signed URL race / GPU queue 雪崩；
-    // 序列保證每筆完成後才下一筆，且當下 uploadState='processing' 防誤觸。
+    // Upload queue-based file handler (Google Drive style: concurrent, non-blocking)
     const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
 
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -367,84 +370,39 @@ export default function DashboardPage() {
         const files = Array.from(fileList);
         event.target.value = '';
 
-        const executeUpload = async (f: File): Promise<void> => {
-            await uploadFile(
-                f,
-                (fileName) => {
-                    showSuccess(`上傳成功！檔案「${fileName}」已開始處理。`);
-                    fetchMeetings();
-                },
-                (msg) => setError(msg),
-                uploadTemplateName,
-                uploadContext,
-                uploadConfidential,
-            );
-        };
-
-        const checkDuration = (file: File): Promise<boolean> => {
-            // 回傳 true=繼續上傳，false=取消
-            return new Promise((resolve) => {
-                if (!(file.type.startsWith('audio/') || file.type.startsWith('video/'))) {
-                    resolve(true);
-                    return;
+        // For large files (>120 min), confirm before adding to queue
+        const filesToQueue: File[] = [];
+        for (const file of files) {
+            if (file.type.startsWith('audio/') || file.type.startsWith('video/')) {
+                const duration = await new Promise<number>((resolve) => {
+                    const url = URL.createObjectURL(file);
+                    const media = new Audio(url);
+                    media.addEventListener('loadedmetadata', () => {
+                        URL.revokeObjectURL(url);
+                        resolve(media.duration / 60);
+                    });
+                    media.addEventListener('error', () => {
+                        URL.revokeObjectURL(url);
+                        resolve(0);
+                    });
+                });
+                if (duration > 120) {
+                    const confirmed = await showConfirm(
+                        '大型檔案提醒',
+                        `${file.name} 長度約 ${Math.round(duration)} 分鐘。處理時間可能 20+ 分鐘，是否繼續？`,
+                        'primary'
+                    );
+                    if (!confirmed) continue;
                 }
-                const url = URL.createObjectURL(file);
-                const media = new Audio(url);
-                media.addEventListener('loadedmetadata', () => {
-                    URL.revokeObjectURL(url);
-                    const minutes = media.duration / 60;
-                    if (minutes > 120) {
-                        setConfirmState({
-                            title: '大型檔案提醒',
-                            description: `${file.name} 長度約 ${Math.round(minutes)} 分鐘。處理時間可能 20+ 分鐘，是否繼續？`,
-                            variant: 'primary',
-                            resolve,
-                        });
-                    } else {
-                        resolve(true);
-                    }
-                });
-                media.addEventListener('error', () => {
-                    URL.revokeObjectURL(url);
-                    resolve(true);  // 不支援格式直接讓 backend 處理
-                });
-            });
-        };
-
-        // Single file path：直接走（與原行為一致）
-        if (files.length === 1) {
-            const proceed = await checkDuration(files[0]);
-            if (proceed) await executeUpload(files[0]);
-            return;
+            }
+            filesToQueue.push(file);
         }
 
-        // Batch path：序列上傳，顯示進度
-        const batchConfirmed = await showConfirm(
-            '批次上傳確認',
-            `即將依序上傳 ${files.length} 個檔案，全部完成前請勿關閉視窗。是否繼續？`,
-            'primary'
-        );
-        if (!batchConfirmed) {
-            return;
+        if (filesToQueue.length > 0) {
+            uploadQueue.enqueueFiles(filesToQueue, uploadTemplateName, uploadContext, uploadConfidential);
+            // Refresh meeting list after a delay to pick up new PENDING meetings
+            setTimeout(() => fetchMeetings(), 2000);
         }
-        setBatchProgress({ current: 0, total: files.length });
-        for (let i = 0; i < files.length; i++) {
-            setBatchProgress({ current: i + 1, total: files.length });
-            const f = files[i];
-            const proceed = await checkDuration(f);
-            if (!proceed) {
-                showSuccess(`已跳過 ${f.name}（過長且未確認）`);
-                continue;
-            }
-            try {
-                await executeUpload(f);
-            } catch (err) {
-                console.error(`Batch upload ${f.name} failed:`, err);
-                // 單筆失敗不中斷批次（已 toast.error）
-            }
-        }
-        setBatchProgress(null);
-        showSuccess(`批次上傳完成（${files.length} 個檔案）`);
     };
 
     const handleViewDetail = async (meeting: Meeting) => {
@@ -725,6 +683,15 @@ export default function DashboardPage() {
     return (
         <div className="flex h-screen bg-surface font-sans text-foreground overflow-hidden relative">
             {uploadingOverlay}
+            {/* Upload Queue Tray (Google Drive-style, bottom-right) */}
+            <UploadTray
+                tasks={uploadQueue.tasks}
+                isOpen={uploadQueue.isTrayOpen}
+                onToggle={() => uploadQueue.setIsTrayOpen(v => !v)}
+                onRetry={uploadQueue.retryTask}
+                onRemove={uploadQueue.removeTask}
+                onClearCompleted={uploadQueue.clearCompleted}
+            />
             {/* State-driven confirm dialog (replaces window.confirm) */}
             <ConfirmDialog
                 open={!!confirmState}
