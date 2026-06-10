@@ -101,6 +101,30 @@ export function useMeetings() {
         }
     }, [session?.user?.email]);
 
+    const fetchMeetingsWithFilter = useCallback(async (params?: { keyword?: string; dateFrom?: string; dateTo?: string }) => {
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            await api.checkHealth();
+            setIsConnected(true);
+
+            const apiMeetings = await api.listMeetings(
+                0, 100, userEmail || undefined,
+                params?.keyword, params?.dateFrom, params?.dateTo
+            );
+            const transformedMeetings = apiMeetings.map(transformMeeting)
+                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            setMeetings(transformedMeetings);
+        } catch (err) {
+            setIsConnected(false);
+            setError(err instanceof Error ? err.message : '發生未知錯誤');
+            setMeetings([]);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [userEmail]);
+
     return {
         meetings,
         isLoading,
@@ -109,6 +133,7 @@ export function useMeetings() {
         isConnected,
         successMessage,
         fetchMeetings,
+        fetchMeetingsWithFilter,
         showSuccess,
         deleteMeeting,
     };

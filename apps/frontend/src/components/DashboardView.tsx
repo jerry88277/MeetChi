@@ -46,11 +46,16 @@ interface DashboardViewProps {
     // 2026-05-24 (request #1)：拖曳框選後批次刪除
     onBulkDelete?: (meetingIds: string[]) => void;
     onRename?: (meetingId: string, newTitle: string) => void;
+    // 2026-06-10: Server-side filtering
+    onServerFilter?: (params: { keyword?: string; dateFrom?: string; dateTo?: string }) => void;
 }
 
-export const DashboardView = ({ meetings, isLoading, isUploading = false, uploadState = 'idle', error, successMessage, onSelectMeeting, onCreateMeeting, onUploadClick, onRefresh, availableTemplates = [], selectedTemplateName = 'general', onTemplateChange, uploadContext = '', onUploadContextChange, uploadConfidential = false, onUploadConfidentialChange, onBulkDelete, onRename }: DashboardViewProps) => {
+export const DashboardView = ({ meetings, isLoading, isUploading = false, uploadState = 'idle', error, successMessage, onSelectMeeting, onCreateMeeting, onUploadClick, onRefresh, availableTemplates = [], selectedTemplateName = 'general', onTemplateChange, uploadContext = '', onUploadContextChange, uploadConfidential = false, onUploadConfidentialChange, onBulkDelete, onRename, onServerFilter }: DashboardViewProps) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [showDateFilter, setShowDateFilter] = useState(false);
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
     const menuRef = useRef<HTMLDivElement>(null);
 
     // 2026-05-24 (request #1)：拖曳框選 + 批次刪除
@@ -186,16 +191,74 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
 
             {/* PR19: 移除手寫 inline toast banner，全改 sonner Toaster (mounted in providers.tsx) */}
 
-            {/* Search Bar */}
-            <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
-                <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="搜尋會議標題或摘要重點"
-                    className="w-full pl-11 pr-4 py-3 bg-card border border-border rounded-full focus:outline-none focus:ring-2 focus:ring-brand-cta/40 focus:border-brand-cta/40 shadow-sm transition-[border-color,box-shadow] duration-200"
-                />
+            {/* Search Bar + Date Filter */}
+            <div className="space-y-3">
+                <div className="flex gap-2 items-center">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && onServerFilter) {
+                                    onServerFilter({ keyword: searchQuery || undefined, dateFrom: dateFrom || undefined, dateTo: dateTo || undefined });
+                                }
+                            }}
+                            placeholder="搜尋會議標題或摘要重點"
+                            className="w-full pl-11 pr-4 py-3 bg-card border border-border rounded-full focus:outline-none focus:ring-2 focus:ring-brand-cta/40 focus:border-brand-cta/40 shadow-sm transition-[border-color,box-shadow] duration-200"
+                        />
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setShowDateFilter(!showDateFilter)}
+                        className={`px-3 py-3 rounded-full border transition-colors ${showDateFilter ? 'bg-brand-cta text-white border-brand-cta' : 'bg-card border-border text-muted-foreground hover:text-foreground'}`}
+                        title="日期篩選"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+                    </button>
+                    {onServerFilter && (searchQuery || dateFrom || dateTo) && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setSearchQuery('');
+                                setDateFrom('');
+                                setDateTo('');
+                                setShowDateFilter(false);
+                                onServerFilter({});
+                            }}
+                            className="px-3 py-3 rounded-full border border-border bg-card text-muted-foreground hover:text-foreground transition-colors"
+                            title="清除篩選"
+                        >
+                            <X size={18} />
+                        </button>
+                    )}
+                </div>
+                {showDateFilter && (
+                    <div className="flex items-center gap-3 pl-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                        <span className="text-sm text-muted-foreground">日期範圍：</span>
+                        <input
+                            type="date"
+                            value={dateFrom}
+                            onChange={e => setDateFrom(e.target.value)}
+                            className="px-3 py-1.5 text-sm border rounded-lg bg-card"
+                        />
+                        <span className="text-muted-foreground">—</span>
+                        <input
+                            type="date"
+                            value={dateTo}
+                            onChange={e => setDateTo(e.target.value)}
+                            className="px-3 py-1.5 text-sm border rounded-lg bg-card"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => onServerFilter?.({ keyword: searchQuery || undefined, dateFrom: dateFrom || undefined, dateTo: dateTo || undefined })}
+                            className="px-4 py-1.5 text-sm bg-brand-cta text-white rounded-lg hover:opacity-90 font-medium"
+                        >
+                            套用
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Loading State */}

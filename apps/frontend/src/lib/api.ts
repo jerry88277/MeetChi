@@ -311,9 +311,12 @@ class ApiClient {
     /**
      * List all meetings
      */
-    async listMeetings(skip = 0, limit = 100, userUpn?: string): Promise<Meeting[]> {
+    async listMeetings(skip = 0, limit = 100, userUpn?: string, keyword?: string, dateFrom?: string, dateTo?: string): Promise<Meeting[]> {
         const params = new URLSearchParams({ skip: String(skip), limit: String(limit) });
         if (userUpn) params.set('user_upn', userUpn);
+        if (keyword) params.set('keyword', keyword);
+        if (dateFrom) params.set('date_from', dateFrom);
+        if (dateTo) params.set('date_to', dateTo);
         return this.fetch<Meeting[]>(`/api/v1/meetings?${params.toString()}`);
     }
 
@@ -785,6 +788,53 @@ class ApiClient {
             method: 'POST',
         });
     }
+
+    // ==========================================
+    // Ops Admin API
+    // ==========================================
+
+    async getMyRole(): Promise<{ email: string; role: string }> {
+        return this.fetch('/api/v1/ops/my-role');
+    }
+
+    async getOpsOverview(): Promise<OpsOverview> {
+        return this.fetch('/api/v1/ops/overview');
+    }
+
+    async listOpsMeetings(params?: {
+        user_upn?: string;
+        status_filter?: string;
+        date_from?: string;
+        date_to?: string;
+        keyword?: string;
+        skip?: number;
+        limit?: number;
+    }): Promise<OpsMeetingItem[]> {
+        const sp = new URLSearchParams();
+        if (params?.user_upn) sp.set('user_upn', params.user_upn);
+        if (params?.status_filter) sp.set('status_filter', params.status_filter);
+        if (params?.date_from) sp.set('date_from', params.date_from);
+        if (params?.date_to) sp.set('date_to', params.date_to);
+        if (params?.keyword) sp.set('keyword', params.keyword);
+        sp.set('skip', String(params?.skip ?? 0));
+        sp.set('limit', String(params?.limit ?? 50));
+        return this.fetch(`/api/v1/ops/meetings?${sp.toString()}`);
+    }
+
+    async listOpsUsers(): Promise<OpsUserStats[]> {
+        return this.fetch('/api/v1/ops/users');
+    }
+
+    async getOpsMeetingFull(meetingId: string): Promise<any> {
+        return this.fetch(`/api/v1/ops/meetings/${meetingId}/full`);
+    }
+
+    async updateUserRole(userUpn: string, role: string): Promise<{ message: string }> {
+        return this.fetch('/api/v1/ops/roles', {
+            method: 'POST',
+            body: JSON.stringify({ user_upn: userUpn, role }),
+        });
+    }
 }
 export interface TemplateSectionDTO {
     title: string;
@@ -904,6 +954,44 @@ export interface RagGreetingResponse {
     pending_action_count: number;
     greeting_text: string;
     suggested_questions: string[];
+}
+
+// Ops Admin types
+export interface OpsOverview {
+    total_users: number;
+    total_meetings: number;
+    meetings_completed: number;
+    meetings_processing: number;
+    meetings_failed: number;
+    total_audio_hours: number;
+    total_segments: number;
+    estimated_monthly_cost_usd: number;
+}
+
+export interface OpsMeetingItem {
+    id: string;
+    title: string;
+    status: string;
+    owner_upn: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+    duration: number | null;
+    segment_count: number;
+    upload_completed_at: string | null;
+    transcription_started_at: string | null;
+    transcription_completed_at: string | null;
+    embedding_completed_at: string | null;
+    total_processing_seconds: number | null;
+    failure_reason: string | null;
+}
+
+export interface OpsUserStats {
+    user_upn: string;
+    display_name: string | null;
+    meeting_count: number;
+    total_audio_seconds: number;
+    last_upload_at: string | null;
+    estimated_cost_usd: number;
 }
 
 // Export singleton instance

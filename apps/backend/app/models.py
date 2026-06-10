@@ -58,6 +58,7 @@ class User(Base):
     display_name  = Column(String(255), nullable=True)
     department    = Column(String(255), nullable=True)   # 從 AD 同步，供未來群組存取用
     is_admin      = Column(Boolean,     nullable=False, default=False)  # 系統管理員可存取所有會議
+    role          = Column(String(20),  nullable=False, default="user")  # user | admin | super_admin
     created_at    = Column(DateTime,    default=datetime.utcnow)
     last_login_at = Column(DateTime,    nullable=True)
 

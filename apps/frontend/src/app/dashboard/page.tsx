@@ -37,6 +37,7 @@ import { UploadTray } from '@/components/UploadTray';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FeedbackModal } from '@/components/FeedbackModal';
 import { AdminFeedbackPanel } from '@/components/AdminFeedbackPanel';
+import { OpsAdminPanel } from '@/components/OpsAdminPanel';
 import { useMeetings } from '@/hooks/useMeetings';
 import { useRecording } from '@/hooks/useRecording';
 import { useUploadQueue } from '@/hooks/useUploadQueue';
@@ -85,18 +86,28 @@ export default function DashboardPage() {
     }, []);
 
     // Check admin status
+    const [userRole, setUserRole] = useState<string>('user');
     React.useEffect(() => {
         const email = session?.user?.email;
         if (!email) return;
-        api.listAdminFeedback(email, undefined, undefined, 0, 1)
-            .then(() => setIsAdmin(true))
-            .catch(() => setIsAdmin(false));
+        // Check role via ops API
+        api.getMyRole()
+            .then(({ role }) => {
+                setUserRole(role);
+                setIsAdmin(role === 'admin' || role === 'super_admin');
+            })
+            .catch(() => {
+                // Fallback: check old admin feedback API
+                api.listAdminFeedback(email, undefined, undefined, 0, 1)
+                    .then(() => setIsAdmin(true))
+                    .catch(() => setIsAdmin(false));
+            });
     }, [session?.user?.email]);
 
     // Custom hooks
     const {
         meetings, isLoading, error, setError, isConnected,
-        successMessage, fetchMeetings, showSuccess, deleteMeeting,
+        successMessage, fetchMeetings, fetchMeetingsWithFilter, showSuccess, deleteMeeting,
     } = useMeetings();
 
     const {
@@ -850,6 +861,7 @@ export default function DashboardPage() {
                                 onUploadConfidentialChange={setUploadConfidential}
                                 onBulkDelete={(ids) => setPendingBulkDelete({ meetingIds: ids })}
                                 onRename={handleRenameMeeting}
+                                onServerFilter={fetchMeetingsWithFilter}
                             />
                         </>
                     )}
@@ -907,103 +919,14 @@ export default function DashboardPage() {
                     )}
 
                     {currentView === 'admin' && (
-                        <div className="p-6 md:p-8 max-w-5xl mx-auto overflow-auto">
-                            <div className="mb-8">
-                                <h1 className="text-2xl font-bold text-foreground mb-2">管理</h1>
-                                <p className="text-muted-foreground">系統管理與用戶設定</p>
-                            </div>
-
-                            {/* User Profile Card */}
-                            <div className="bg-card rounded-xl border border-border p-6 mb-6">
-                                <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                                    <Shield size={20} className="text-brand-cta" />
-                                    當前用戶
-                                </h2>
-                                <div className="flex items-center gap-4">
-                                    {session?.user?.image ? (
-                                        <img
-                                            src={session.user.image}
-                                            alt={session.user.name || 'User'}
-                                            className="w-16 h-16 rounded-full"
-                                        />
-                                    ) : (
-                                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-brand-cta to-brand-violet flex items-center justify-center text-white text-2xl font-bold">
-                                            {session?.user?.name?.charAt(0) || '?'}
-                                        </div>
-                                    )}
-                                    <div>
-                                        <p className="text-lg font-medium text-foreground">{session?.user?.name || '未登入'}</p>
-                                        <p className="text-muted-foreground">{session?.user?.email || '-'}</p>
-                                        <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 text-xs bg-brand-cta/15 text-brand-cta rounded-full">
-                                            <Shield size={12} />
-                                            管理員
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Stats Grid */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                                <div className="bg-card rounded-xl border border-border p-5">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 bg-brand-cta/15 rounded-lg flex items-center justify-center text-brand-cta">
-                                            <FileText size={20} />
-                                        </div>
-                                        <div>
-                                            <p className="text-2xl font-bold text-foreground">{meetings.length}</p>
-                                            <p className="text-sm text-muted-foreground">會議記錄</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="bg-card rounded-xl border border-border p-5">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 bg-status-success/15 rounded-lg flex items-center justify-center text-status-success">
-                                            <CheckCircle2 size={20} />
-                                        </div>
-                                        <div>
-                                            <p className="text-2xl font-bold text-foreground">{meetings.filter(m => m.status === 'completed').length}</p>
-                                            <p className="text-sm text-muted-foreground">已完成摘要</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="bg-card rounded-xl border border-border p-5">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isConnected ? 'bg-status-success/15 text-status-success' : 'bg-status-error/15 text-status-error'}`}>
-                                            {isConnected ? <Wifi size={20} /> : <WifiOff size={20} />}
-                                        </div>
-                                        <div>
-                                            <p className="text-2xl font-bold text-foreground">{isConnected ? 'Online' : 'Offline'}</p>
-                                            <p className="text-sm text-muted-foreground">後端狀態</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                        <div className="overflow-auto">
+                            {/* Ops Admin Panel (system operations dashboard) */}
+                            <OpsAdminPanel userRole={userRole} />
 
                             {/* Admin Feedback Panel */}
-                            <div className="bg-card rounded-xl border border-border p-6 mb-6">
-                                <AdminFeedbackPanel userUpn={session?.user?.email || ''} />
-                            </div>
-
-                            {/* Coming Soon */}
-                            <div className="bg-card rounded-xl border border-border p-6">
-                                <h2 className="text-lg font-semibold text-foreground mb-4">功能規劃</h2>
-                                <div className="space-y-3">
-                                    {[
-                                        { icon: Shield, label: 'Entra ID 整合', desc: '企業 SSO 認證', color: 'status-warning' },
-                                        { icon: Settings, label: '用戶管理', desc: '角色權限設定', color: 'brand-violet' },
-                                        { icon: Calendar, label: '會議分析', desc: '統計報表、趨勢分析', color: 'brand-cta' },
-                                    ].map((item, i) => (
-                                        <div key={i} className="flex items-center gap-3 p-3 bg-muted rounded-lg">
-                                            <div className={`w-8 h-8 bg-${item.color}/15 rounded-lg flex items-center justify-center text-${item.color}`}>
-                                                <item.icon size={16} />
-                                            </div>
-                                            <div className="flex-1">
-                                                <p className="font-medium text-foreground/80">{item.label}</p>
-                                                <p className="text-xs text-muted-foreground">{item.desc}</p>
-                                            </div>
-                                            <span className={`px-2 py-1 text-xs bg-${item.color}/15 text-${item.color} rounded`}>規劃中</span>
-                                        </div>
-                                    ))}
+                            <div className="p-6 md:p-8 max-w-7xl mx-auto">
+                                <div className="bg-card rounded-xl border border-border p-6">
+                                    <AdminFeedbackPanel userUpn={session?.user?.email || ''} />
                                 </div>
                             </div>
                         </div>

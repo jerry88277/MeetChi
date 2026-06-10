@@ -45,7 +45,7 @@ export const Sidebar = ({
         { id: 'rag', icon: MessageSquare, label: 'ChiMemo', tourId: 'nav-rag' },
         { id: 'templates', icon: LayoutTemplate, label: '模板管理' },
         { id: 'settings', icon: Settings, label: '系統設定' },
-        ...(isAdmin ? [{ id: 'admin', icon: FlaskConical, label: '管理員' }] : []),
+        ...(isAdmin ? [{ id: 'admin', icon: FlaskConical, label: '系統維運' }] : []),
     ];
 
     const sidebarClass = `fixed inset-y-0 left-0 z-50 w-64 bg-brand-navy text-white transform transition-transform duration-300 ease-in-out ${

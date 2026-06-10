@@ -110,6 +110,9 @@ async def list_meetings(
     skip: int = 0,
     limit: int = 100,
     user_upn: Optional[str] = Query(None, description="當前登入用戶 UPN，啟用 MemPlace 隔離"),
+    keyword: Optional[str] = Query(None, description="依會議標題搜尋"),
+    date_from: Optional[str] = Query(None, description="起始日期 (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="結束日期 (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
 ):
     """List active (non-deleted) meetings filtered by user access.
@@ -117,11 +120,7 @@ async def list_meetings(
     When user_upn is provided, only returns meetings where the user is a participant
     (MemPlace isolation). Without user_upn, returns all meetings (admin/legacy mode).
 
-    Detail view 仍會用 GET /api/v1/meetings/{id} 拿完整 segments；
-    list 端不回 segments 是為了避免 N+1 lazy-load 把 worker pool 拖垮
-    （見 prod 503 incident 2026-05-09：limit=100 的 list 要 74s 並 503）。
-
-    Soft-deleted (deleted_at IS NOT NULL) 預設不列；admin 端點看 trash。
+    Supports keyword search (title) and date range filtering.
     """
     query = db.query(Meeting).filter(Meeting.deleted_at.is_(None))
 
@@ -132,6 +131,25 @@ async def list_meetings(
             .join(MeetingParticipant, Meeting.id == MeetingParticipant.meeting_id)
             .filter(MeetingParticipant.user_upn == user_upn)
         )
+
+    if keyword:
+        query = query.filter(Meeting.title.ilike(f"%{keyword}%"))
+
+    if date_from:
+        try:
+            from datetime import datetime as _dt
+            df = _dt.fromisoformat(date_from)
+            query = query.filter(Meeting.created_at >= df)
+        except ValueError:
+            pass
+
+    if date_to:
+        try:
+            from datetime import datetime as _dt, timedelta as _td
+            dt = _dt.fromisoformat(date_to) + _td(days=1)
+            query = query.filter(Meeting.created_at < dt)
+        except ValueError:
+            pass
 
     meetings = (
         query
