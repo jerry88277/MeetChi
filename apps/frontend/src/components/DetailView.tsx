@@ -43,6 +43,7 @@ interface DetailViewProps {
     isRegenerating?: boolean;
     onDelete?: (meetingId: string) => void;
     isDeleting?: boolean;
+    onRename?: (meetingId: string, newTitle: string) => void;
     /** 2026-05-11：開啟 feedback modal 並帶入當前 meeting_id，讓使用者
      *  能直接針對「這個會議」回報問題，IT 可由 meeting_id 精準 debug。 */
     onReportThisMeeting?: (meetingId: string) => void;
@@ -62,7 +63,7 @@ interface DetailViewProps {
  *   - Phase D version history / audio playback / ?t= deeplink 自動跳秒
  *   - regenerate / template selector / export / delete
  */
-export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateTranscript, isRegenerating = false, onDelete, isDeleting = false, onReportThisMeeting }: DetailViewProps) => {
+export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateTranscript, isRegenerating = false, onDelete, isDeleting = false, onRename, onReportThisMeeting }: DetailViewProps) => {
     const searchParams = useSearchParams();
     const { data: session } = useSession();
     const userUpn = session?.user?.email || '';
@@ -81,6 +82,20 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     const [editName, setEditName] = useState('');
     const [editRole, setEditRole] = useState('');
     const [isSavingSpeaker, setIsSavingSpeaker] = useState(false);
+
+    // Inline rename state
+    const [isRenamingTitle, setIsRenamingTitle] = useState(false);
+    const [renameTitle, setRenameTitle] = useState(meeting?.title || '');
+    const renameTitleRef = React.useRef<HTMLInputElement>(null);
+    React.useEffect(() => { if (isRenamingTitle) renameTitleRef.current?.focus(); }, [isRenamingTitle]);
+
+    const handleRenameSubmit = () => {
+        const trimmed = renameTitle.trim();
+        if (trimmed && trimmed !== meeting?.title && onRename && meeting) {
+            onRename(meeting.id, trimmed);
+        }
+        setIsRenamingTitle(false);
+    };
 
     // Phase D: Audio playback state
     const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -238,7 +253,32 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                 </button>
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                        <h2 className="text-xl font-bold text-foreground truncate">{meeting.title}</h2>
+                        {isRenamingTitle ? (
+                            <input
+                                ref={renameTitleRef}
+                                value={renameTitle}
+                                onChange={(e) => setRenameTitle(e.target.value)}
+                                onBlur={handleRenameSubmit}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleRenameSubmit();
+                                    if (e.key === 'Escape') { setIsRenamingTitle(false); setRenameTitle(meeting.title); }
+                                }}
+                                className="text-xl font-bold text-foreground bg-muted border border-brand-cta/40 rounded-lg px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-brand-cta/50 min-w-[200px]"
+                            />
+                        ) : (
+                            <>
+                                <h2 className="text-xl font-bold text-foreground truncate">{meeting.title}</h2>
+                                {onRename && (
+                                    <button
+                                        onClick={() => { setRenameTitle(meeting.title); setIsRenamingTitle(true); }}
+                                        className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-brand-cta transition-colors"
+                                        title="修改會議名稱"
+                                    >
+                                        <Edit2 size={14} />
+                                    </button>
+                                )}
+                            </>
+                        )}
                         {meeting.isConfidential && (
                             <span className="shrink-0 text-xs font-semibold px-2 py-0.5 rounded-md bg-status-error/10 text-status-error border border-status-error/20" title="機密會議：後續 Phase 將鎖複製/截圖警示/浮水印">
                                 🔒 機密

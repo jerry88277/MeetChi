@@ -15,6 +15,8 @@ export function useMeetings() {
     const [isConnected, setIsConnected] = useState(false);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+    const userEmail = session?.user?.email;
+
     const fetchMeetings = useCallback(async () => {
         setIsLoading(true);
         setError(null);
@@ -23,7 +25,7 @@ export function useMeetings() {
             await api.checkHealth();
             setIsConnected(true);
 
-            const apiMeetings = await api.listMeetings();
+            const apiMeetings = await api.listMeetings(0, 100, userEmail || undefined);
             const transformedMeetings = apiMeetings.map(transformMeeting)
                 .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
             setMeetings(transformedMeetings);
@@ -34,7 +36,7 @@ export function useMeetings() {
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [userEmail]);
 
     useEffect(() => {
         fetchMeetings();

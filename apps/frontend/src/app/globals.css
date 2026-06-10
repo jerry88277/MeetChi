@@ -58,9 +58,9 @@
   /* --- Semantic Colors (Light Mode Default) ---
      對齊 Granola 的 calm 設計 — 中性灰白為底，給 DDG 8 色點綴空間
   */
-  --color-background: #FAFAF8;   /* 微暖中性（原 #fff，C1 audit fix） */
+  --color-background: #F5F7FA;   /* 微冷灰藍底色 — 護眼降對比（原 #FAFAF8 微暖） */
   --color-foreground: #0f172a;
-  --color-surface: #FAFAF8;        /* 微暖中性灰白（取代 #f8fafc 純冷灰） */
+  --color-surface: #F5F7FA;        /* 對齊 background — 護眼微冷灰藍 */
   --color-card: #ffffff;
   --color-muted: #f1f5f9;
   --color-muted-foreground: #64748b;

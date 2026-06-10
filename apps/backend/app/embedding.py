@@ -132,9 +132,9 @@ def embed_transcript_segments(db: Session, meeting_id: str) -> int:
         logger.info(f"[Embedding] No un-embedded segments for {meeting_id}")
         return 0
 
-    # A2 Optimization: Fetch meeting title to prepend as context prefix
-    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
-    title_prefix = f"[會議：{meeting.title}] " if meeting and meeting.title else ""
+    # A2 Optimization REMOVED: Title prefix causes embedding pollution
+    # (all segments from same meeting get near-identical embeddings dominated by prefix)
+    # Title-based queries are now handled by A3 title-match pre-filter in rag.py
     
     # Build order→index map for fast window lookup
     order_to_idx = {seg.order: i for i, seg in enumerate(all_segments)}
@@ -162,8 +162,7 @@ def embed_transcript_segments(db: Session, meeting_id: str) -> int:
             window_parts.append(_get_segment_text(all_segments[wi]))
         
         # Join with space (Chinese doesn't need word separators but newline preserves flow)
-        # A2: Prepend meeting title as context prefix for better semantic matching
-        texts.append(title_prefix + " ".join(window_parts))
+        texts.append(" ".join(window_parts))
     
     logger.info(
         f"[Embedding] Generating embeddings for {len(texts)} segments of meeting {meeting_id} "

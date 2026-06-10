@@ -54,7 +54,8 @@
 ### 🟢 Phase 4: 資料庫遷移與驗證
 - **狀態**: ✅ 已完成
 
-Che- **完成時間**: 2026-06-01T05:35:32Z（依 Cloud Logging 確認）
+Che
+- **完成時間**: 2026-06-01T05:35:32Z（依 Cloud Logging 確認）
 - **詳細內容**:
     - [x] 診斷發現 DB 是由 SQLAlchemy `create_all` 建立（非 Alembic），無 `alembic_version` 表。
     - [x] 手動建立 `alembic_version` 表，stamp 至 `e8f4a2b9d6c3`（最後一個已套用的 migration）。
@@ -165,3 +166,21 @@ gcloud run services proxy meetchi-frontend \
 - **2026-06-01**: 所有服務狀態確認 Ready — backend (revision 00002), frontend (revision 00001), gpu-asr (revision 00001)。
 - **2026-06-01**: 執行後端單元測試 81/81 PASSED。發現 `meetchi-hf-token` 為佔位值（非真實 HF token），導致 GPU ASR 說話人辨識（pyannote）無法初始化，fallback 到無 diarization 的 Breeze-ASR-25。`BACKEND_PUBLIC_URL` 使用舊 project number 已修正。E2E 腳本 URL 已更新至正確端點。
 - **2026-06-01**: 診斷前端 Forbidden 根因：Org Policy 禁止 `allUsers`。已設定 IAM domain binding、OAuth Brand/Client、NextAuth 環境變數。前端可透過 `gcloud run services proxy --port=8080` 存取。Google OAuth 登入需在 GCP Console 建立 Web Application OAuth Client 並設定 redirect URI（見 Phase 7）。
+
+---
+
+### 🟢 Phase 9: 色彩 UX 優化 + 平行轉錄成本最佳化 + Admin 回報頁面
+- **狀態**: ✅ 已完成
+- **執行時間**: 2026-06-09 01:20 ~ 01:50
+- **操作者**: AI (Copilot CLI)
+- **詳細內容**:
+    - [x] GPU ASR (`meetchi-gpu-asr`) min-instances 從 1 改為 0 (idle 時不付費)
+    - [x] GPU ASR 新增 env: `ASR_PARALLELISM=3`, `AUDIO_CHUNK_SEC=900` → rev `00017-woq`
+    - [x] Backend (`meetchi-backend`) 新增 env: `ASR_PARALLELISM=3`, `AUDIO_CHUNK_SEC=900` → rev `00018-nwp`
+    - [x] Frontend 色彩優化 (pending=azure, badge 加 border, 背景改 #F5F7FA) → image tag `20260609-v1-color-ux`
+    - [x] Frontend 新增 AdminFeedbackPanel 元件 + admin sidebar nav → rev `00033-572`
+    - [x] DB: 將 `jerry_tai@mail.chimei.com.tw` 設為 `is_admin=true`
+- **備註**:
+    - GPU 成本估算：min=1 always-on ~$1,368/月 → min=0 按使用付費 ~$200-300/月 (UAT 階段)
+    - 平行轉錄 parallelism 從 2→3 對齊 GPU concurrency=3；chunk 從 20min→15min 提升利用率
+    - Admin 回報頁面路由：`/dashboard?view=admin`，非 admin 用戶無法看到此 tab

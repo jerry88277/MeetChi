@@ -106,8 +106,16 @@ async def create_meeting(meeting_data: MeetingCreate, db: Session = Depends(get_
 
 
 @router.get("/api/v1/meetings", response_model=List[MeetingListItem])
-async def list_meetings(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """List active (non-deleted) meetings (lightweight — no transcript_segments).
+async def list_meetings(
+    skip: int = 0,
+    limit: int = 100,
+    user_upn: Optional[str] = Query(None, description="當前登入用戶 UPN，啟用 MemPlace 隔離"),
+    db: Session = Depends(get_db),
+):
+    """List active (non-deleted) meetings filtered by user access.
+
+    When user_upn is provided, only returns meetings where the user is a participant
+    (MemPlace isolation). Without user_upn, returns all meetings (admin/legacy mode).
 
     Detail view 仍會用 GET /api/v1/meetings/{id} 拿完整 segments；
     list 端不回 segments 是為了避免 N+1 lazy-load 把 worker pool 拖垮
@@ -115,9 +123,18 @@ async def list_meetings(skip: int = 0, limit: int = 100, db: Session = Depends(g
 
     Soft-deleted (deleted_at IS NOT NULL) 預設不列；admin 端點看 trash。
     """
+    query = db.query(Meeting).filter(Meeting.deleted_at.is_(None))
+
+    if user_upn:
+        # MemPlace 隔離：只回傳使用者有權限的會議
+        query = (
+            query
+            .join(MeetingParticipant, Meeting.id == MeetingParticipant.meeting_id)
+            .filter(MeetingParticipant.user_upn == user_upn)
+        )
+
     meetings = (
-        db.query(Meeting)
-        .filter(Meeting.deleted_at.is_(None))
+        query
         .order_by(desc(Meeting.created_at))
         .offset(skip)
         .limit(limit)
@@ -476,6 +493,31 @@ async def restore_summary_version(
     db.commit()
 
     return {"message": "Summary restored", "template_name": version.template_name}
+
+
+# ============================================
+# Rename Meeting
+# ============================================
+class RenameMeetingRequest(BaseModel):
+    title: str
+
+@router.patch("/api/v1/meetings/{meeting_id}/title")
+async def rename_meeting(
+    meeting_id: str,
+    body: RenameMeetingRequest,
+    db: Session = Depends(get_db),
+):
+    """Rename a meeting's title."""
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    old_title = meeting.title
+    meeting.title = body.title.strip()
+    meeting.updated_at = datetime.utcnow()
+    db.commit()
+
+    return {"message": "Meeting renamed", "meeting_id": meeting_id, "old_title": old_title, "new_title": meeting.title}
 
 
 # ============================================

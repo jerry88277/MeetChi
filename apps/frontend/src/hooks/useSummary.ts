@@ -7,6 +7,7 @@ import { transformMeeting } from '@/lib/transform';
 
 export function useSummary(
     fetchMeetings: () => Promise<void>,
+    userUpn?: string,
 ) {
     const [isRegenerating, setIsRegenerating] = useState(false);
 
@@ -22,7 +23,7 @@ export function useSummary(
             await fetchMeetings();
 
             if (selectedMeeting && selectedMeeting.id === meetingId) {
-                const apiMeetings = await api.listMeetings();
+                const apiMeetings = await api.listMeetings(0, 100, userUpn);
                 const updatedMeeting = apiMeetings.find(m => m.id === meetingId);
                 if (updatedMeeting) {
                     setSelectedMeeting(transformMeeting(updatedMeeting));
@@ -31,7 +32,7 @@ export function useSummary(
         } finally {
             setIsRegenerating(false);
         }
-    }, [fetchMeetings]);
+    }, [fetchMeetings, userUpn]);
 
     const regenerateTranscript = useCallback(async (
         meetingId: string,
@@ -45,7 +46,7 @@ export function useSummary(
             await fetchMeetings();
 
             if (selectedMeeting && selectedMeeting.id === meetingId) {
-                const apiMeetings = await api.listMeetings();
+                const apiMeetings = await api.listMeetings(0, 100, userUpn);
                 const updatedMeeting = apiMeetings.find(m => m.id === meetingId);
                 if (updatedMeeting) {
                     setSelectedMeeting(transformMeeting(updatedMeeting));
@@ -54,7 +55,7 @@ export function useSummary(
         } finally {
             setIsRegenerating(false);
         }
-    }, [fetchMeetings]);
+    }, [fetchMeetings, userUpn]);
 
     return {
         isRegenerating,

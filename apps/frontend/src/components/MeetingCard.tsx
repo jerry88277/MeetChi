@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
     Calendar,
     Clock,
@@ -10,12 +10,14 @@ import {
     AlertTriangle,
     Loader2,
     AlertCircle,
+    Pencil,
 } from 'lucide-react';
 import type { Meeting } from '@/types/meeting';
 
 interface MeetingCardProps {
     meeting: Meeting;
     onClick: (meeting: Meeting) => void;
+    onRename?: (meetingId: string, newTitle: string) => void;
 }
 
 /**
@@ -43,23 +45,23 @@ const TEMPLATE_LABEL_MAP: Record<string, { label: string; color: string }> = {
 
 const STATUS_CONFIG = {
     completed: {
-        color: 'bg-status-success/15 text-status-success',
+        color: 'bg-status-success/15 text-status-success border border-status-success/30',
         border: 'border-l-status-success',
         label: '已完成',
     },
     processing: {
-        color: 'bg-brand-chimei-orange/15 text-brand-chimei-orange',
+        color: 'bg-brand-chimei-orange/15 text-brand-chimei-orange border border-brand-chimei-orange/30',
         border: 'border-l-brand-chimei-orange',
         label: 'AI 處理中',
     },
     failed: {
-        color: 'bg-status-error/15 text-status-error',
+        color: 'bg-status-error/15 text-status-error border border-status-error/30',
         border: 'border-l-status-error',
         label: '處理失敗',
     },
     pending: {
-        color: 'bg-brand-chimei-teal/15 text-brand-chimei-teal',
-        border: 'border-l-brand-chimei-teal',
+        color: 'bg-brand-azure/15 text-brand-azure border border-brand-azure/30',
+        border: 'border-l-brand-azure',
         label: '等待處理',
     },
 };
@@ -99,7 +101,7 @@ function SpeakerDots({ meeting }: { meeting: Meeting }) {
     );
 }
 
-export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
+export const MeetingCard = ({ meeting, onClick, onRename }: MeetingCardProps) => {
     const config = STATUS_CONFIG[meeting.status];
     const tpl = meeting.templateName
         ? TEMPLATE_LABEL_MAP[meeting.templateName] || { label: meeting.templateName, color: 'bg-muted text-muted-foreground' }
@@ -114,16 +116,49 @@ export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
         ? (meeting.tldr || meeting.summary || '暫無摘要')
         : null;
 
+    // Right-click context menu
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+    const [isRenaming, setIsRenaming] = useState(false);
+    const [renameValue, setRenameValue] = useState(meeting.title);
+    const renameInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (isRenaming) renameInputRef.current?.focus();
+    }, [isRenaming]);
+
+    // Close context menu on click outside
+    useEffect(() => {
+        if (!contextMenu) return;
+        const close = () => setContextMenu(null);
+        window.addEventListener('click', close);
+        return () => window.removeEventListener('click', close);
+    }, [contextMenu]);
+
+    const handleContextMenu = (e: React.MouseEvent) => {
+        e.preventDefault();
+        setContextMenu({ x: e.clientX, y: e.clientY });
+    };
+
+    const handleRenameSubmit = () => {
+        const trimmed = renameValue.trim();
+        if (trimmed && trimmed !== meeting.title && onRename) {
+            onRename(meeting.id, trimmed);
+        }
+        setIsRenaming(false);
+    };
+
     return (
-        <div
-            onClick={() => onClick(meeting)}
-            className={`group bg-card rounded-2xl cursor-pointer h-full flex flex-col
-                shadow-sm hover:shadow-[0_4px_24px_-4px_rgba(45,66,139,0.14)]
-                hover:border-l-brand-cta/60
-                transition-[shadow,transform,border-color] duration-200 ease-brand
-                border-l-4 active:scale-[0.98] active:duration-100 ${config.border}`}
-            title={`Meeting ID: ${meeting.id}`}
-        >
+        <>
+            <div
+                onClick={() => !isRenaming && onClick(meeting)}
+                onContextMenu={handleContextMenu}
+                className={`group bg-card rounded-2xl cursor-pointer h-full flex flex-col
+                    shadow-sm hover:shadow-[0_4px_24px_-4px_rgba(45,66,139,0.14)]
+                    hover:border-l-brand-cta/60
+                    transition-[shadow,transform,border-color] duration-200 ease-brand
+                    border-l-4 active:scale-[0.98] active:duration-100 ${config.border}`}
+                title={`Meeting ID: ${meeting.id}`}
+            >
             {/* 顆粒大 1：模板 chip + 標題 + status badge */}
             <div className="flex justify-between items-start gap-3 px-5 pt-5">
                 <div className="flex-1 min-w-0">
@@ -139,7 +174,20 @@ export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
                             </span>
                         )}
             <h3 className="font-bold text-foreground group-hover:text-brand-cta transition-colors break-words line-clamp-2">
-                            {meeting.title}
+                            {isRenaming ? (
+                                <input
+                                    ref={renameInputRef}
+                                    value={renameValue}
+                                    onChange={(e) => setRenameValue(e.target.value)}
+                                    onBlur={handleRenameSubmit}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleRenameSubmit();
+                                        if (e.key === 'Escape') { setIsRenaming(false); setRenameValue(meeting.title); }
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="w-full bg-muted border border-brand-cta/40 rounded px-2 py-0.5 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-brand-cta/50"
+                                />
+                            ) : meeting.title}
                         </h3>
                     </div>
                     {/* 顆粒大 2：日期 / 時長 / 講者 dot */}
@@ -164,7 +212,7 @@ export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
                 </p>
             )}
             {meeting.status === 'pending' && (
-                <p className="px-5 mt-3 text-sm text-brand-chimei-teal italic">
+                <p className="px-5 mt-3 text-sm text-brand-azure italic">
                     音檔已收到，系統正準備整理本場重點
                 </p>
             )}
@@ -208,6 +256,28 @@ export const MeetingCard = ({ meeting, onClick }: MeetingCardProps) => {
             {/* 非 completed 狀態：空白佔位讓不同 status 卡片同高 */}
             {meeting.status !== 'completed' && <div className="h-5" />}
         </div>
+
+            {/* Right-click context menu */}
+            {contextMenu && (
+                <div
+                    className="fixed z-[300] bg-card border border-border rounded-xl shadow-xl py-1 min-w-[140px]"
+                    style={{ top: contextMenu.y, left: contextMenu.x }}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <button
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors text-left"
+                        onClick={() => {
+                            setContextMenu(null);
+                            setRenameValue(meeting.title);
+                            setIsRenaming(true);
+                        }}
+                    >
+                        <Pencil size={14} />
+                        修改名稱
+                    </button>
+                </div>
+            )}
+        </>
     );
 };
 

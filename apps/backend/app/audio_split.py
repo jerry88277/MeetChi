@@ -31,8 +31,8 @@ logger = logging.getLogger(__name__)
 
 # Threshold: 20 minutes (1200 sec)。短於此就單一 ASR 不拆。
 LONG_AUDIO_THRESHOLD_SEC = int(os.getenv("LONG_AUDIO_THRESHOLD_SEC", "1200"))
-# Chunk 大小 (sec)：等於 threshold；可獨立設定
-CHUNK_SEC = int(os.getenv("AUDIO_CHUNK_SEC", "1200"))
+# Chunk 大小 (sec)：15 min — 更細粒度平行利用率更好
+CHUNK_SEC = int(os.getenv("AUDIO_CHUNK_SEC", "900"))
 
 
 def get_audio_duration(local_path: str) -> float:

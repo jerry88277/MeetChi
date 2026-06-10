@@ -646,6 +646,13 @@ class ApiClient {
         });
     }
 
+    async renameMeeting(meetingId: string, title: string): Promise<{ message: string; new_title: string }> {
+        return this.fetch(`/api/v1/meetings/${meetingId}/title`, {
+            method: 'PATCH',
+            body: JSON.stringify({ title }),
+        });
+    }
+
     // --- Phase D: Summary Version History ---
 
     async getSummaryVersions(meetingId: string): Promise<SummaryVersionDTO[]> {

@@ -45,9 +45,10 @@ interface DashboardViewProps {
     onUploadConfidentialChange?: (confidential: boolean) => void;
     // 2026-05-24 (request #1)：拖曳框選後批次刪除
     onBulkDelete?: (meetingIds: string[]) => void;
+    onRename?: (meetingId: string, newTitle: string) => void;
 }
 
-export const DashboardView = ({ meetings, isLoading, isUploading = false, uploadState = 'idle', error, successMessage, onSelectMeeting, onCreateMeeting, onUploadClick, onRefresh, availableTemplates = [], selectedTemplateName = 'general', onTemplateChange, uploadContext = '', onUploadContextChange, uploadConfidential = false, onUploadConfidentialChange, onBulkDelete }: DashboardViewProps) => {
+export const DashboardView = ({ meetings, isLoading, isUploading = false, uploadState = 'idle', error, successMessage, onSelectMeeting, onCreateMeeting, onUploadClick, onRefresh, availableTemplates = [], selectedTemplateName = 'general', onTemplateChange, uploadContext = '', onUploadContextChange, uploadConfidential = false, onUploadConfidentialChange, onBulkDelete, onRename }: DashboardViewProps) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
@@ -266,7 +267,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                                         <CheckCircle2 size={14} />
                                     </div>
                                 )}
-                                <MeetingCard meeting={meeting} onClick={() => { /* 由外層 onClick 處理 */ }} />
+                                <MeetingCard meeting={meeting} onClick={() => { /* 由外層 onClick 處理 */ }} onRename={onRename} />
                             </div>
                         );
                     })}

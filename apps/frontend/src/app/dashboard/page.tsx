@@ -463,6 +463,21 @@ export default function DashboardPage() {
         }
     };
 
+    const handleRenameMeeting = async (meetingId: string, newTitle: string) => {
+        try {
+            await api.renameMeeting(meetingId, newTitle);
+            // Update local state
+            if (selectedMeeting?.id === meetingId) {
+                setSelectedMeeting(prev => prev ? { ...prev, title: newTitle } : prev);
+            }
+            fetchMeetings();
+            toast.success(`已更名為「${newTitle}」`);
+        } catch (err) {
+            console.error('Rename failed:', err);
+            toast.error('修改名稱失敗');
+        }
+    };
+
     // 2026-05-24 (request #1) 批次刪除執行：與單筆 delete 同樣的 optimistic
     // local splice 模式，但用 api.bulkDeleteMeetings 一次 API call。
     const executeBulkDelete = async (meetingIds: string[]) => {
@@ -834,6 +849,7 @@ export default function DashboardPage() {
                                 uploadConfidential={uploadConfidential}
                                 onUploadConfidentialChange={setUploadConfidential}
                                 onBulkDelete={(ids) => setPendingBulkDelete({ meetingIds: ids })}
+                                onRename={handleRenameMeeting}
                             />
                         </>
                     )}
@@ -872,6 +888,7 @@ export default function DashboardPage() {
                             isRegenerating={isRegenerating}
                             onDelete={handleDeleteMeeting}
                             isDeleting={false}
+                            onRename={handleRenameMeeting}
                             onReportThisMeeting={(meetingId) => setFeedbackContext({ meetingId })}
                         />
                     )}

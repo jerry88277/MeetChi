@@ -18,7 +18,7 @@ import { useState, useEffect, useCallback } from 'react';
 
 export const MIN_FONT_PCT = 85;
 export const MAX_FONT_PCT = 150;
-export const DEFAULT_FONT_PCT = 100;
+export const DEFAULT_FONT_PCT = 110;
 const STORAGE_KEY = 'meetchi-font-size-pct';
 
 export function useFontSize() {

@@ -15,6 +15,8 @@ import {
     Send,
     Link2,
     Link2Off,
+    ImagePlus,
+    Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -141,6 +143,7 @@ export const FeedbackModal = ({
     const [actual, setActual] = useState("");
     const [reproSteps, setReproSteps] = useState("");
     const [frequency, setFrequency] = useState<FeedbackFrequency | "">("");
+    const [screenshots, setScreenshots] = useState<{ file: File; preview: string }[]>([]);
     const [submitting, setSubmitting] = useState(false);
     const [submitted, setSubmitted] = useState(false);
     // 2026-05-12: parse URL fallback；caller 給的 meetingId 優先
@@ -156,6 +159,7 @@ export const FeedbackModal = ({
             setActual("");
             setReproSteps("");
             setFrequency("");
+            setScreenshots([]);
             setSubmitting(false);
             setSubmitted(false);
             // caller 已帶 meetingId → 用 caller；否則嘗試從 URL parse
@@ -164,7 +168,7 @@ export const FeedbackModal = ({
     }, [isOpen, initialIssueType, prefillSummary, meetingId]);
 
     const stage1Valid =
-        !!issueType && summary.trim().length >= 5 && summary.length <= 200 && !!severity;
+        !!issueType && summary.trim().length >= 5 && summary.length <= 1000 && !!severity;
 
     const handleSubmit = async (skipStage2 = false) => {
         if (!stage1Valid) {
@@ -343,15 +347,15 @@ export const FeedbackModal = ({
                                 一句話描述問題{" "}
                                 <span className="text-status-error">*</span>
                                 <span className="text-xs text-muted-foreground font-normal ml-2">
-                                    {summary.length} / 200
+                                    {summary.length} / 1000
                                 </span>
                             </label>
                             <textarea
                                 id="feedback-summary"
                                 value={summary}
-                                onChange={(e) => setSummary(e.target.value.slice(0, 200))}
+                                onChange={(e) => setSummary(e.target.value.slice(0, 1000))}
                                 placeholder="例：摘要把預算金額抓錯了，應該是 50 萬不是 5 萬"
-                                rows={3}
+                                rows={4}
                                 className="w-full px-3 py-2 bg-surface border border-border rounded-lg focus:border-brand-cta focus:outline-none text-sm text-foreground resize-none"
                             />
                             {summary.length > 0 && summary.trim().length < 5 && (
@@ -359,6 +363,53 @@ export const FeedbackModal = ({
                                     <AlertCircle size={12} /> 至少 5 個字
                                 </p>
                             )}
+                        </div>
+
+                        {/* Screenshot Upload */}
+                        <div>
+                            <label className="block text-sm font-bold text-foreground mb-2">
+                                截圖附件
+                                <span className="text-xs text-muted-foreground font-normal ml-2">
+                                    最多 3 張
+                                </span>
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                                {screenshots.map((s, i) => (
+                                    <div key={i} className="relative w-20 h-20 rounded-lg border border-border overflow-hidden group">
+                                        <img src={s.preview} alt={`截圖 ${i + 1}`} className="w-full h-full object-cover" />
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                URL.revokeObjectURL(s.preview);
+                                                setScreenshots(prev => prev.filter((_, idx) => idx !== i));
+                                            }}
+                                            className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+                                        >
+                                            <Trash2 size={16} className="text-white" />
+                                        </button>
+                                    </div>
+                                ))}
+                                {screenshots.length < 3 && (
+                                    <label className="w-20 h-20 rounded-lg border-2 border-dashed border-border hover:border-brand-cta flex flex-col items-center justify-center cursor-pointer transition-colors">
+                                        <ImagePlus size={20} className="text-muted-foreground" />
+                                        <span className="text-[10px] text-muted-foreground mt-1">新增</span>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file && file.size <= 5 * 1024 * 1024) {
+                                                    setScreenshots(prev => [...prev, { file, preview: URL.createObjectURL(file) }]);
+                                                } else if (file) {
+                                                    toast.error("圖片大小不得超過 5MB");
+                                                }
+                                                e.target.value = '';
+                                            }}
+                                        />
+                                    </label>
+                                )}
+                            </div>
                         </div>
 
                         {/* Severity */}

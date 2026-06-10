@@ -12,6 +12,7 @@ Endpoint:
 
 import logging
 import json
+import re
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -342,6 +343,161 @@ def _find_similar_summaries(
         return []
 
 
+# ============================================
+# Title Fuzzy-Match Pre-Filter (A3 Optimization)
+# ============================================
+
+def _find_title_matched_meetings(
+    db: Session,
+    query: str,
+    user_upn: Optional[str] = None,
+    meeting_ids: Optional[List[str]] = None,
+) -> List[dict]:
+    """
+    Find meetings whose title is referenced in the user's query.
+    
+    Strategy:
+      1. Fetch all accessible meeting titles
+      2. Check if any title (or significant substring) appears in the query
+      3. Return matched meetings sorted by title match quality
+    
+    This handles the common case: "鴻才會議討論什麼" → matches meeting "鴻才討論"
+    """
+    # Fetch accessible meetings with titles
+    if user_upn:
+        if meeting_ids:
+            placeholders = ",".join(f":mid_{i}" for i in range(len(meeting_ids)))
+            sql = text(f"""
+                SELECT m.id, m.title, m.summary_json
+                FROM meetings m
+                JOIN meeting_participants mp ON m.id = mp.meeting_id AND mp.user_upn = :user_upn
+                WHERE m.deleted_at IS NULL AND m.title IS NOT NULL AND m.title != ''
+                  AND m.id IN ({placeholders})
+            """)
+            params = {"user_upn": user_upn}
+            for i, mid in enumerate(meeting_ids):
+                params[f"mid_{i}"] = mid
+        else:
+            sql = text("""
+                SELECT m.id, m.title, m.summary_json
+                FROM meetings m
+                JOIN meeting_participants mp ON m.id = mp.meeting_id AND mp.user_upn = :user_upn
+                WHERE m.deleted_at IS NULL AND m.title IS NOT NULL AND m.title != ''
+            """)
+            params = {"user_upn": user_upn}
+    else:
+        sql = text("""
+            SELECT m.id, m.title, m.summary_json
+            FROM meetings m
+            WHERE m.deleted_at IS NULL AND m.title IS NOT NULL AND m.title != ''
+        """)
+        params = {}
+
+    try:
+        rows = db.execute(sql, params).fetchall()
+    except Exception as e:
+        logger.warning(f"[RAG] Title match query failed: {e}")
+        return []
+
+    # Normalize query for matching (remove common filler words)
+    query_normalized = query.strip()
+    # Remove common question patterns to extract the core topic
+    filler_patterns = [
+        r'會議[在中裡]?[討論談到提到講了說了]+(什麼|哪些|了什麼)',
+        r'[討論談到提到講了說了]+(什麼|哪些|了什麼)',
+        r'(的|之)?主要?(內容|議題|討論|重點|結論|決議)(是什麼|有哪些)?',
+        r'在(討論|談|講|說)(什麼|哪些)',
+    ]
+    query_core = query_normalized
+    for pat in filler_patterns:
+        query_core = re.sub(pat, '', query_core)
+    query_core = query_core.strip()
+    if not query_core:
+        query_core = query_normalized
+
+    matched = []
+    for row in rows:
+        title = row.title.strip()
+        if not title:
+            continue
+        
+        # Strategy 1: Title appears in query (or query_core)
+        # Strategy 2: Query core appears in title
+        # Strategy 3: Significant overlap (shared characters ratio)
+        
+        score = 0.0
+        
+        # Exact title in query
+        if title in query_normalized or title in query_core:
+            score = 1.0
+        # Query core in title
+        elif query_core and query_core in title:
+            score = 0.9
+        else:
+            # Character-level fuzzy: compute overlap ratio
+            # Split title into meaningful tokens (>= 2 chars)
+            title_tokens = [t for t in re.split(r'[\s\-_—–·()（）\[\]【】,，.。]+', title) if len(t) >= 2]
+            matched_tokens = [t for t in title_tokens if t in query_normalized or t in query_core]
+            if title_tokens and matched_tokens:
+                score = len(matched_tokens) / len(title_tokens)
+                # Boost if the matched portion is significant
+                if len(matched_tokens) >= 1 and any(len(t) >= 2 for t in matched_tokens):
+                    score = max(score, 0.5)
+        
+        if score >= 0.5:
+            matched.append({
+                "meeting_id": row.id,
+                "title": title,
+                "summary_json": row.summary_json,
+                "match_score": score,
+            })
+
+    # Sort by match quality
+    matched.sort(key=lambda x: x["match_score"], reverse=True)
+    logger.info(f"[RAG/A3] Title match for '{query}' (core='{query_core}'): {[(m['title'], m['match_score']) for m in matched[:5]]}")
+    return matched[:3]  # max 3 title-matched meetings
+
+
+def _fetch_meeting_top_segments(
+    db: Session,
+    meeting_id: str,
+    query_embedding: list,
+    top_k: int = 8,
+) -> list:
+    """
+    Fetch top-K segments from a specific meeting, ordered by similarity to query.
+    Used when title-match identifies a meeting but vector search missed it.
+    """
+    embedding_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
+    sql = text("""
+        SELECT
+            ts.id,
+            ts.meeting_id,
+            ts.speaker,
+            ts.start_time,
+            ts.end_time,
+            ts.content_polished,
+            ts.content_raw,
+            m.title as meeting_title,
+            (ts.content_embedding <=> CAST(:query_embedding AS vector)) as distance
+        FROM transcript_segments ts
+        JOIN meetings m ON ts.meeting_id = m.id
+        WHERE ts.meeting_id = :meeting_id
+          AND ts.content_embedding IS NOT NULL
+        ORDER BY ts.content_embedding <=> CAST(:query_embedding AS vector)
+        LIMIT :top_k
+    """)
+    try:
+        return db.execute(sql, {
+            "query_embedding": embedding_str,
+            "meeting_id": meeting_id,
+            "top_k": top_k,
+        }).fetchall()
+    except Exception as e:
+        logger.warning(f"[RAG/A3] Failed to fetch segments for meeting {meeting_id}: {e}")
+        return []
+
+
 def _build_rag_prompt(question: str, citations: List[Citation], history: Optional[List[ChatMessage]] = None) -> str:
     """
     Build a Gemini prompt with retrieved context, conversation history, and clear citation instructions.
@@ -537,8 +693,86 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
                 ))
     except Exception as e:
         logger.warning(f"[RAG] Summary citation build failed (non-fatal): {e}")
-    
-    if not results and not summary_citations:
+
+    # Step 2.2: Title fuzzy-match pre-filter (A3 optimization)
+    # If vector search returned low-quality results AND user's query references
+    # a meeting by name, force-include that meeting's segments + summary.
+    # This handles: "鴻才會議討論什麼" → matches "鴻才討論" meeting title
+    title_match_citations: List[Citation] = []
+    title_match_segments = []
+    try:
+        # Check if top results are low quality (best sim < 0.6)
+        best_segment_sim = max((1.0 - float(r.distance) for r in results), default=0.0) if results else 0.0
+        best_summary_sim = max((c.similarity for c in summary_citations), default=0.0) if summary_citations else 0.0
+        
+        # Only activate title-match if vector search quality is poor
+        if best_segment_sim < 0.6 or best_summary_sim < 0.5:
+            title_matches = _find_title_matched_meetings(
+                db, search_query,
+                user_upn=request.user_upn,
+                meeting_ids=request.meeting_ids,
+            )
+            
+            for tm in title_matches:
+                # Fetch this meeting's best segments (by similarity to query)
+                tm_segments = _fetch_meeting_top_segments(
+                    db, tm["meeting_id"], query_embedding, top_k=8
+                )
+                if tm_segments:
+                    title_match_segments.extend(tm_segments)
+                
+                # Also add summary as a citation if available
+                if tm.get("summary_json"):
+                    try:
+                        sdata = json.loads(tm["summary_json"])
+                        parts = []
+                        if sdata.get("summary"):
+                            parts.append(sdata["summary"])
+                        if sdata.get("decisions"):
+                            decisions = sdata["decisions"]
+                            dec_texts = []
+                            for d in decisions:
+                                if isinstance(d, str):
+                                    dec_texts.append(d)
+                                elif isinstance(d, dict):
+                                    dec_texts.append(d.get("decision", ""))
+                            if dec_texts:
+                                parts.append("決議事項：" + "；".join(filter(None, dec_texts)))
+                        if sdata.get("action_items"):
+                            items = sdata["action_items"][:5]
+                            item_texts = []
+                            for item in items:
+                                if isinstance(item, str):
+                                    item_texts.append(item)
+                                elif isinstance(item, dict):
+                                    item_texts.append(item.get("task", ""))
+                            if item_texts:
+                                parts.append("行動項目：" + "；".join(filter(None, item_texts)))
+                        summary_content = "\n".join(filter(None, parts))
+                        if summary_content:
+                            title_match_citations.append(Citation(
+                                meeting_id=tm["meeting_id"],
+                                meeting_title=tm["title"],
+                                speaker=None,
+                                start_time=None,
+                                end_time=None,
+                                content=f"[會議摘要 - 標題匹配] {summary_content}",
+                                similarity=round(tm["match_score"], 4),
+                            ))
+                    except Exception:
+                        pass
+            
+            if title_match_segments:
+                logger.info(f"[RAG/A3] Title match injected {len(title_match_segments)} segments from {len(title_matches)} meetings")
+                # Merge title-matched segments into results (prepend for priority)
+                # Deduplicate by segment id
+                existing_ids = {r.id for r in results} if results else set()
+                new_segments = [s for s in title_match_segments if s.id not in existing_ids]
+                results = list(new_segments) + list(results) if results else new_segments
+    except Exception as e:
+        logger.warning(f"[RAG/A3] Title match failed (non-fatal): {e}")
+
+    if not results and not summary_citations and not title_match_citations:
         return RAGResponse(
             answer="根據現有會議記錄，未找到與您問題相關的段落。可能尚未有會議記錄被索引。",
             citations=[],
@@ -620,7 +854,10 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
 
     # 用 expanded content 組 prompt（讓 LLM 看到更完整上下文）
     prompt_citations = []
-    # A1: Prepend summary citations first (highest semantic density)
+    # A3: Prepend title-match citations (highest priority - user asked about this meeting)
+    for tc in title_match_citations:
+        prompt_citations.append(tc)
+    # A1: Prepend summary citations (highest semantic density)
     for sc in summary_citations:
         prompt_citations.append(sc)
     for er in expanded_rows:
@@ -634,8 +871,8 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
             similarity=1.0 - float(getattr(er, "distance", 0.0)),
         ))
 
-    # A1: Merge summary_citations into frontend citations (prepend for priority)
-    citations = summary_citations + citations
+    # A3 + A1: Merge into frontend citations (prepend for priority)
+    citations = title_match_citations + summary_citations + citations
 
     # Step 3: Generate answer with Gemini using app.rag.prompt.build_grounded_prompt
     # 取代既有 _build_rag_prompt（軟規則） → grounded 5 條硬規則 + 4 級 confidence
