@@ -87,8 +87,13 @@ async def require_admin(
     email = user.get("email", "")
     # In dev mode, the email is 'dev@example.com' — try DB lookup for real user
     if email == "dev@example.com":
-        # Check if there's any admin/super_admin in the DB
-        admin_user = db.query(User).filter(User.role.in_(list(ADMIN_ROLES))).first()
+        # Prefer super_admin over admin
+        admin_user = (
+            db.query(User)
+            .filter(User.role.in_(list(ADMIN_ROLES)))
+            .order_by(User.role.desc())  # super_admin > admin alphabetically
+            .first()
+        )
         if admin_user:
             email = admin_user.ad_upn
             user["email"] = email
