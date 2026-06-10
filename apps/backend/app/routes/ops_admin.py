@@ -80,8 +80,18 @@ async def require_admin(
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Dependency: require admin or super_admin role."""
+    """Dependency: require admin or super_admin role.
+    
+    In dev mode (AUTH_REQUIRED=false), also checks X-User-UPN header for role lookup.
+    """
     email = user.get("email", "")
+    # In dev mode, the email is 'dev@example.com' — try DB lookup for real user
+    if email == "dev@example.com":
+        # Check if there's any admin/super_admin in the DB
+        admin_user = db.query(User).filter(User.role.in_(list(ADMIN_ROLES))).first()
+        if admin_user:
+            email = admin_user.ad_upn
+            user["email"] = email
     role = _get_user_role(email, db)
     if role not in ADMIN_ROLES:
         raise HTTPException(
@@ -98,6 +108,11 @@ async def require_super_admin(
 ) -> dict:
     """Dependency: require super_admin role."""
     email = user.get("email", "")
+    if email == "dev@example.com":
+        admin_user = db.query(User).filter(User.role == ROLE_SUPER_ADMIN).first()
+        if admin_user:
+            email = admin_user.ad_upn
+            user["email"] = email
     role = _get_user_role(email, db)
     if role != ROLE_SUPER_ADMIN:
         raise HTTPException(
@@ -410,6 +425,11 @@ async def get_my_role(
 ):
     """取得當前使用者的角色。"""
     email = user.get("email", "")
+    # In dev mode, resolve to actual admin user
+    if email == "dev@example.com":
+        admin_user = db.query(User).filter(User.role.in_(list(ADMIN_ROLES))).first()
+        if admin_user:
+            email = admin_user.ad_upn
     role = _get_user_role(email, db)
     return {"email": email, "role": role}
 
