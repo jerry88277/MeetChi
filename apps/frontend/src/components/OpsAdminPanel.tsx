@@ -139,6 +139,32 @@ export function OpsAdminPanel({ userRole }: OpsAdminPanelProps) {
                         <StatCard icon={Activity} label="處理中" value={overview.meetings_processing} color="text-blue-600" />
                         <StatCard icon={DollarSign} label="月預估成本" value={`$${overview.estimated_monthly_cost_usd}`} />
                     </div>
+
+                    {/* System Health Summary */}
+                    <div className="bg-card rounded-xl border border-border p-5">
+                        <h3 className="text-sm font-semibold text-foreground mb-3">系統狀態摘要</h3>
+                        <div className="flex flex-wrap gap-3">
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+                                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                                {overview.meetings_completed} 場已完成
+                            </span>
+                            {overview.meetings_processing > 0 && (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                    <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                                    {overview.meetings_processing} 場處理中
+                                </span>
+                            )}
+                            {overview.meetings_failed > 0 && (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200">
+                                    <span className="w-2 h-2 rounded-full bg-red-500" />
+                                    {overview.meetings_failed} 場失敗
+                                </span>
+                            )}
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-50 text-gray-700 border border-gray-200">
+                                GPU ASR: concurrency=5, maxScale=2
+                            </span>
+                        </div>
+                    </div>
                 </div>
             )}
 

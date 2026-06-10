@@ -149,15 +149,23 @@ export const MeetingCard = ({ meeting, onClick, onRename }: MeetingCardProps) =>
 
     return (
         <>
-            <div
+            <article
+                role="button"
+                tabIndex={0}
                 onClick={() => !isRenaming && onClick(meeting)}
+                onKeyDown={(e) => {
+                    if ((e.key === 'Enter' || e.key === ' ') && !isRenaming) {
+                        e.preventDefault();
+                        onClick(meeting);
+                    }
+                }}
                 onContextMenu={handleContextMenu}
                 className={`group bg-card rounded-2xl cursor-pointer h-full flex flex-col
                     shadow-sm hover:shadow-[0_4px_24px_-4px_rgba(45,66,139,0.14)]
                     hover:border-l-brand-cta/60
                     transition-[shadow,transform,border-color] duration-200 ease-brand
                     border-l-4 active:scale-[0.98] active:duration-100 ${config.border}`}
-                title={`Meeting ID: ${meeting.id}`}
+                aria-label={`會議: ${meeting.title}, 狀態: ${config.label}`}
             >
             {/* 顆粒大 1：模板 chip + 標題 + status badge */}
             <div className="flex justify-between items-start gap-3 px-5 pt-5">
@@ -217,10 +225,18 @@ export const MeetingCard = ({ meeting, onClick, onRename }: MeetingCardProps) =>
                 </p>
             )}
             {meeting.status === 'processing' && (
-                <p className="px-5 mt-3 text-sm text-muted-foreground flex items-center gap-1.5">
-                    <Loader2 size={14} className="animate-spin text-brand-chimei-orange" />
-                    正在整理這場會議的決策、待辦與風險
-                </p>
+                <div className="px-5 mt-3 space-y-2">
+                    <p className="text-sm text-foreground/70 flex items-center gap-1.5 font-medium">
+                        <Loader2 size={14} className="animate-spin text-brand-chimei-orange" />
+                        正在整理這場會議的決策、待辦與風險
+                    </p>
+                    <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div
+                            className="h-full bg-brand-chimei-orange/60 rounded-full animate-pulse"
+                            style={{ width: '60%' }}
+                        />
+                    </div>
+                </div>
             )}
             {meeting.status === 'failed' && (
                 <p className="px-5 mt-3 text-sm text-status-error flex items-center gap-1.5">
@@ -255,7 +271,7 @@ export const MeetingCard = ({ meeting, onClick, onRename }: MeetingCardProps) =>
             )}
             {/* 非 completed 狀態：空白佔位讓不同 status 卡片同高 */}
             {meeting.status !== 'completed' && <div className="h-5" />}
-        </div>
+        </article>
 
             {/* Right-click context menu */}
             {contextMenu && (

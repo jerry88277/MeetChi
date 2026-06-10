@@ -30,6 +30,7 @@ from app.models import (
     Meeting,
     MeetingStatus,
     TranscriptSegment,
+    TaskStatus,
     User,
     MeetingParticipant,
     SummaryVersion,
@@ -113,6 +114,7 @@ async def list_meetings(
     keyword: Optional[str] = Query(None, description="依會議標題搜尋"),
     date_from: Optional[str] = Query(None, description="起始日期 (YYYY-MM-DD)"),
     date_to: Optional[str] = Query(None, description="結束日期 (YYYY-MM-DD)"),
+    include_meta: bool = Query(False, description="Include pagination metadata in response"),
     db: Session = Depends(get_db),
 ):
     """List active (non-deleted) meetings filtered by user access.
@@ -121,6 +123,7 @@ async def list_meetings(
     (MemPlace isolation). Without user_upn, returns all meetings (admin/legacy mode).
 
     Supports keyword search (title) and date range filtering.
+    When include_meta=true, returns {items, total, skip, limit, has_more}.
     """
     query = db.query(Meeting).filter(Meeting.deleted_at.is_(None))
 
@@ -151,6 +154,8 @@ async def list_meetings(
         except ValueError:
             pass
 
+    total = query.count() if include_meta else None
+
     meetings = (
         query
         .order_by(desc(Meeting.created_at))
@@ -158,7 +163,19 @@ async def list_meetings(
         .limit(limit)
         .all()
     )
-    return [MeetingListItem.from_orm(m) for m in meetings]
+
+    items = [MeetingListItem.from_orm(m) for m in meetings]
+
+    if include_meta:
+        return JSONResponse(content={
+            "items": [m.dict() for m in items],
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+            "has_more": (skip + limit) < total,
+        })
+
+    return items
 
 
 @router.get("/api/v1/meetings/{meeting_id}", response_model=MeetingRead)
@@ -539,6 +556,102 @@ async def rename_meeting(
 
 
 # ============================================
+# Meeting Progress (UX Audit V2 - P0)
+# ============================================
+@router.get("/api/v1/meetings/{meeting_id}/progress")
+async def get_meeting_progress(
+    meeting_id: str,
+    db: Session = Depends(get_db),
+):
+    """Get real-time progress of a meeting's processing pipeline."""
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    # Determine stage from TaskStatus entries
+    tasks = db.query(TaskStatus).filter(
+        TaskStatus.meeting_id == meeting_id
+    ).order_by(TaskStatus.created_at.desc()).all()
+
+    # Count transcript segments for chunk progress
+    segment_count = db.query(TranscriptSegment).filter(
+        TranscriptSegment.meeting_id == meeting_id
+    ).count()
+
+    # Determine current stage
+    stage = "pending"
+    stage_label = "等待處理"
+    progress_pct = 0
+    elapsed_seconds = 0
+    estimated_remaining = None
+
+    if meeting.status == MeetingStatus.COMPLETED:
+        stage = "completed"
+        stage_label = "已完成"
+        progress_pct = 100
+    elif meeting.status == MeetingStatus.FAILED:
+        stage = "failed"
+        stage_label = "處理失敗"
+        progress_pct = 0
+    elif meeting.status == MeetingStatus.PROCESSING:
+        # Check task statuses to determine sub-stage
+        task_map = {t.task_name: t for t in tasks}
+
+        if "embedding" in task_map and task_map["embedding"].status == "IN_PROGRESS":
+            stage = "embedding"
+            stage_label = "正在建立知識索引"
+            progress_pct = 85
+        elif "summary" in task_map and task_map["summary"].status == "IN_PROGRESS":
+            stage = "summarizing"
+            stage_label = "正在生成摘要"
+            progress_pct = 70
+        elif "asr" in task_map:
+            asr_task = task_map["asr"]
+            if asr_task.status == "IN_PROGRESS":
+                stage = "transcribing"
+                stage_label = "正在轉錄語音"
+                # Estimate progress from segments if available
+                if asr_task.message:
+                    try:
+                        import json as _json
+                        msg_data = _json.loads(asr_task.message)
+                        chunks_done = msg_data.get("chunks_done", 0)
+                        chunks_total = msg_data.get("chunks_total", 1)
+                        progress_pct = int((chunks_done / max(chunks_total, 1)) * 60) + 10
+                    except Exception:
+                        progress_pct = 30
+                else:
+                    progress_pct = 30 if segment_count > 0 else 15
+            elif asr_task.status == "COMPLETED":
+                stage = "summarizing"
+                stage_label = "正在生成摘要"
+                progress_pct = 65
+        else:
+            stage = "uploading"
+            stage_label = "正在處理音檔"
+            progress_pct = 10
+
+        # Calculate elapsed time
+        if meeting.created_at:
+            elapsed_seconds = int((datetime.utcnow() - meeting.created_at).total_seconds())
+            # Rough estimate: 1 min per 10 min audio (based on historical data)
+            if progress_pct > 0 and progress_pct < 100:
+                estimated_remaining = int(elapsed_seconds * (100 - progress_pct) / max(progress_pct, 1))
+
+    return {
+        "meeting_id": meeting_id,
+        "status": meeting.status.value if hasattr(meeting.status, 'value') else str(meeting.status),
+        "stage": stage,
+        "stage_label": stage_label,
+        "progress_pct": progress_pct,
+        "segments_count": segment_count,
+        "elapsed_seconds": elapsed_seconds,
+        "estimated_remaining_seconds": estimated_remaining,
+        "failure_reason": meeting.failure_reason if meeting.status == MeetingStatus.FAILED else None,
+    }
+
+
+# ============================================
 # Speaker Mappings (Phase 8.1.3)
 # ============================================
 @router.patch("/api/v1/meetings/{meeting_id}/speakers")
@@ -583,6 +696,65 @@ async def update_corrections(corrections: dict):
         return {"message": "Corrections updated"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save corrections: {e}")
+
+
+# ============================================
+# Dashboard Aggregate API (UX Audit V2)
+# ============================================
+@router.get("/api/v1/dashboard")
+async def get_dashboard_aggregate(
+    user_upn: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Aggregate dashboard data in a single API call."""
+    from sqlalchemy import func
+
+    base_query = db.query(Meeting).filter(Meeting.deleted_at.is_(None))
+    if user_upn:
+        base_query = base_query.join(
+            MeetingParticipant, Meeting.id == MeetingParticipant.meeting_id
+        ).filter(MeetingParticipant.user_upn == user_upn)
+
+    total_meetings = base_query.count()
+    processing_count = base_query.filter(Meeting.status == MeetingStatus.PROCESSING).count()
+    failed_count = base_query.filter(Meeting.status == MeetingStatus.FAILED).count()
+    completed_count = base_query.filter(Meeting.status == MeetingStatus.COMPLETED).count()
+
+    # Recent meetings (top 5)
+    recent = base_query.order_by(desc(Meeting.created_at)).limit(5).all()
+
+    # Segment count for RAG
+    segment_count = db.query(func.count(TranscriptSegment.id)).scalar() or 0
+
+    # Last upload time
+    last_meeting = base_query.order_by(desc(Meeting.created_at)).first()
+    last_upload_at = last_meeting.created_at.isoformat() if last_meeting and last_meeting.created_at else None
+
+    # Suggested actions
+    suggested_actions = []
+    if failed_count > 0:
+        suggested_actions.append(f"有 {failed_count} 場會議轉錄失敗，點擊查看")
+    if processing_count > 0:
+        suggested_actions.append(f"有 {processing_count} 場會議正在處理中")
+
+    return {
+        "total_meetings": total_meetings,
+        "completed_count": completed_count,
+        "processing_count": processing_count,
+        "failed_count": failed_count,
+        "rag_segments_total": segment_count,
+        "last_upload_at": last_upload_at,
+        "suggested_actions": suggested_actions,
+        "recent_meetings": [
+            {
+                "id": m.id,
+                "title": m.title,
+                "status": m.status.value if hasattr(m.status, 'value') else str(m.status),
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in recent
+        ],
+    }
 
 
 # ============================================

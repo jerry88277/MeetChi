@@ -58,9 +58,9 @@
   /* --- Semantic Colors (Light Mode Default) ---
      對齊 Granola 的 calm 設計 — 中性灰白為底，給 DDG 8 色點綴空間
   */
-  --color-background: #F5F7FA;   /* 微冷灰藍底色 — 護眼降對比（原 #FAFAF8 微暖） */
+  --color-background: #FAFAF8;   /* 微暖白底色 — 企業人文溫度 */
   --color-foreground: #0f172a;
-  --color-surface: #F5F7FA;        /* 對齊 background — 護眼微冷灰藍 */
+  --color-surface: #FAFAF8;        /* 對齊 background */
   --color-card: #ffffff;
   --color-muted: #f1f5f9;
   --color-muted-foreground: #64748b;
@@ -242,11 +242,12 @@ body {
    Focus States
    =============================== */
 
-input:focus,
-button:focus {
+:focus {
   outline: none;
 }
 
-input:focus-visible {
-  box-shadow: 0 0 0 2px var(--color-primary), 0 0 0 4px rgba(45, 66, 139, 0.2);
+:focus-visible {
+  outline: 2px solid var(--color-brand-cta);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(45, 66, 139, 0.15);
 }

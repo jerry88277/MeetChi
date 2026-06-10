@@ -7,9 +7,7 @@ import {
     CheckCircle2,
     Loader2,
     AlertCircle,
-    X,
     UploadCloud,
-    RefreshCw,
     Trash2,
 } from "lucide-react";
 import type { UploadTask } from "@/hooks/useUploadQueue";
@@ -124,21 +122,24 @@ export function UploadTray({ tasks, isOpen, onToggle, onRetry, onRemove, onClear
                                         />
                                     </div>
                                 )}
-                                {task.status === "error" && task.error && (
-                                    <p className="text-[10px] text-status-error mt-0.5 line-clamp-1">{task.error}</p>
+                                {task.status === "error" && (
+                                    <div className="mt-1 flex items-center gap-2">
+                                        {task.error && (
+                                            <p className="flex-1 text-[10px] text-status-error line-clamp-1">{task.error}</p>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => onRetry(task.id)}
+                                            className="shrink-0 text-[10px] font-medium text-brand-cta hover:text-brand-cta/80 transition-colors"
+                                            title="重試"
+                                        >
+                                            重試
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                             {/* Actions */}
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                {task.status === "error" && (
-                                    <button
-                                        onClick={() => onRetry(task.id)}
-                                        className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-brand-cta transition-colors"
-                                        title="重試"
-                                    >
-                                        <RefreshCw size={12} />
-                                    </button>
-                                )}
                                 {(task.status === "done" || task.status === "error" || task.status === "queued") && (
                                     <button
                                         onClick={() => onRemove(task.id)}

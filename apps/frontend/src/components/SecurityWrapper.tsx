@@ -3,53 +3,45 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-export const SecurityWrapper = ({ children, userIdentifier = "MeetChi-Confidential" }: { children: React.ReactNode, userIdentifier?: string }) => {
+interface SecurityWrapperProps {
+    children: React.ReactNode;
+    userIdentifier?: string;
+    isConfidential?: boolean;
+}
+
+export const SecurityWrapper = ({ children, userIdentifier = "MeetChi-Confidential", isConfidential = false }: SecurityWrapperProps) => {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const watermarkRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
     const [isViolation, setIsViolation] = useState(false);
 
     useEffect(() => {
-        // 1. Prevent context menu (Right-click)
-        const handleContextMenu = (e: MouseEvent) => {
-            e.preventDefault();
-        };
-
-        // 2. Prevent Ctrl+S, Ctrl+P, Ctrl+C
+        // Only restrict print for confidential meetings
         const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 's' || e.key === 'c')) {
+            if (isConfidential && (e.ctrlKey || e.metaKey) && (e.key === 'p')) {
                 e.preventDefault();
             }
         };
 
-        document.addEventListener('contextmenu', handleContextMenu);
         document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [isConfidential]);
 
-        return () => {
-            document.removeEventListener('contextmenu', handleContextMenu);
-            document.removeEventListener('keydown', handleKeyDown);
-        };
-    }, []);
-
-    // 3. MutationObserver to prevent tampering with watermark
+    // MutationObserver to prevent tampering with watermark
     useEffect(() => {
         if (!wrapperRef.current || !watermarkRef.current) return;
 
         const observer = new MutationObserver((mutations) => {
             mutations.forEach((mutation) => {
-                // If nodes were removed, check if watermark was one of them
                 if (mutation.removedNodes.length > 0) {
                     for (let i = 0; i < mutation.removedNodes.length; i++) {
                         if (mutation.removedNodes[i] === watermarkRef.current || 
                             !document.body.contains(watermarkRef.current!)) {
                             setIsViolation(true);
-                            // Security action: Force logout or blur screen
                             break;
                         }
                     }
                 }
-                
-                // If attributes changed on the watermark (e.g. style="display:none" or opacity="0")
                 if (mutation.target === watermarkRef.current) {
                     const style = window.getComputedStyle(watermarkRef.current);
                     if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
@@ -86,7 +78,7 @@ export const SecurityWrapper = ({ children, userIdentifier = "MeetChi-Confidenti
     }
 
     return (
-        <div ref={wrapperRef} className="relative w-full h-full select-none" style={{ WebkitTouchCallout: 'none' }}>
+        <div ref={wrapperRef} className="relative w-full h-full">
             {children}
             
             {/* Dynamic Watermark Overlay */}
@@ -95,7 +87,7 @@ export const SecurityWrapper = ({ children, userIdentifier = "MeetChi-Confidenti
                 className="pointer-events-none fixed inset-0 z-[9990] overflow-hidden"
                 style={{
                     mixBlendMode: 'multiply',
-                    opacity: 0.04 /* Make it subtle, but highly visible upon contrast manipulation */
+                    opacity: 0.04
                 }}
             >
                 <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">

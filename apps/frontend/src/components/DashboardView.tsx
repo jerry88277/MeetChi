@@ -85,6 +85,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
     );
 
     const isProcessing = uploadState === 'uploading' || uploadState === 'processing';
+    const emptyStateAction = onUploadClick ?? onCreateMeeting;
 
     return (
         // 2026-05-25 fix：containerRef 從 grid 移到最外層 full-width wrapper，
@@ -182,7 +183,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
             )}
 
             {/* Success Banner */}
-            <div className={`transition-all duration-500 ease-in-out overflow-hidden ${successMessage ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'}`}>
+            <div className={`transition-[max-height,opacity] duration-500 ease-in-out overflow-hidden ${successMessage ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'}`}>
                 <div className="bg-brand-chimei-green/10 border border-brand-chimei-green/30 rounded-xl p-4 flex items-center gap-3 mb-0">
                     <CheckCircle2 className="text-brand-chimei-green flex-shrink-0" size={20} />
                     <p className="font-medium text-brand-chimei-green">{successMessage}</p>
@@ -205,7 +206,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                                     onServerFilter({ keyword: searchQuery || undefined, dateFrom: dateFrom || undefined, dateTo: dateTo || undefined });
                                 }
                             }}
-                            placeholder="搜尋會議標題或摘要重點"
+                            placeholder="搜尋會議名稱"
                             className="w-full pl-11 pr-4 py-3 bg-card border border-border rounded-full focus:outline-none focus:ring-2 focus:ring-brand-cta/40 focus:border-brand-cta/40 shadow-sm transition-[border-color,box-shadow] duration-200"
                         />
                     </div>
@@ -263,9 +264,15 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
 
             {/* Loading State */}
             {isLoading && (
-                <div className="text-center py-16">
-                    <Loader2 size={48} className="mx-auto text-brand-cta animate-spin mb-4" />
-                    <p className="text-muted-foreground">載入會議列表中...</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                    {[1, 2, 3].map(i => (
+                        <div key={i} className="bg-card rounded-2xl p-5 border-l-4 border-l-muted animate-pulse">
+                            <div className="h-4 bg-muted rounded w-3/4 mb-3" />
+                            <div className="h-3 bg-muted rounded w-1/2 mb-4" />
+                            <div className="h-3 bg-muted rounded w-full mb-2" />
+                            <div className="h-3 bg-muted rounded w-2/3" />
+                        </div>
+                    ))}
                 </div>
             )}
 
@@ -308,7 +315,6 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                             <div
                                 key={meeting.id}
                                 data-select-id={meeting.id}
-                                style={{ animationDelay: `${index * 0.1}s` }}
                                 onClick={(e) => {
                                     // Shift/Ctrl+click 切換選取；否則正常打開詳情頁
                                     // （若已有其他選取也 toggle，方便框選後微調）
@@ -320,9 +326,10 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                                     }
                                     onSelectMeeting(meeting);
                                 }}
-                                className={`relative h-full animate-in fade-in slide-in-from-bottom-4 duration-500 rounded-xl transition-all ${
+                                className={`relative h-full animate-in fade-in slide-in-from-bottom-4 duration-500 rounded-xl transition-[box-shadow,transform] ${
                                     isSelected ? 'ring-2 ring-brand-cta ring-offset-2 ring-offset-surface' : ''
                                 }`}
+                                style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'both' }}
                             >
                                 {/* 已選取 checkmark 標記 */}
                                 {isSelected && (
@@ -341,17 +348,28 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
 
             {/* Empty State */}
             {!isLoading && !error && filteredMeetings.length === 0 && (
-                <div className="text-center py-16">
-                    <FileText size={48} className="mx-auto text-muted-foreground/30 mb-4" />
-                    <p className="text-muted-foreground">
-                        {searchQuery ? '沒有找到符合的會議記錄' : '上傳第一場會議，系統會在背景自動整理重點、決策與下一步'}
-                    </p>
-                    {!searchQuery && (
-                        <p className="mt-2 text-sm text-muted-foreground/80">
-                            完成上傳後，您可直接搜尋摘要、決策與待辦重點。
+                searchQuery || meetings.length > 0 ? (
+                    <div className="text-center py-16">
+                        <FileText size={48} className="mx-auto text-muted-foreground/30 mb-4" />
+                        <p className="text-muted-foreground">沒有找到符合的會議記錄</p>
+                    </div>
+                ) : (
+                    <div className="flex flex-col items-center justify-center py-20 text-center">
+                        <div className="w-16 h-16 rounded-2xl bg-brand-cta/10 flex items-center justify-center mb-5">
+                            <Upload size={28} className="text-brand-cta" />
+                        </div>
+                        <h3 className="text-xl font-semibold text-foreground mb-2">開始記錄第一場會議</h3>
+                        <p className="text-muted-foreground text-sm max-w-sm mb-6">
+                            上傳會議錄音檔，AI 將自動產生摘要、決策、待辦事項
                         </p>
-                    )}
-                </div>
+                        <button
+                            onClick={emptyStateAction}
+                            className="px-6 py-3 bg-brand-cta text-white rounded-xl font-medium hover:bg-brand-cta/90 transition-colors shadow-sm"
+                        >
+                            上傳第一場會議
+                        </button>
+                    </div>
+                )
             )}
         </div>
         {/* close outer containerRef wrapper */}

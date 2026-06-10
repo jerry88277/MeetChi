@@ -81,6 +81,25 @@ export function TourOverlay({ open, onClose }: TourOverlayProps) {
     return () => window.cancelAnimationFrame(frame);
   }, [open]);
 
+  // Keyboard navigation for tour overlay
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        complete();
+      } else if (e.key === 'Enter' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        if (step >= STEPS.length - 1) complete();
+        else setStep(s => s + 1);
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (step > 0) setStep(s => s - 1);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, step]);
+
   const complete = () => {
     localStorage.setItem(TOUR_STORAGE_KEY, '1');
     onClose();
@@ -124,7 +143,7 @@ export function TourOverlay({ open, onClose }: TourOverlayProps) {
       {/* spotlight cutout */}
       {rect && current.position !== 'center' && (
         <div
-          className="absolute rounded-xl transition-all duration-300 pointer-events-none"
+          className="absolute rounded-xl transition-[inset,width,height] duration-300 pointer-events-none"
           style={{
             top: rect.top - PADDING,
             left: rect.left - PADDING,

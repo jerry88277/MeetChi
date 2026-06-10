@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import {
     ChevronRight,
     FileText,
-    CheckCircle2,
     Loader2,
     AlertCircle,
     AlertTriangle,
@@ -149,7 +148,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                 color: localSpeakerMappings?.[editingSpeakerId]?.color,
             };
             await api.updateSpeakerMappings(meeting.id, updatedMappings);
-            setLocalSpeakerMappings(updatedMappings as any);
+            setLocalSpeakerMappings(updatedMappings);
             setEditingSpeakerId(null);
         } catch (err) {
             console.error('Failed to update speaker:', err);
@@ -330,6 +329,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                             onClick={() => onRegenerateSummary(meeting.id, selectedTemplate)}
                             disabled={isRegenerating}
                             className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-brand-cta bg-brand-cta/10 rounded-lg hover:bg-brand-cta/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            title="重新生成摘要"
                         >
                             {isRegenerating ? (
                                 <><Loader2 size={12} className="animate-spin" />生成中...</>
@@ -393,8 +393,8 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                     <button
                         onClick={() => onReportThisMeeting(meeting.id)}
                         className="p-2 text-muted-foreground hover:text-brand-orange hover:bg-brand-orange/10 rounded-full transition-colors"
-                        title="回報這個會議的問題"
-                        aria-label="回報這個會議的問題"
+                        title="回報問題"
+                        aria-label="回報問題"
                     >
                         <MessageSquareWarning size={20} />
                     </button>
@@ -494,7 +494,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                         <button
                                             onClick={() => onRegenerateTranscript(meeting.id, selectedTemplate)}
                                             disabled={isRegenerating}
-                                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-card border border-border hover:border-brand-cta text-foreground hover:text-brand-cta rounded-xl shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-card border border-border hover:border-brand-cta text-foreground hover:text-brand-cta rounded-xl shadow-sm transition-[colors,shadow,transform] disabled:opacity-50 disabled:cursor-not-allowed group"
                                         >
                                             {isRegenerating ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} className="group-hover:rotate-180 transition-transform duration-500" />}
                                             <span>1. 重新從頭轉錄</span>
@@ -504,7 +504,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                         <button
                                             onClick={() => onRegenerateSummary(meeting.id, selectedTemplate)}
                                             disabled={isRegenerating}
-                                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-cta text-white hover:bg-brand-cta/90 rounded-xl shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-cta text-white hover:bg-brand-cta/90 rounded-xl shadow-sm transition-[colors,shadow,transform] disabled:opacity-50 disabled:cursor-not-allowed group"
                                         >
                                             {isRegenerating ? <Loader2 size={16} className="animate-spin text-white/70" /> : <RefreshCw size={16} className="group-hover:rotate-180 transition-transform duration-500" />}
                                             <span>2. 僅重新生成摘要</span>
@@ -513,7 +513,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                     {onReportThisMeeting && (
                                         <button
                                             onClick={() => onReportThisMeeting(meeting.id)}
-                                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-status-error/10 border border-status-error/30 hover:bg-status-error/20 text-status-error rounded-xl shadow-sm transition-all group"
+                                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-status-error/10 border border-status-error/30 hover:bg-status-error/20 text-status-error rounded-xl shadow-sm transition-[colors,shadow,transform] group"
                                             title="開啟回報視窗並自動帶入會議 ID"
                                         >
                                             <MessageSquareWarning size={16} />
@@ -661,6 +661,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                             onClick={() => onRegenerateSummary(meeting.id, selectedTemplate)}
                                             disabled={isRegenerating}
                                             className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-brand-cta bg-brand-cta/10 rounded-lg hover:bg-brand-cta/20 disabled:opacity-50 transition-colors"
+                                            title="重新生成摘要"
                                         >
                                             {isRegenerating ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
                                             重新生成
@@ -804,7 +805,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                                         <span
                                                             key={id}
                                                             onClick={() => handleStartEditSpeaker(id)}
-                                                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer hover:ring-2 hover:ring-brand-cta/30 transition-all group"
+                                                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer hover:ring-2 hover:ring-brand-cta/30 transition-[colors,shadow,transform] group"
                                                             style={{
                                                                 backgroundColor: `${mapping.color}18`,
                                                                 color: mapping.color,

@@ -81,6 +81,10 @@ class RAGResponse(BaseModel):
         default="no_answer",
         description="LLM 自我評估的回答信心: high / medium / low / no_answer (見 app.rag.prompt)",
     )
+    used_citation_indices: List[int] = Field(
+        default_factory=list,
+        description="LLM 實際引用的 citation 索引 (0-based)",
+    )
 
 
 class LastMeetingSummary(BaseModel):
@@ -433,6 +437,9 @@ def _find_title_matched_meetings(
         # Query core in title
         elif query_core and query_core in title:
             score = 0.9
+        # Title in query core (partial)
+        elif title in query_core:
+            score = 0.85
         else:
             # Character-level fuzzy: compute overlap ratio
             # Split title into meaningful tokens (>= 2 chars)
@@ -443,8 +450,20 @@ def _find_title_matched_meetings(
                 # Boost if the matched portion is significant
                 if len(matched_tokens) >= 1 and any(len(t) >= 2 for t in matched_tokens):
                     score = max(score, 0.5)
+            
+            # Levenshtein-style fuzzy: if title and query_core are similar length
+            # and differ by only 1-2 characters, boost score
+            if score < 0.4 and query_core and len(query_core) >= 2:
+                # Simple edit distance approximation for short Chinese strings
+                shorter = min(title, query_core, key=len)
+                longer = max(title, query_core, key=len)
+                if len(shorter) >= 2 and len(longer) <= len(shorter) + 3:
+                    common_chars = sum(1 for c in shorter if c in longer)
+                    ratio = common_chars / max(len(longer), 1)
+                    if ratio >= 0.6:
+                        score = max(score, ratio * 0.8)
         
-        if score >= 0.5:
+        if score >= 0.4:  # Lowered from 0.5 to catch more fuzzy matches
             matched.append({
                 "meeting_id": row.id,
                 "title": title,
@@ -695,80 +714,76 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
         logger.warning(f"[RAG] Summary citation build failed (non-fatal): {e}")
 
     # Step 2.2: Title fuzzy-match pre-filter (A3 optimization)
-    # If vector search returned low-quality results AND user's query references
-    # a meeting by name, force-include that meeting's segments + summary.
-    # This handles: "鴻才會議討論什麼" → matches "鴻才討論" meeting title
+    # ALWAYS try title match (UX Audit V2: even when vector search is decent,
+    # if user references a meeting by name we should include it)
     title_match_citations: List[Citation] = []
     title_match_segments = []
     try:
-        # Check if top results are low quality (best sim < 0.6)
         best_segment_sim = max((1.0 - float(r.distance) for r in results), default=0.0) if results else 0.0
         best_summary_sim = max((c.similarity for c in summary_citations), default=0.0) if summary_citations else 0.0
         
-        # Only activate title-match if vector search quality is poor
-        if best_segment_sim < 0.6 or best_summary_sim < 0.5:
-            title_matches = _find_title_matched_meetings(
-                db, search_query,
-                user_upn=request.user_upn,
-                meeting_ids=request.meeting_ids,
+        # Always attempt title match; if vector quality is already high,
+        # title-matched content still enriches context
+        title_matches = _find_title_matched_meetings(
+            db, search_query,
+            user_upn=request.user_upn,
+            meeting_ids=request.meeting_ids,
+        )
+        
+        for tm in title_matches:
+            # Fetch this meeting's best segments (by similarity to query)
+            tm_segments = _fetch_meeting_top_segments(
+                db, tm["meeting_id"], query_embedding, top_k=8
             )
+            if tm_segments:
+                title_match_segments.extend(tm_segments)
             
-            for tm in title_matches:
-                # Fetch this meeting's best segments (by similarity to query)
-                tm_segments = _fetch_meeting_top_segments(
-                    db, tm["meeting_id"], query_embedding, top_k=8
-                )
-                if tm_segments:
-                    title_match_segments.extend(tm_segments)
-                
-                # Also add summary as a citation if available
-                if tm.get("summary_json"):
-                    try:
-                        sdata = json.loads(tm["summary_json"])
-                        parts = []
-                        if sdata.get("summary"):
-                            parts.append(sdata["summary"])
-                        if sdata.get("decisions"):
-                            decisions = sdata["decisions"]
-                            dec_texts = []
-                            for d in decisions:
-                                if isinstance(d, str):
-                                    dec_texts.append(d)
-                                elif isinstance(d, dict):
-                                    dec_texts.append(d.get("decision", ""))
-                            if dec_texts:
-                                parts.append("決議事項：" + "；".join(filter(None, dec_texts)))
-                        if sdata.get("action_items"):
-                            items = sdata["action_items"][:5]
-                            item_texts = []
-                            for item in items:
-                                if isinstance(item, str):
-                                    item_texts.append(item)
-                                elif isinstance(item, dict):
-                                    item_texts.append(item.get("task", ""))
-                            if item_texts:
-                                parts.append("行動項目：" + "；".join(filter(None, item_texts)))
-                        summary_content = "\n".join(filter(None, parts))
-                        if summary_content:
-                            title_match_citations.append(Citation(
-                                meeting_id=tm["meeting_id"],
-                                meeting_title=tm["title"],
-                                speaker=None,
-                                start_time=None,
-                                end_time=None,
-                                content=f"[會議摘要 - 標題匹配] {summary_content}",
-                                similarity=round(tm["match_score"], 4),
-                            ))
-                    except Exception:
-                        pass
-            
-            if title_match_segments:
-                logger.info(f"[RAG/A3] Title match injected {len(title_match_segments)} segments from {len(title_matches)} meetings")
-                # Merge title-matched segments into results (prepend for priority)
-                # Deduplicate by segment id
-                existing_ids = {r.id for r in results} if results else set()
-                new_segments = [s for s in title_match_segments if s.id not in existing_ids]
-                results = list(new_segments) + list(results) if results else new_segments
+            # Also add summary as a citation if available
+            if tm.get("summary_json"):
+                try:
+                    sdata = json.loads(tm["summary_json"])
+                    parts = []
+                    if sdata.get("summary"):
+                        parts.append(sdata["summary"])
+                    if sdata.get("decisions"):
+                        decisions = sdata["decisions"]
+                        dec_texts = []
+                        for d in decisions:
+                            if isinstance(d, str):
+                                dec_texts.append(d)
+                            elif isinstance(d, dict):
+                                dec_texts.append(d.get("decision", ""))
+                        if dec_texts:
+                            parts.append("決議事項：" + "；".join(filter(None, dec_texts)))
+                    if sdata.get("action_items"):
+                        items = sdata["action_items"][:5]
+                        item_texts = []
+                        for item in items:
+                            if isinstance(item, str):
+                                item_texts.append(item)
+                            elif isinstance(item, dict):
+                                item_texts.append(item.get("task", ""))
+                        if item_texts:
+                            parts.append("行動項目：" + "；".join(filter(None, item_texts)))
+                    summary_content = "\n".join(filter(None, parts))
+                    if summary_content:
+                        title_match_citations.append(Citation(
+                            meeting_id=tm["meeting_id"],
+                            meeting_title=tm["title"],
+                            speaker=None,
+                            start_time=None,
+                            end_time=None,
+                            content=f"[會議摘要 - 標題匹配] {summary_content}",
+                            similarity=round(tm["match_score"], 4),
+                        ))
+                except Exception:
+                    pass
+        
+        if title_match_segments:
+            logger.info(f"[RAG/A3] Title match injected {len(title_match_segments)} segments from {len(title_matches)} meetings")
+            existing_ids = {r.id for r in results} if results else set()
+            new_segments = [s for s in title_match_segments if s.id not in existing_ids]
+            results = list(new_segments) + list(results) if results else new_segments
     except Exception as e:
         logger.warning(f"[RAG/A3] Title match failed (non-fatal): {e}")
 
@@ -890,6 +905,7 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
 
     answer = "無法生成回答。"
     confidence = "no_answer"
+    used_citation_indices: List[int] = []
     try:
         response = client.models.generate_content(
             model=GEMINI_MODEL,
@@ -906,7 +922,8 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
             # confidence 必須是 4 級之一，否則 fallback no_answer
             raw_conf = str(data.get("confidence", "no_answer")).lower()
             confidence = raw_conf if raw_conf in CONFIDENCE_LEVELS else "no_answer"
-            # used_citations_list 暫不主動過濾，frontend 仍拿到全 citations
+            # Extract used citation indices from LLM response
+            used_citation_indices = data.get("used_citations", [])
         except Exception as parse_err:
             logger.warning(f"[RAG] LLM JSON parse fail: {parse_err}; raw={response.text[:200]!r}")
             answer = response.text or "無法生成回答。"
@@ -915,6 +932,17 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
         logger.error(f"[RAG] Gemini generation failed: {e}")
         answer = f"（回答生成失敗，但以下是最相關的會議段落供參考）\n\n錯誤: {str(e)}"
         confidence = "no_answer"
+
+    # If title match injected segments but LLM still said no_answer,
+    # override to at least "low" confidence since we have relevant content
+    if confidence == "no_answer" and title_match_citations:
+        confidence = "low"
+        if "無法" in answer or "找不到" in answer or "沒有找到" in answer:
+            # Provide a better answer pointing to the matched meeting
+            matched_titles = [c.meeting_title for c in title_match_citations]
+            answer = f"以下是與「{request.question}」相關的會議內容摘要（來自標題匹配）：\n\n"
+            for c in title_match_citations:
+                answer += f"**{c.meeting_title}**\n{c.content.replace('[會議摘要 - 標題匹配] ', '')}\n\n"
 
     # Y5 (2026-05-25)：log to rag_query_logs（寫失敗不影響主回應，只 warn）
     _log_rag_query(
@@ -933,6 +961,7 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
         segments_searched=total_searched,
         question=request.question,
         confidence=confidence,
+        used_citation_indices=used_citation_indices,
     )
 
 

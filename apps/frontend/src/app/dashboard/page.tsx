@@ -727,22 +727,7 @@ export default function DashboardPage() {
                 onConfirm={() => { confirmState?.resolve(true); setConfirmState(null); }}
                 onCancel={() => { confirmState?.resolve(false); setConfirmState(null); }}
             />
-            {/* Global FAB for RagSidebar — DDG token
-                2026-05-22 (feedback #10)：在 RAG workspace 內 FAB 會遮擋送出
-                按鈕，使用者本來就在跨會議助理頁了，不必再重複入口。 */}
-            {currentView !== 'rag' && (
-                <button
-                    onClick={() => setIsRagSidebarOpen(true)}
-                    className="fixed bottom-6 right-6 z-40 bg-brand-cta text-white p-4 rounded-full shadow-lg hover:bg-brand-cta/90 hover:scale-[1.02] transition-all flex items-center justify-center group"
-                    title="召喚智能助理"
-                    aria-label="召喚智能助理"
-                >
-                    <MessageSquare className="w-6 h-6" />
-                    <span className="max-w-0 overflow-hidden whitespace-nowrap group-hover:max-w-xs group-hover:ml-3 transition-all duration-300 font-medium text-sm">
-                        智能助理
-                    </span>
-                </button>
-            )}
+            {/* FAB removed — ChiMemo accessible via sidebar only (UX audit V2: 單一入口原則) */}
             
             <RagDrawer
                 isOpen={isRagSidebarOpen}

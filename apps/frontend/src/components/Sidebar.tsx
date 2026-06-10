@@ -40,9 +40,12 @@ export const Sidebar = ({
     const isUAT = provider === "credentials";
     const [profileOpen, setProfileOpen] = useState(false);
 
-    const menuItems = [
+    const workspaceItems = [
         { id: 'dashboard', icon: FileText, label: '所有會議', primary: true },
         { id: 'rag', icon: MessageSquare, label: 'ChiMemo', tourId: 'nav-rag' },
+    ];
+
+    const systemItems = [
         { id: 'templates', icon: LayoutTemplate, label: '模板管理' },
         { id: 'settings', icon: Settings, label: '系統設定' },
         ...(isAdmin ? [{ id: 'admin', icon: FlaskConical, label: '系統維運' }] : []),
@@ -74,8 +77,10 @@ export const Sidebar = ({
                     </button>
                 </div>
 
-                <nav className="flex-1 p-4 space-y-2">
-                    {menuItems.map((item) => {
+                <nav className="flex-1 p-4 space-y-1">
+                    {/* 工作區 */}
+                    <p className="px-4 pt-2 pb-1 text-[10px] uppercase tracking-widest text-white/30 font-semibold">工作區</p>
+                    {workspaceItems.map((item) => {
                         const className = `w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors duration-150 ${
                             item.primary
                                 ? activeTab === item.id
@@ -86,26 +91,10 @@ export const Sidebar = ({
                                     : 'text-white/50 hover:bg-white/5 hover:text-white/80'
                         }`;
 
-                        if (item.id === 'rag') {
-                            return (
-                                <button
-                                    key={item.id}
-                                    data-tour="nav-rag"
-                                    onClick={() => {
-                                        setActiveTab(item.id);
-                                        setIsMobileOpen(false);
-                                    }}
-                                    className={className}
-                                >
-                                    <item.icon size={20} />
-                                    <span className="font-medium">{item.label}</span>
-                                </button>
-                            );
-                        }
-
                         return (
                             <button
                                 key={item.id}
+                                data-tour={item.tourId}
                                 onClick={() => {
                                     setActiveTab(item.id);
                                     setIsMobileOpen(false);
@@ -117,6 +106,32 @@ export const Sidebar = ({
                             </button>
                         );
                     })}
+
+                    {/* 系統 */}
+                    <div className="pt-4">
+                        <p className="px-4 pt-2 pb-1 text-[10px] uppercase tracking-widest text-white/30 font-semibold">系統</p>
+                        {systemItems.map((item) => {
+                            const className = `w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors duration-150 ${
+                                activeTab === item.id
+                                    ? 'bg-white/10 text-brand-chimei-teal'
+                                    : 'text-white/50 hover:bg-white/5 hover:text-white/80'
+                            }`;
+
+                            return (
+                                <button
+                                    key={item.id}
+                                    onClick={() => {
+                                        setActiveTab(item.id);
+                                        setIsMobileOpen(false);
+                                    }}
+                                    className={className}
+                                >
+                                    <item.icon size={20} />
+                                    <span className="font-medium">{item.label}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
                 </nav>
 
                 {onOpenFeedback && (

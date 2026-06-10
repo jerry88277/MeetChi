@@ -134,11 +134,11 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
     if (isHistoryOpen && historyItems.length === 0) loadHistory();
   }, [isHistoryOpen, historyItems.length, loadHistory]);
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
-    
-    const userMsg: Message = { id: Date.now().toString(), role: "user", text: input, citations: [] };
+  const sendMessage = async (text: string) => {
+    const messageText = text.trim();
+    if (!messageText || isLoading) return;
+
+    const userMsg: Message = { id: Date.now().toString(), role: "user", text: messageText, citations: [] };
     // Update last active timestamp for 30min inactivity tracking
     if (userUpn) {
       try { localStorage.setItem(`rag_last_active_${userUpn}`, Date.now().toString()); } catch {}
@@ -199,22 +199,16 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
     }
   };
 
-  // Ref to track pending auto-submit from suggested chip click
-  const pendingAutoSubmitRef = useRef<string | null>(null);
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await sendMessage(input);
+  };
 
   const handleSuggestedClick = (suggestedText: string) => {
     if (isLoading) return;
     setInput(suggestedText);
-    pendingAutoSubmitRef.current = suggestedText;
+    void sendMessage(suggestedText);
   };
-
-  // Auto-submit when input is set from suggested chip
-  useEffect(() => {
-    if (pendingAutoSubmitRef.current && input === pendingAutoSubmitRef.current && !isLoading) {
-      pendingAutoSubmitRef.current = null;
-      handleSend({ preventDefault: () => {} } as React.FormEvent);
-    }
-  }, [input]);
 
   const renderMessageTextWithCitations = (text: string, citations: RagCitation[]) => {
     if (!citations || citations.length === 0) return <span className="whitespace-pre-wrap">{text}</span>;
@@ -498,7 +492,7 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
             onChange={(e) => setInput(e.target.value)}
             disabled={isLoading}
             placeholder="請輸入您的問題，例如：回顧昨天的行銷週會討論了什麼？"
-            className="w-full bg-muted text-foreground border border-border rounded-2xl pl-5 pr-14 py-4 focus:outline-none focus:ring-2 focus:ring-brand-cta/50 transition-all disabled:opacity-50"
+            className="w-full bg-muted text-foreground border border-border rounded-2xl pl-5 pr-14 py-4 focus:outline-none focus:ring-2 focus:ring-brand-cta/50 transition-[colors,shadow] disabled:opacity-50"
           />
           <button
             type="submit"
