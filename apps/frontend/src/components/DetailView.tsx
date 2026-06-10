@@ -148,7 +148,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                 color: localSpeakerMappings?.[editingSpeakerId]?.color,
             };
             await api.updateSpeakerMappings(meeting.id, updatedMappings);
-            setLocalSpeakerMappings(updatedMappings);
+            setLocalSpeakerMappings(updatedMappings as typeof localSpeakerMappings);
             setEditingSpeakerId(null);
         } catch (err) {
             console.error('Failed to update speaker:', err);
