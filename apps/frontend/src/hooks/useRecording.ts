@@ -55,6 +55,8 @@ export function useRecording() {
         context = '',
         isConfidential = false,
     ) => {
+        // C1: Guard against duplicate uploads — prevent parallel uploads
+        if (uploadState !== 'idle') return;
         setUploadState('uploading');
         setLastUploadedMeetingId(null);
         setUploadProgress(0);
@@ -137,7 +139,7 @@ export function useRecording() {
                 });
             }
         }
-    }, []);
+    }, [uploadState, sessionUpn]);
 
     // Called by parent when polling detects completion
     const resetUploadState = useCallback(() => {

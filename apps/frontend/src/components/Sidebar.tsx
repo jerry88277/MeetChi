@@ -21,6 +21,7 @@ interface SidebarProps {
     isMobileOpen: boolean;
     setIsMobileOpen: (open: boolean) => void;
     isConnected: boolean;
+    isAdmin?: boolean;
     user?: {
         name?: string | null;
         email?: string | null;
@@ -34,16 +35,17 @@ interface SidebarProps {
 
 export const Sidebar = ({
     activeTab, setActiveTab, isMobileOpen, setIsMobileOpen,
-    isConnected, user, provider, onOpenFeedback, onStartTour
+    isConnected, isAdmin, user, provider, onOpenFeedback, onStartTour
 }: SidebarProps) => {
     const isUAT = provider === "credentials";
     const [profileOpen, setProfileOpen] = useState(false);
 
     const menuItems = [
         { id: 'dashboard', icon: FileText, label: '所有會議', primary: true },
-        { id: 'rag', icon: MessageSquare, label: '跨會議知識庫', tourId: 'nav-rag' },
+        { id: 'rag', icon: MessageSquare, label: 'ChiMemo', tourId: 'nav-rag' },
         { id: 'templates', icon: LayoutTemplate, label: '模板管理' },
         { id: 'settings', icon: Settings, label: '系統設定' },
+        ...(isAdmin ? [{ id: 'admin', icon: FlaskConical, label: '管理員' }] : []),
     ];
 
     const sidebarClass = `fixed inset-y-0 left-0 z-50 w-64 bg-brand-navy text-white transform transition-transform duration-300 ease-in-out ${
@@ -132,55 +134,56 @@ export const Sidebar = ({
                     </div>
                 )}
 
-                {user && (
-                    <div className="px-4 pb-2 relative">
-                        <button
-                            onClick={() => setProfileOpen(v => !v)}
-                            className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors border border-white/10"
-                            aria-expanded={profileOpen}
-                            aria-haspopup="true"
-                        >
-                            {user.image ? (
-                                <img src={user.image} alt={user.name || 'User'} className="w-9 h-9 rounded-full shrink-0" />
-                            ) : (
-                                <div className="w-9 h-9 rounded-full bg-brand-cta flex items-center justify-center text-white font-medium shrink-0">
-                                    {user.name?.charAt(0) || user.email?.charAt(0) || '?'}
-                                </div>
-                            )}
-                            <div className="flex-1 min-w-0 text-left">
-                                <div className="flex items-center gap-1.5">
-                                    <p className="text-sm font-medium text-white truncate">{user.name}</p>
-                                    {isUAT && (
-                                        <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-white/10 rounded text-[10px] text-white/60 shrink-0">
-                                            <FlaskConical size={9} />UAT
-                                        </span>
-                                    )}
-                                </div>
-                                <p className="text-xs text-white/40 truncate">{user.email}</p>
-                            </div>
-                            <ChevronUp
-                                size={14}
-                                className={`text-white/30 shrink-0 transition-transform duration-200 ${profileOpen ? '' : 'rotate-180'}`}
-                            />
-                        </button>
-
-                        {profileOpen && (
-                            <div className="absolute bottom-full left-4 right-4 mb-1 bg-white rounded-xl shadow-xl border border-border overflow-hidden z-50">
-                                <div className="px-4 py-3 border-b border-border">
-                                    <p className="text-sm font-semibold text-foreground truncate">{user.name || user.email}</p>
-                                    <p className="text-xs text-muted-foreground truncate">{user.email}</p>
-                                </div>
-                                <button
-                                    onClick={() => signOut({ callbackUrl: '/login' })}
-                                    className="w-full flex items-center gap-2 px-4 py-3 text-sm text-status-error hover:bg-status-error/5 transition-colors"
-                                >
-                                    <LogOut size={15} />
-                                    <span>登出</span>
-                                </button>
+                {/* Profile section — always visible (Design Advisor: 兩層互動架構) */}
+                <div className="px-4 pb-2 relative">
+                    <button
+                        onClick={() => setProfileOpen(v => !v)}
+                        className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors border border-white/10"
+                        aria-expanded={profileOpen}
+                        aria-haspopup="true"
+                    >
+                        {user?.image ? (
+                            <img src={user.image} alt={user.name || 'User'} className="w-9 h-9 rounded-full shrink-0" />
+                        ) : (
+                            <div className="w-9 h-9 rounded-full bg-brand-cta flex items-center justify-center text-white font-medium shrink-0">
+                                {user?.name?.charAt(0) || user?.email?.charAt(0) || '?'}
                             </div>
                         )}
-                    </div>
-                )}
+                        <div className="flex-1 min-w-0 text-left">
+                            <div className="flex items-center gap-1.5">
+                                <p className="text-sm font-medium text-white truncate">
+                                    {user?.name || user?.email?.split('@')[0] || '載入中...'}
+                                </p>
+                                {isUAT && (
+                                    <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-white/10 rounded text-[10px] text-white/60 shrink-0">
+                                        <FlaskConical size={9} />UAT
+                                    </span>
+                                )}
+                            </div>
+                            <p className="text-xs text-white/40 truncate">{user?.email || '...'}</p>
+                        </div>
+                        <ChevronUp
+                            size={14}
+                            className={`text-white/30 shrink-0 transition-transform duration-200 ${profileOpen ? '' : 'rotate-180'}`}
+                        />
+                    </button>
+
+                    {profileOpen && (
+                        <div className="absolute bottom-full left-4 right-4 mb-1 bg-white rounded-xl shadow-xl border border-border overflow-hidden z-50">
+                            <div className="px-4 py-3 border-b border-border">
+                                <p className="text-sm font-semibold text-foreground truncate">{user?.name || user?.email || '使用者'}</p>
+                                <p className="text-xs text-muted-foreground truncate">{user?.email || ''}</p>
+                            </div>
+                            <button
+                                onClick={() => signOut({ callbackUrl: '/login' })}
+                                className="w-full flex items-center gap-2 px-4 py-3 text-sm text-status-error hover:bg-status-error/5 transition-colors"
+                            >
+                                <LogOut size={15} />
+                                <span>登出</span>
+                            </button>
+                        </div>
+                    )}
+                </div>
 
                 <div className="px-4 pb-4 flex items-center justify-between">
                     <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 flex-1 mr-2">

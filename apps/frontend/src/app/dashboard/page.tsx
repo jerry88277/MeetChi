@@ -65,6 +65,17 @@ export default function DashboardPage() {
     const [tourOpen, setTourOpen] = useState(false);
     const [isAdmin, setIsAdmin] = useState(false);
 
+    // State-driven confirm dialog to replace window.confirm
+    const [confirmState, setConfirmState] = useState<{
+        title: string; description: string; variant?: "destructive" | "primary";
+        resolve: (ok: boolean) => void;
+    } | null>(null);
+    const showConfirm = React.useCallback((title: string, description: string, variant: "destructive" | "primary" = "primary"): Promise<boolean> => {
+        return new Promise(resolve => {
+            setConfirmState({ title, description, variant, resolve });
+        });
+    }, []);
+
     // Auto-open tour for first-time users
     React.useEffect(() => {
         const done = localStorage.getItem(TOUR_STORAGE_KEY);
@@ -383,9 +394,12 @@ export default function DashboardPage() {
                     URL.revokeObjectURL(url);
                     const minutes = media.duration / 60;
                     if (minutes > 120) {
-                        resolve(window.confirm(
-                            `警告：${file.name} 長度約 ${Math.round(minutes)} 分鐘。處理時間可能 20+ 分鐘，是否繼續？`
-                        ));
+                        setConfirmState({
+                            title: '大型檔案提醒',
+                            description: `${file.name} 長度約 ${Math.round(minutes)} 分鐘。處理時間可能 20+ 分鐘，是否繼續？`,
+                            variant: 'primary',
+                            resolve,
+                        });
                     } else {
                         resolve(true);
                     }
@@ -405,7 +419,12 @@ export default function DashboardPage() {
         }
 
         // Batch path：序列上傳，顯示進度
-        if (!window.confirm(`即將依序上傳 ${files.length} 個檔案，全部完成前請勿關閉視窗。是否繼續？`)) {
+        const batchConfirmed = await showConfirm(
+            '批次上傳確認',
+            `即將依序上傳 ${files.length} 個檔案，全部完成前請勿關閉視窗。是否繼續？`,
+            'primary'
+        );
+        if (!batchConfirmed) {
             return;
         }
         setBatchProgress({ current: 0, total: files.length });
@@ -610,12 +629,13 @@ export default function DashboardPage() {
     // 2026-05-12 (feedback)：上傳中全屏 overlay
     //   - 解使用者反映「上傳數位時代時前端沒顯示提醒，誤重整取消整個流程」
     //   - 含 % 進度條（XHR upload.onprogress）+ 「請勿關閉/重整」警告
-    //   - 只在 uploadState='uploading' 顯示（PUT 到 GCS 階段）
-    //   - 'processing' 階段不擋（audio 已在 GCS，使用者可離開）
+    //   - 'uploading' 階段：PUT 到 GCS，顯示進度
+    //   - 'processing' 階段：提示 AI 處理中
+    //   - 'error' 階段：重試/取消按鈕
     //   - 配合 beforeunload handler 雙重保護
     const uploadingOverlay =
         uploadState === 'uploading' ? (
-            <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
+            <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6" role="status" aria-live="polite">
                 <div className="bg-card rounded-2xl shadow-2xl border border-border max-w-md w-full p-6 text-center">
                     <Loader2 className="w-12 h-12 text-brand-cta animate-spin mx-auto mb-4" />
                     <h2 className="text-xl font-bold text-foreground mb-1">
@@ -656,11 +676,64 @@ export default function DashboardPage() {
                     </p>
                 </div>
             </div>
+        ) : uploadState === 'processing' ? (
+            <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6" role="status" aria-live="polite">
+                <div className="bg-card rounded-2xl shadow-2xl border border-border max-w-md w-full p-6 text-center">
+                    <div className="relative mx-auto mb-4 w-12 h-12">
+                        <Loader2 className="w-12 h-12 text-brand-chimei-teal animate-spin" />
+                    </div>
+                    <h2 className="text-xl font-bold text-foreground mb-1">AI 處理中</h2>
+                    <p className="text-sm text-muted-foreground mb-2">
+                        音檔已上傳完成，正在進行語音轉錄與 AI 摘要生成
+                    </p>
+                    {uploadFileName && (
+                        <p className="text-xs font-mono text-muted-foreground/60 mb-3 break-all">{uploadFileName}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground/70">
+                        此階段可安全離開，系統會在背景完成處理。
+                    </p>
+                </div>
+            </div>
+        ) : uploadState === 'error' ? (
+            <div className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6" role="alert" aria-live="assertive">
+                <div className="bg-card rounded-2xl shadow-2xl border border-status-error/30 max-w-md w-full p-6 text-center">
+                    <div className="w-12 h-12 rounded-full bg-status-error/10 flex items-center justify-center mx-auto mb-4">
+                        <AlertCircle className="w-6 h-6 text-status-error" />
+                    </div>
+                    <h2 className="text-xl font-bold text-foreground mb-1">上傳失敗</h2>
+                    <p className="text-sm text-muted-foreground mb-4">
+                        {error || '音檔上傳過程發生錯誤，請檢查網路連線後重試。'}
+                    </p>
+                    <div className="flex items-center justify-center gap-3">
+                        <button
+                            onClick={() => { resetUploadState(); setError(null); }}
+                            className="px-4 py-2 text-sm font-medium text-muted-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors"
+                        >
+                            取消
+                        </button>
+                        <button
+                            onClick={() => { resetUploadState(); setError(null); triggerFileInput(); }}
+                            className="px-4 py-2 text-sm font-medium text-white bg-brand-cta hover:bg-brand-cta/90 rounded-lg transition-colors shadow-sm"
+                        >
+                            重新上傳
+                        </button>
+                    </div>
+                </div>
+            </div>
         ) : null;
 
     return (
         <div className="flex h-screen bg-surface font-sans text-foreground overflow-hidden relative">
             {uploadingOverlay}
+            {/* State-driven confirm dialog (replaces window.confirm) */}
+            <ConfirmDialog
+                open={!!confirmState}
+                title={confirmState?.title || ''}
+                description={confirmState?.description}
+                variant={confirmState?.variant || 'primary'}
+                onConfirm={() => { confirmState?.resolve(true); setConfirmState(null); }}
+                onCancel={() => { confirmState?.resolve(false); setConfirmState(null); }}
+            />
             {/* Global FAB for RagSidebar — DDG token
                 2026-05-22 (feedback #10)：在 RAG workspace 內 FAB 會遮擋送出
                 按鈕，使用者本來就在跨會議助理頁了，不必再重複入口。 */}

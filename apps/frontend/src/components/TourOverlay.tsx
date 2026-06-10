@@ -31,7 +31,7 @@ const STEPS: TourStep[] = [
   },
   {
     target: "nav-rag",
-    title: "跨會議知識庫",
+    title: "ChiMemo",
     description: "跨所有會議進行智慧查詢，找出多場討論的共識、分歧與尚未解決的事項。",
     position: 'right',
   },
@@ -201,10 +201,10 @@ export function RestartTourButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1.5 text-xs text-white/30 hover:text-white/60 transition-colors"
+      className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-bold text-white/70 hover:text-white bg-white/10 hover:bg-white/15 border border-white/20 rounded-lg transition-colors"
       title="重新播放功能導覽"
     >
-      <Map size={12} />
+      <Map size={14} />
       <span>功能導覽</span>
     </button>
   );

@@ -499,7 +499,8 @@ export const RecordingView = ({ meetingId, meetingTitle, onBack, onFinish }: Rec
             {/* Header */}
             <div className="border-b border-border px-6 py-4 flex items-center gap-4 bg-card sticky top-0 z-10">
                 <button onClick={() => { if (isRecording) { stopRecording(); } else { onBack(); } }}
-                    className="p-2 hover:bg-muted rounded-full text-muted-foreground transition-colors">
+                    className="p-2 hover:bg-muted rounded-full text-muted-foreground transition-colors"
+                    aria-label="返回">
                     <ChevronRight size={24} className="rotate-180" />
                 </button>
                 <div className="flex-1">

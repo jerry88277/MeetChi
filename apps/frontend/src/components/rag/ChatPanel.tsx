@@ -28,7 +28,7 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
     id: "welcome",
     role: "ai",
     text:
-      "哈囉！我是您的跨會議助理。我會搜尋並**彙整您所有過去會議中同一主題**的相關內容。\n\n" +
+      "哈囉！我是 ChiMemo — 您的跨會議 AI 助理。我會搜尋並**彙整您所有過去會議中同一主題**的相關內容。\n\n" +
       "💡 建議用「主題 / 關鍵字」提問，避免直接用會議檔名。例如：\n" +
       "  • 彙整最近所有提到 AI 投資 ROI 的討論\n" +
       "  • 各場會議對 RAG 架構的看法有什麼共識或分歧？\n" +
@@ -82,10 +82,16 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when messages change or loading state changes
+  // Auto-scroll only when user is near bottom (within 150px threshold)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+    if (isNearBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages, isLoading]);
 
   // 2026-06-08 g6: Personalized greeting card (five-star hotel check-in UX)
@@ -107,14 +113,18 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
+  const [historyError, setHistoryError] = useState(false);
+
   const loadHistory = React.useCallback(async () => {
     if (!userUpn) return;
     setIsHistoryLoading(true);
+    setHistoryError(false);
     try {
       const items = await api.getRagHistory(userUpn, 90, 50);
       setHistoryItems(items);
     } catch (err) {
       console.error('Load RAG history failed:', err);
+      setHistoryError(true);
     } finally {
       setIsHistoryLoading(false);
     }
@@ -182,18 +192,29 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
       console.error(err);
       setMessages(prev => [
         ...prev,
-        { id: (Date.now() + 1).toString(), role: "ai", text: "這次查詢沒有順利完成，請稍後再試。若持續失敗，可透過左側邊欄「回報問題」按鈕反饋。", citations: [] }
+        { id: (Date.now() + 1).toString(), role: "ai", text: `⚠️ 這次查詢沒有順利完成，請稍後再試。若持續失敗，可透過左側邊欄「回報問題」按鈕反饋。\n\n---\n💡 您的問題：「${userMsg.text}」`, citations: [] }
       ]);
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Ref to track pending auto-submit from suggested chip click
+  const pendingAutoSubmitRef = useRef<string | null>(null);
+
   const handleSuggestedClick = (suggestedText: string) => {
     if (isLoading) return;
     setInput(suggestedText);
-    // Option: also auto-send
+    pendingAutoSubmitRef.current = suggestedText;
   };
+
+  // Auto-submit when input is set from suggested chip
+  useEffect(() => {
+    if (pendingAutoSubmitRef.current && input === pendingAutoSubmitRef.current && !isLoading) {
+      pendingAutoSubmitRef.current = null;
+      handleSend({ preventDefault: () => {} } as React.FormEvent);
+    }
+  }, [input]);
 
   const renderMessageTextWithCitations = (text: string, citations: RagCitation[]) => {
     if (!citations || citations.length === 0) return <span className="whitespace-pre-wrap">{text}</span>;
@@ -243,6 +264,8 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
           onClick={() => setIsHistoryOpen(v => !v)}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
           title="查看過去 90 天的查詢紀錄"
+          aria-expanded={isHistoryOpen}
+          aria-controls="rag-history-panel"
         >
           <History size={14} />
           <span>歷史查詢</span>
@@ -250,10 +273,10 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
         </button>
       </div>
       {isHistoryOpen && (
-        <div className="absolute top-12 right-4 z-30 w-[min(28rem,calc(100%-2rem))] max-h-96 overflow-y-auto bg-card border border-border rounded-xl shadow-xl">
+        <div id="rag-history-panel" className="absolute top-12 right-4 z-30 w-[min(28rem,calc(100%-2rem))] max-h-96 overflow-y-auto bg-card border border-border rounded-xl shadow-xl">
           <div className="sticky top-0 bg-card border-b border-border px-3 py-2 flex items-center justify-between">
             <span className="text-xs font-bold text-foreground">過去 90 天查詢紀錄</span>
-            <button onClick={() => setIsHistoryOpen(false)} className="text-muted-foreground hover:text-foreground" aria-label="關閉">
+            <button onClick={() => setIsHistoryOpen(false)} className="text-muted-foreground hover:text-foreground" aria-label="關閉歷史紀錄">
               <X size={14} />
             </button>
           </div>
@@ -262,18 +285,31 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
               <Loader2 size={14} className="inline animate-spin mr-1" /> 載入中...
             </div>
           )}
-          {!isHistoryLoading && historyItems.length === 0 && (
+          {!isHistoryLoading && !historyError && historyItems.length === 0 && (
             <div className="p-6 text-center text-xs text-muted-foreground">
               還沒有查詢紀錄
             </div>
           )}
+          {!isHistoryLoading && historyError && (
+            <div className="p-6 text-center">
+              <p className="text-xs text-status-error mb-2">載入歷史紀錄失敗</p>
+              <button
+                type="button"
+                onClick={loadHistory}
+                className="text-xs px-3 py-1.5 text-brand-cta hover:bg-brand-cta/10 rounded-lg transition-colors"
+              >
+                重試
+              </button>
+            </div>
+          )}
           {!isHistoryLoading && historyItems.length > 0 && (
-            <ul className="divide-y divide-border">
+            <ul className="divide-y divide-border" role="listbox">
               {historyItems.map(item => (
-                <li
-                  key={item.id}
-                  className="p-3 hover:bg-muted cursor-pointer transition-colors"
-                  onClick={() => {
+                <li key={item.id} role="option">
+                  <button
+                    type="button"
+                    className="w-full text-left p-3 hover:bg-muted cursor-pointer transition-colors focus:outline-none focus:bg-muted"
+                    onClick={() => {
                     // 載入歷史對話（問 + 答），而非僅填入輸入框
                     const historyMessages: Message[] = [
                       { id: `h-${item.id}-q`, role: "user", text: item.query, citations: [] },
@@ -312,6 +348,7 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
                       </>
                     )}
                   </div>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -319,7 +356,7 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
         {/* Greeting Card — loads once on mount, collapses after first interaction */}
         {greetingLoading && (
           <div className="mb-2 p-4 rounded-2xl border border-border bg-card animate-pulse">
@@ -380,7 +417,7 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
                       <button
                         key={q}
                         type="button"
-                        onClick={() => setInput(q)}
+                        onClick={() => handleSuggestedClick(q)}
                         className="text-xs px-3 py-1.5 rounded-full border border-border bg-surface hover:bg-brand-cta/10 hover:border-brand-cta hover:text-brand-cta transition-colors text-muted-foreground text-left"
                       >
                         {q}
@@ -424,8 +461,12 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
         ))}
         {isLoading && (
           <div className="flex justify-start">
-            <div className="bg-card text-foreground rounded-2xl rounded-bl-none p-4 shadow-sm border border-border flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 size={16} className="animate-spin" /> 正在整理相關會議內容並生成回答...
+            <div className="bg-card text-foreground rounded-2xl rounded-bl-none p-4 shadow-sm border border-border">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 size={16} className="animate-spin" />
+                <span>正在搜尋所有會議段落並彙整回答...</span>
+              </div>
+              <p className="text-xs text-muted-foreground/60 mt-1.5">通常需要 5-15 秒，取決於會議數量</p>
             </div>
           </div>
         )}

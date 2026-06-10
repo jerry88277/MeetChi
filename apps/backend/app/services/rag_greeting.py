@@ -127,7 +127,7 @@ def build_greeting_text(display_name: str, meeting_count: int, top_topics: List[
                          last_meeting: Optional[Dict], pending_count: int) -> str:
     """Build template-based greeting text (no LLM)."""
     if meeting_count == 0:
-        return f"歡迎使用跨會議知識庫，{display_name}。上傳第一場會議後，我可以幫您彙整跨會議的決策與待辦。"
+        return f"歡迎使用 ChiMemo，{display_name}。上傳第一場會議後，我可以幫您彙整跨會議的決策與待辦。"
 
     parts = [f"歡迎回來，{display_name}。"]
 
@@ -268,7 +268,7 @@ def build_greeting_payload(db: Session, user_upn: str) -> Dict[str, Any]:
             "top_topics": [],
             "last_meeting": None,
             "pending_action_count": 0,
-            "greeting_text": "歡迎使用跨會議知識庫。上傳第一場會議後，我可以幫您彙整跨會議的討論與待辦。",
+            "greeting_text": "歡迎使用 ChiMemo。上傳第一場會議後，我可以幫您彙整跨會議的討論與待辦。",
             "suggested_questions": [
                 "彙整最近所有會議的關鍵決策",
                 "有哪些事項在多場會議中反覆出現？",

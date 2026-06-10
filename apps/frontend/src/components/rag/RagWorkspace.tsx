@@ -13,7 +13,7 @@ interface RagWorkspaceProps {
 }
 
 /**
- * RagWorkspace — 跨會議知識庫工作區
+ * RagWorkspace — ChiMemo 工作區
  *
  * 重設計（2026-05-10 / DDG conformity audit）：
  *  - 套用標準頁面 header (sticky)，含 back chevron + 標題 + AI badge
@@ -50,8 +50,8 @@ export function RagWorkspace({ onBack }: RagWorkspaceProps) {
             <MessageSquare size={20} className="text-brand-cta" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-xl font-bold text-foreground">跨會議知識庫</h2>
-            <p className="text-xs text-muted-foreground">AI 涵蓋您所有會議紀錄；點引用標籤展開原文</p>
+            <h2 className="text-xl font-bold text-foreground">ChiMemo</h2>
+            <p className="text-xs text-muted-foreground">AI 跨會議知識搜尋；點引用標籤展開原文</p>
           </div>
         </div>
         <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-brand-green/10 text-status-success border border-brand-green/30">

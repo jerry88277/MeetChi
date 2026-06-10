@@ -106,9 +106,13 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
         }
     }, [meeting?.id, meeting?.summary]);
 
+    // Local meeting state for in-place updates (avoids full page reload for speaker edits)
+    const [localSpeakerMappings, setLocalSpeakerMappings] = useState(meeting?.speakerMappings);
+    useEffect(() => { setLocalSpeakerMappings(meeting?.speakerMappings); }, [meeting?.speakerMappings]);
+
     const handleStartEditSpeaker = (speakerId: string) => {
         if (!meeting) return;
-        const mapping = meeting.speakerMappings?.[speakerId];
+        const mapping = localSpeakerMappings?.[speakerId];
         setEditingSpeakerId(speakerId);
         setEditName(mapping?.display_name || speakerId);
         setEditRole(mapping?.role || '');
@@ -119,18 +123,19 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
         setIsSavingSpeaker(true);
         try {
             const updatedMappings: Record<string, SpeakerMappingDTO> = {};
-            if (meeting.speakerMappings) {
-                for (const [id, m] of Object.entries(meeting.speakerMappings)) {
+            if (localSpeakerMappings) {
+                for (const [id, m] of Object.entries(localSpeakerMappings)) {
                     updatedMappings[id] = { display_name: m.display_name, role: m.role, color: m.color };
                 }
             }
             updatedMappings[editingSpeakerId] = {
                 display_name: editName.trim() || editingSpeakerId,
                 role: editRole.trim(),
-                color: meeting.speakerMappings?.[editingSpeakerId]?.color,
+                color: localSpeakerMappings?.[editingSpeakerId]?.color,
             };
             await api.updateSpeakerMappings(meeting.id, updatedMappings);
-            window.location.reload();
+            setLocalSpeakerMappings(updatedMappings as any);
+            setEditingSpeakerId(null);
         } catch (err) {
             console.error('Failed to update speaker:', err);
         } finally {
@@ -208,7 +213,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     const needsSummary = !meeting.summary || meeting.status === 'failed';
 
     const getSpeakerDisplay = (speakerId: string) => {
-        const mapping = meeting.speakerMappings?.[speakerId];
+        const mapping = localSpeakerMappings?.[speakerId];
         return {
             name: mapping?.display_name || speakerId,
             color: mapping?.color || 'var(--brand-cta)',
@@ -564,7 +569,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                             key={i}
                                             chapter={resolvedChapter}
                                             index={i + 1}
-                                            speakerMappings={meeting.speakerMappings}
+                                            speakerMappings={localSpeakerMappings}
                                             onTimestampClick={(sec) => handleTimestampClick(formatSeconds(sec))}
                                         />
                                     );
@@ -577,7 +582,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                     {isCompleted && meeting.speakerContributions && meeting.speakerContributions.length > 0 && (
                         <SpeakerContributionsBar
                             contributions={meeting.speakerContributions}
-                            speakerMappings={meeting.speakerMappings}
+                            speakerMappings={localSpeakerMappings}
                         />
                     )}
 
@@ -600,14 +605,27 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                 </h3>
                                 {/* mobile-only inline regenerate */}
                                 {canRegenerate && (
-                                    <button
-                                        onClick={() => onRegenerateSummary(meeting.id, selectedTemplate)}
-                                        disabled={isRegenerating}
-                                        className="md:hidden flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-brand-cta bg-brand-cta/10 rounded-lg hover:bg-brand-cta/20 disabled:opacity-50 transition-colors"
-                                    >
-                                        {isRegenerating ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-                                        重新生成
-                                    </button>
+                                    <div className="md:hidden flex items-center gap-2">
+                                        {templates.length > 0 && (
+                                            <select
+                                                value={selectedTemplate}
+                                                onChange={(e) => setSelectedTemplate(e.target.value)}
+                                                className="text-xs px-2 py-1 rounded-lg bg-muted border border-border text-foreground"
+                                            >
+                                                {templates.filter(t => t.is_active).map(t => (
+                                                    <option key={t.id} value={t.name}>{t.display_name}</option>
+                                                ))}
+                                            </select>
+                                        )}
+                                        <button
+                                            onClick={() => onRegenerateSummary(meeting.id, selectedTemplate)}
+                                            disabled={isRegenerating}
+                                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-brand-cta bg-brand-cta/10 rounded-lg hover:bg-brand-cta/20 disabled:opacity-50 transition-colors"
+                                        >
+                                            {isRegenerating ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+                                            重新生成
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                             <div className="bg-card p-6 rounded-xl border border-border shadow-sm leading-relaxed text-foreground/85 whitespace-pre-wrap">
@@ -667,7 +685,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                         <QuoteCard
                                             key={i}
                                             quote={{ ...q, time: resolved }}
-                                            speakerMappings={meeting.speakerMappings}
+                                            speakerMappings={localSpeakerMappings}
                                             onTimestampClick={(sec) => handleTimestampClick(formatSeconds(sec))}
                                         />
                                     );
@@ -705,11 +723,11 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                             {showTranscript && (
                                 <div className="mt-3 bg-card rounded-xl border border-border overflow-hidden">
                                     {/* Speaker legend */}
-                                    {meeting.speakerMappings && Object.keys(meeting.speakerMappings).length > 0 && (
+                                    {localSpeakerMappings && Object.keys(localSpeakerMappings).length > 0 && (
                                         <div className="px-4 py-3 border-b border-border bg-muted/20">
                                             <div className="flex flex-wrap items-center gap-2">
                                                 <span className="text-xs text-muted-foreground mr-1">講者：</span>
-                                                {Object.entries(meeting.speakerMappings).map(([id, mapping]) => (
+                                                {Object.entries(localSpeakerMappings).map(([id, mapping]) => (
                                                     editingSpeakerId === id ? (
                                                         <div key={id} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-card border border-brand-cta/30">
                                                             <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: mapping.color }} />
