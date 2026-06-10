@@ -106,7 +106,7 @@ async def create_meeting(meeting_data: MeetingCreate, db: Session = Depends(get_
     return MeetingRead.from_orm(db_meeting)
 
 
-@router.get("/api/v1/meetings", response_model=List[MeetingListItem])
+@router.get("/api/v1/meetings")
 async def list_meetings(
     skip: int = 0,
     limit: int = 100,
@@ -167,8 +167,9 @@ async def list_meetings(
     items = [MeetingListItem.from_orm(m) for m in meetings]
 
     if include_meta:
+        from fastapi.encoders import jsonable_encoder
         return JSONResponse(content={
-            "items": [m.dict() for m in items],
+            "items": jsonable_encoder(items),
             "total": total,
             "skip": skip,
             "limit": limit,
