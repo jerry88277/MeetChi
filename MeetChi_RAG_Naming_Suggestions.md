@@ -68,3 +68,44 @@
 - 如果目標是 **企業內部使用者快速理解**：選「跨會議問答」或「會議 AI 搜尋」
 - 如果目標是 **品牌調性與產品感**：選「會議洞見」或「MeetMind」
 - 如果目標是 **技術人員或 Demo 場景**：選「ChiQuery」或「MeetRAG」
+
+---
+
+## 品牌延伸方向加強版（20 組）
+
+> 以 MeetChi / Chi Mei / 奇美 品牌元素為核心延伸
+
+| # | 名稱 | 靈感來源 | 定位說明 |
+|---|------|----------|----------|
+| 31 | **ChiMemo** | Chi + Memo | 奇美的備忘錄，暗示隨時可查閱的會議記憶 |
+| 32 | **MeetChi Recall** | MeetChi + Recall | 產品子功能命名，「回憶」功能 |
+| 33 | **ChiBase** | Chi + Knowledge Base | 簡潔，知識庫的品牌化 |
+| 34 | **MeetChi Ask** | MeetChi + Ask | 最直覺的子功能命名，像 ChatGPT 的 /ask |
+| 35 | **ChiSync** | Chi + Sync | 暗示跨會議資訊同步、串連 |
+| 36 | **MeetChi Nexus** | MeetChi + Nexus (連結點) | 會議之間的知識連結樞紐 |
+| 37 | **ChiLens** | Chi + Lens (透鏡) | 透過 AI 透鏡檢視所有會議 |
+| 38 | **MeetChi Deep** | MeetChi + Deep | 深度搜尋，區別於一般關鍵字搜尋 |
+| 39 | **ChiConnect** | Chi + Connect | 連結跨會議的知識點 |
+| 40 | **MeetChi Pulse** | MeetChi + Pulse (脈搏) | 感知組織會議的脈動 |
+| 41 | **ChiTrail** | Chi + Trail (軌跡) | 追蹤議題在不同會議的演進軌跡 |
+| 42 | **MeetChi Compass** | MeetChi + Compass | 在龐大會議紀錄中的導航指引 |
+| 43 | **ChiVault** | Chi + Vault (金庫) | 珍貴會議知識的安全保管庫 |
+| 44 | **MeetChi Echo** | MeetChi + Echo (回聲) | 會議的回響，隨時重現過去的討論 |
+| 45 | **ChiThread** | Chi + Thread (線索) | 串連議題的線索，像 Slack Thread |
+| 46 | **MeetChi Orbit** | MeetChi + Orbit (軌道) | 環繞所有會議的知識軌道 |
+| 47 | **ChiScope** | Chi + Scope (範疇/視野) | 擴展可搜尋的視野到所有會議 |
+| 48 | **MeetChi Atlas** | MeetChi + Atlas (地圖集) | 會議知識的全景地圖 |
+| 49 | **ChiHub** | Chi + Hub | 會議知識匯聚的中心 |
+| 50 | **MeetChi Gist** | MeetChi + Gist (要點) | 快速抓取所有會議的精華要點 |
+
+---
+
+## 品牌延伸方向推薦前五
+
+| 排名 | 名稱 | 推薦理由 |
+|------|------|----------|
+| 🥇 | **MeetChi Ask** | 最自然的產品子功能命名，使用者直覺「問 MeetChi」 |
+| 🥈 | **ChiMemo** | 簡短好記，中英文皆順口，品牌辨識度高 |
+| 🥉 | **MeetChi Recall** | 明確表達「回憶/調閱」功能，與 Windows Recall 概念呼應 |
+| 4 | **ChiLens** | 視覺意象強烈（透鏡檢視），適合 icon 設計 |
+| 5 | **MeetChi Echo** | 詩意且記憶點強，暗示「會議的回聲永不消散」 |
