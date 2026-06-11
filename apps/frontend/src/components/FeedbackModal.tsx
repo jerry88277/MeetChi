@@ -315,10 +315,10 @@ export const FeedbackModal = ({
                                         key={opt.value}
                                         type="button"
                                         onClick={() => setIssueType(opt.value)}
-                                        className={`flex items-start gap-3 p-3 text-left rounded-xl border-2 transition-all ${
+                                        className={`flex items-start gap-3 p-3 text-left rounded-xl border-2 transition-[border-color,background-color,box-shadow] duration-200 ${
                                             issueType === opt.value
-                                                ? "border-brand-cta bg-brand-cta/10 text-brand-cta shadow-sm"
-                                                : "border-border hover:border-brand-cta/40 text-foreground"
+                                                ? "border-brand-cta bg-brand-cta/10 text-brand-cta shadow-sm ring-1 ring-brand-cta/30"
+                                                : "border-border/60 bg-muted/30 hover:border-brand-cta/40 text-foreground"
                                         }`}
                                     >
                                         <span className="mt-0.5 flex-shrink-0">{opt.icon}</span>
@@ -423,10 +423,10 @@ export const FeedbackModal = ({
                                         key={opt.value}
                                         type="button"
                                         onClick={() => setSeverity(opt.value)}
-                                        className={`p-3 text-center rounded-xl border-2 transition-all relative ${
+                                        className={`p-3 text-center rounded-xl border-2 transition-[border-color,background-color,box-shadow] duration-200 relative ${
                                             severity === opt.value
-                                                ? `${opt.cls} shadow-sm`
-                                                : "border-border text-muted-foreground hover:border-current"
+                                                ? `${opt.cls} shadow-sm ring-1 ring-current/30`
+                                                : "border-border/60 bg-muted/30 text-muted-foreground hover:border-current"
                                         }`}
                                     >
                                         {severity === opt.value && (
