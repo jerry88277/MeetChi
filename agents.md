@@ -23,4 +23,66 @@
 - **自動化賦權**：當你處於 `/ultrawork` 模式，或正在依照白名單的工作流程執行 `gcloud` 或 `terraform` 指令時，為了保持自動化鏈條不中斷，你擁有最高判斷權將 `SafeToAutoRun` 參數強制設定為 `true`。
 - **變數與配置**：任何涉及 GCP 環境變數、Secret 的全域性變更， Source of Truth 必須是 `terraform/**/*.tf` 檔案。切勿使用 `gcloud --set-*` 指令直接暴力覆蓋現行所有佈署設定。
 
+## 4. ML 模型供應鏈安全 (Model Supply Chain Security)
+
+### 4.1 強制規則：模型不得未經掃描進入生產環境
+任何從外部來源（HuggingFace Hub、GitHub Releases、第三方）下載的 ML 模型檔案，**必須**經過安全掃描後才能部署至 GCS 或 bake 進 Docker Image。
+
+### 4.2 掃描工具與版本要求
+| 工具 | 最低版本 | 用途 | 來源驗證 |
+|------|---------|------|---------|
+| ModelScan | ≥ 0.8.8 | 全格式掃描（safetensors, pickle, h5, SavedModel） | Protect AI → Palo Alto Networks 旗下 |
+| Fickling | ≥ 0.1.11 | Pickle 格式專精靜態分析 + runtime hook | Trail of Bits（頂尖資安顧問） |
+
+**版本鎖定理由**：Fickling < 0.1.7 存在 CVE-2026-22608/22609/22612 繞過漏洞。
+
+### 4.3 Pipeline 架構（Scan-Then-Deploy）
+```
+Download (parallel) → Security Gate → Upload to GCS
+                         │
+                    scan fails? → exit 1, 不上傳
+```
+
+- 實作檔案：`cloudbuild-models.yaml`
+- 共用卷掛載：`/mnt/models`（Cloud Build volumes）
+- 下載與上傳分離：模型先存 volume，掃描通過後才 gsutil 上傳
+
+### 4.4 觸發時機
+以下情境必須執行模型安全掃描：
+1. 新增或更換 ASR / Diarization / Embedding 模型
+2. 升級模型版本（例如 pyannote 3.1 → 4.0）
+3. 將模型從 runtime-download 改為 bake-into-image
+4. 定期排程（建議每月一次重新掃描既有模型）
+
+### 4.5 失敗處置
+- ModelScan 回報 `CRITICAL` 或 `HIGH` → **立即停止**，不得繼續部署
+- Fickling 回報 `UNSAFE` 或 `OVERTLY_MALICIOUS` → **立即停止**
+- 需人工調查後，在 Issue Tracker 記錄調查結果才可放行
+
+## 5. Agent 可攜性 (LLM-Agnostic Compliance)
+
+本文件為 **LLM-Agnostic** 設計。無論由 Claude、GPT、Gemini、或其他 LLM 驅動的 AI Agent 執行任務，均須遵守以上所有規則。
+
+### 5.1 跨 LLM 相容性設計原則
+- **聲明式規則**：所有規則以「條件 → 動作」的確定性語句撰寫，不依賴特定 LLM 的 system prompt 語法
+- **工具無關**：規則引用通用 CLI 工具（gcloud, gsutil, pip, curl），不綁定特定 IDE 或 Agent 框架
+- **可驗證**：每條規則的遵守與否，可透過 stdout/stderr 輸出客觀判斷
+
+### 5.2 各 LLM 平台的載入方式
+| 平台 | 載入方式 |
+|------|---------|
+| Claude (Anthropic) | 專案根目錄 `agents.md` 自動載入，或透過 CLAUDE.md |
+| GitHub Copilot | 專案根目錄 `agents.md` 或 `.github/copilot-instructions.md` |
+| Cursor | `.cursorrules` 內引用本檔 |
+| Windsurf | `.windsurfrules` 內引用本檔 |
+| GPT (OpenAI) | System prompt 中引用本檔內容 |
+| Gemini (Google) | Context window 中載入本檔 |
+
+### 5.3 規則更新協議
+- 修改本文件時，必須在 commit message 中標注 `[agent-rules]` tag
+- 新增規則必須包含：觸發條件、執行動作、驗證方式 三要素
+- 刪除規則必須附上理由與替代方案
+
+---
+
 請將以上 Harness 控制規則深刻內化於每次生成的 `task.md` 之中。沒有經過 Evaluator (驗證層) 的程式碼，不叫完成。
