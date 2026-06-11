@@ -297,6 +297,27 @@ export default function DashboardPage() {
         window.addEventListener('beforeunload', handler);
         return () => window.removeEventListener('beforeunload', handler);
     }, [uploadState, uploadQueue.hasActiveUploads]);
+
+    // 2026-06-11: 上傳完成進入 processing 時，立即清除全屏 overlay 並顯示 toast。
+    // 讓會議卡片的 "AI 處理中" badge + polling 接管狀態追蹤。
+    // 消除使用者疑惑：overlay 擋住畫面 → 無法確認卡片是否已出現。
+    // Note: 不呼叫 resetUploadState (會清 lastUploadedMeetingId 導致 polling 停止)
+    //       僅將 uploadState 視為 idle（overlay 已移除，不需額外處理）。
+    const processingToastShown = useRef(false);
+    useEffect(() => {
+        if (uploadState === 'processing' && !processingToastShown.current) {
+            processingToastShown.current = true;
+            fetchMeetings();
+            toast.info('音檔已上傳完成', {
+                description: 'AI 正在背景處理轉錄與摘要，完成後會通知您。可安全離開或重新整理頁面。',
+                duration: 6000,
+            });
+        }
+        if (uploadState === 'idle') {
+            processingToastShown.current = false;
+        }
+    }, [uploadState, fetchMeetings]);
+
     // D3-2: Smart Interval Safety Net (v15)
     // Only activates when there's a processing meeting but NO active single-meeting poll.
     // This handles: (1) page refresh losing lastUploadedMeetingId, (2) uploads from other devices.
@@ -660,24 +681,6 @@ export default function DashboardPage() {
                     </p>
                 </div>
             </div>
-        ) : uploadState === 'processing' ? (
-            <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6" role="status" aria-live="polite">
-                <div className="bg-card rounded-2xl shadow-2xl border border-border max-w-md w-full p-6 text-center">
-                    <div className="relative mx-auto mb-4 w-12 h-12">
-                        <Loader2 className="w-12 h-12 text-brand-chimei-teal animate-spin" />
-                    </div>
-                    <h2 className="text-xl font-bold text-foreground mb-1">AI 處理中</h2>
-                    <p className="text-sm text-muted-foreground mb-2">
-                        音檔已上傳完成，正在進行語音轉錄與 AI 摘要生成
-                    </p>
-                    {uploadFileName && (
-                        <p className="text-xs font-mono text-muted-foreground/60 mb-3 break-all">{uploadFileName}</p>
-                    )}
-                    <p className="text-xs text-muted-foreground/70">
-                        此階段可安全離開，系統會在背景完成處理。
-                    </p>
-                </div>
-            </div>
         ) : uploadState === 'error' ? (
             <div className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6" role="alert" aria-live="assertive">
                 <div className="bg-card rounded-2xl shadow-2xl border border-status-error/30 max-w-md w-full p-6 text-center">
@@ -918,8 +921,8 @@ export default function DashboardPage() {
                     )}
                 </div>
                 
-                {/* Global Processing Queue Indicator */}
-                {(uploadState === 'uploading' || uploadState === 'processing' || Object.values(isRegenerating).filter(Boolean).length > 0) && (
+                {/* Global Processing Queue Indicator — only show during active uploads or regeneration */}
+                {(uploadState === 'uploading' || Object.values(isRegenerating).filter(Boolean).length > 0) && (
                     <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-5">
                         <div className="bg-white/95 backdrop-blur-md shadow-xl border border-brand-cta/20 rounded-full px-4 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-brand-cta/5 transition-colors"
                              title={uploadState === 'uploading' ? '有音檔正在上傳' : 'AI 正在背景處理會議摘要'}>
@@ -928,7 +931,7 @@ export default function DashboardPage() {
                             </div>
                             <span className="text-sm font-bold text-slate-700 pr-1">
                                 處理中佇列 ({
-                                    (uploadState === 'uploading' || uploadState === 'processing' ? 1 : 0) + 
+                                    (uploadState === 'uploading' ? 1 : 0) + 
                                     Object.values(isRegenerating).filter(Boolean).length
                                 })
                             </span>

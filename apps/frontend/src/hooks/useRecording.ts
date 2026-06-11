@@ -13,7 +13,7 @@ export function useRecording() {
     // meeting_participants JOIN 不到 → RAG「未找到相關段落」。
     // 改用 session.user.email 讓 owner 與 RAG query 對齊。
     const { data: session } = useSession();
-    const sessionUpn = session?.user?.email ?? 'test@company.com';
+    const sessionUpn = session?.user?.email ?? '';
 
     const [recordingMeetingId, setRecordingMeetingId] = useState<string | null>(null);
     const [recordingTitle, setRecordingTitle] = useState('新會議');

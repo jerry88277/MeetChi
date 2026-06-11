@@ -32,7 +32,7 @@ const MAX_CONCURRENT = 2;
  */
 export function useUploadQueue() {
     const { data: session } = useSession();
-    const sessionUpn = session?.user?.email ?? 'test@company.com';
+    const sessionUpn = session?.user?.email ?? '';
 
     const [tasks, setTasks] = useState<UploadTask[]>([]);
     const [isTrayOpen, setIsTrayOpen] = useState(true);
@@ -206,8 +206,9 @@ export function useUploadQueue() {
         fileInputRef.current?.click();
     }, []);
 
-    // Computed
-    const hasActiveUploads = tasks.some(t => t.status === 'uploading' || t.status === 'processing');
+    // Computed — only 'uploading' counts as "active" for beforeunload protection.
+    // 'processing' means file is already on GCS; safe to refresh.
+    const hasActiveUploads = tasks.some(t => t.status === 'uploading');
     const activeCount = tasks.filter(t => t.status === 'uploading').length;
     const totalCount = tasks.length;
     const completedCount = tasks.filter(t => t.status === 'done').length;

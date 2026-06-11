@@ -343,21 +343,31 @@ def build_prompt_from_template(
     修法：transcript 超過 50K 字（約 1.5h+ 中文會議）→ 注入「精簡指令」
     要求 LLM 縮減 chapter 數與 sub_chapter 數，控制 response 在硬上限內。
     """
-    # 動態長度適配 (50K chars ~ Gemini 25K-30K input tokens for zh)
+    # 動態長度適配：所有會議都加精簡規則以避免 MAX_TOKENS 截斷
+    # 2026-06-11 fix: 原門檻 50K 太高，25K 的多主題工程會議也會爆（127k output）
     transcript_len = len(transcript)
-    long_meeting_addendum = ""
-    if transcript_len >= 50_000:
+    if transcript_len >= 20_000:
         long_meeting_addendum = (
-            "\n## ⚠️ 本會議較長之精簡規則（必須遵守）\n"
-            f"原始逐字稿長度 {transcript_len:,} 字（屬長會議）。為避免回應超過 "
+            "\n## ⚠️ 輸出長度硬性限制（必須遵守）\n"
+            f"原始逐字稿長度 {transcript_len:,} 字。為避免回應超過 "
             "API 硬上限 (65K tokens)，請**強制執行**以下精簡規則：\n"
-            "  - chapters：**最多 6 個**（從 6-10 上限再壓縮）\n"
-            "  - 每章節 sub_chapters：**最多 3 條**（從 4 條再壓縮）\n"
-            "  - bullets：每處最多 3 條（從 3-5 上限壓縮）\n"
-            "  - key_quotes：每章節最多 1 條（從 0-2 壓縮）；sub_chapter 不放 quote\n"
-            "  - summary 字數可保持原規格，但勿超過\n"
-            "**這是長會議避免截斷的硬性限制**。你寧可少列重點也不能截斷 JSON。"
+            "  - chapters：**最多 5 個**\n"
+            "  - 每章節 sub_chapters：**最多 2 條**\n"
+            "  - bullets：每處最多 3 條，每條 ≤ 25 字\n"
+            "  - key_quotes：全文**最多 3 條**；sub_chapter 不放 quote\n"
+            "  - summary（章節摘要）：每段 ≤ 80 字\n"
+            "  - speaker_contributions：最多 3 位\n"
+            "  - next_steps：最多 5 條\n"
+            "**你寧可少列重點也絕對不能讓 JSON 被截斷。精簡優先。**"
         )
+    elif transcript_len >= 10_000:
+        long_meeting_addendum = (
+            "\n## ⚠️ 輸出精簡提醒\n"
+            "請控制輸出長度：chapters 最多 6 個、sub_chapters 每章最多 3 條、"
+            "key_quotes 全文最多 5 條。精簡優先，避免 JSON 被截斷。"
+        )
+    else:
+        long_meeting_addendum = ""
 
     # Build section instructions
     section_instructions = "\n".join(

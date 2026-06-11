@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 import uuid
+from datetime import datetime
 from sqlalchemy.orm import Session
 from app.models import Meeting, TranscriptSegment, MeetingStatus, TaskStatus as TaskStatusModel
 from sqlalchemy import create_engine
@@ -323,6 +324,13 @@ def _process_split_audio_sync(
         # 與 Cloud Run queue 中仍在等的 chunk race，造成 404 連鎖失敗）
         cleanup_chunks(audio_url, meeting_id)
         cleanup_done = True
+
+        # 5.5 Checkpoint: ASR 完成，設為 TRANSCRIBED 讓前端可顯示逐字稿。
+        # 即使後續摘要失敗，使用者仍能看到轉錄結果，不需重新上傳。
+        meeting.status = MeetingStatus.TRANSCRIBED
+        meeting.transcription_completed_at = datetime.utcnow()
+        db.commit()
+        logger.info(f"[ParallelASR] {meeting_id}: set status=TRANSCRIBED (checkpoint)")
 
         # 6. Trigger summary generation (synchronously continue)
         _update_task_status(
@@ -768,7 +776,12 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
                      "解法：先試「僅重新生成摘要」；若連續失敗請「立即回報」。"
                  )
              if not suppress_fail_notification:
-                 meeting.status = MeetingStatus.FAILED
+                 # If transcription was already done (skip_asr=True), keep TRANSCRIBED
+                 # so user can still view the transcript. Only pure ASR failures go to FAILED.
+                 if skip_asr:
+                     meeting.status = MeetingStatus.TRANSCRIBED
+                 else:
+                     meeting.status = MeetingStatus.FAILED
                  meeting.failure_reason = fail_reason
                  db.commit()
                  send_completion_notification(meeting, "failed")

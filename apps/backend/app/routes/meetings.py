@@ -76,7 +76,9 @@ def _ensure_user_exists(db: Session, upn: str) -> None:
 @router.post("/api/v1/meetings", response_model=MeetingRead, status_code=status.HTTP_201_CREATED)
 async def create_meeting(meeting_data: MeetingCreate, db: Session = Depends(get_db)):
     """Create a new meeting entry (and ensure user / participant binding)."""
-    upn = meeting_data.user_upn or 'test@company.com'
+    upn = meeting_data.user_upn
+    if not upn:
+        raise HTTPException(status_code=400, detail="user_upn is required")
 
     _ensure_user_exists(db, upn)
 

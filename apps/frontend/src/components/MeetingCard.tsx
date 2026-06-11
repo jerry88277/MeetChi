@@ -54,6 +54,11 @@ const STATUS_CONFIG = {
         border: 'border-l-brand-chimei-orange',
         label: 'AI 處理中',
     },
+    transcribed: {
+        color: 'bg-brand-azure/15 text-brand-azure border border-brand-azure/30',
+        border: 'border-l-brand-azure',
+        label: '轉錄完成',
+    },
     failed: {
         color: 'bg-status-error/15 text-status-error border border-status-error/30',
         border: 'border-l-status-error',
@@ -242,6 +247,12 @@ export const MeetingCard = ({ meeting, onClick, onRename }: MeetingCardProps) =>
                 <p className="px-5 mt-3 text-sm text-status-error flex items-center gap-1.5">
                     <AlertCircle size={14} />
                     這次整理沒有完成，打開詳情可查看原因並重新產生
+                </p>
+            )}
+            {meeting.status === 'transcribed' && (
+                <p className="px-5 mt-3 text-sm text-brand-azure flex items-center gap-1.5">
+                    <CheckCircle2 size={14} />
+                    逐字稿已完成，摘要尚未生成 — 點擊查看並重試
                 </p>
             )}
             </div>

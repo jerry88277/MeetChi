@@ -25,7 +25,7 @@ export interface TranscriptSegment {
 export interface Meeting {
     id: string;
     title: string;
-    status: "recording" | "processing" | "completed" | "failed" | "pending";
+    status: "recording" | "processing" | "completed" | "failed" | "pending" | "transcribed";
     created_at: string;
     updated_at: string;
     duration: number | null;
