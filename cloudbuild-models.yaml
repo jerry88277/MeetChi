@@ -1,6 +1,7 @@
 # ============================================
-# Cloud Build: Download HF Models to GCS
-# Minimal config - no source upload needed
+# Cloud Build: Download HF Models → Security Scan → Upload to GCS
+# Pipeline: Download → Scan (ModelScan + Fickling) → Upload
+# Models only reach GCS if they pass security validation.
 # ============================================
 #
 # Usage:
@@ -14,6 +15,9 @@ timeout: '7200s'  # 2 hours for large model downloads
 options:
   logging: CLOUD_LOGGING_ONLY
   machineType: 'E2_HIGHCPU_8'
+  volumes:
+    - name: 'models'
+      path: '/mnt/models'
 
 substitutions:
   _HF_TOKEN: ''
@@ -21,43 +25,38 @@ substitutions:
 
 steps:
   # ============================================
-  # Step 1: Download and upload WhisperX
+  # Step 1: Download WhisperX (to shared volume)
   # ============================================
   - name: 'python:3.11-slim'
     id: 'download-whisper'
+    volumes:
+      - name: 'models'
+        path: '/mnt/models'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        pip install huggingface_hub google-cloud-storage --quiet
+        pip install huggingface_hub --quiet
         python << 'PYEOF'
         from huggingface_hub import snapshot_download
-        import subprocess
-        import os
-        
+
         print("Downloading whisper-large-v3...")
         snapshot_download(
             'Systran/faster-whisper-large-v3',
-            local_dir='/tmp/whisper-large-v3',
+            local_dir='/mnt/models/whisper-large-v3',
             local_dir_use_symlinks=False
         )
-        print("✓ Downloaded whisper-large-v3")
-        
-        bucket = "gs://${_PROJECT_ID}-meetchi-audio"
-        print(f"Uploading to {bucket}/models/whisper-large-v3...")
-        subprocess.run([
-            "gsutil", "-m", "cp", "-r",
-            "/tmp/whisper-large-v3",
-            f"{bucket}/models/"
-        ], check=True)
-        print("✓ Uploaded whisper-large-v3")
+        print("✓ Downloaded whisper-large-v3 → /mnt/models/whisper-large-v3")
         PYEOF
 
   # ============================================
-  # Step 2: Download and upload Taiwanese ASR
+  # Step 2: Download Taiwanese ASR (parallel)
   # ============================================
   - name: 'python:3.11-slim'
     id: 'download-taiwanese'
+    volumes:
+      - name: 'models'
+        path: '/mnt/models'
     entrypoint: 'bash'
     args:
       - '-c'
@@ -65,94 +64,176 @@ steps:
         pip install huggingface_hub --quiet
         python << 'PYEOF'
         from huggingface_hub import snapshot_download
-        import subprocess
-        
+
         print("Downloading taiwanese-asr...")
         snapshot_download(
             'gacky1601/whisper-small-taiwanese-asr-v2',
-            local_dir='/tmp/taiwanese-asr',
+            local_dir='/mnt/models/taiwanese-asr',
             local_dir_use_symlinks=False
         )
-        print("✓ Downloaded taiwanese-asr")
-        
-        bucket = "gs://${_PROJECT_ID}-meetchi-audio"
-        print(f"Uploading to {bucket}/models/taiwanese-asr...")
-        subprocess.run([
-            "gsutil", "-m", "cp", "-r",
-            "/tmp/taiwanese-asr",
-            f"{bucket}/models/"
-        ], check=True)
-        print("✓ Uploaded taiwanese-asr")
+        print("✓ Downloaded taiwanese-asr → /mnt/models/taiwanese-asr")
         PYEOF
-    waitFor: ['-']  # Run in parallel
+    waitFor: ['-']
 
   # ============================================
-  # Step 3: Download Pyannote (requires token)
+  # Step 3: Download Pyannote (requires HF token, parallel)
   # ============================================
   - name: 'python:3.11-slim'
     id: 'download-pyannote'
-    entrypoint: 'bash'
+    volumes:
+      - name: 'models'
+        path: '/mnt/models'
     env:
       - 'HF_TOKEN=${_HF_TOKEN}'
+    entrypoint: 'bash'
     args:
       - '-c'
       - |
         pip install huggingface_hub --quiet
         python << 'PYEOF'
         from huggingface_hub import snapshot_download
-        import subprocess
         import os
-        
+
         token = os.environ.get('HF_TOKEN')
         if not token:
             print("⚠ Skipping pyannote: no HF_TOKEN")
             exit(0)
-        
-        bucket = "gs://${_PROJECT_ID}-meetchi-audio"
-        
+
         print("Downloading pyannote-diarization...")
         snapshot_download(
             'pyannote/speaker-diarization-3.1',
-            local_dir='/tmp/pyannote-diarization',
+            local_dir='/mnt/models/pyannote-diarization',
             token=token,
             local_dir_use_symlinks=False
         )
-        subprocess.run([
-            "gsutil", "-m", "cp", "-r",
-            "/tmp/pyannote-diarization",
-            f"{bucket}/models/"
-        ], check=True)
-        print("✓ Uploaded pyannote-diarization")
-        
+        print("✓ Downloaded pyannote-diarization")
+
         print("Downloading pyannote-segmentation...")
         snapshot_download(
             'pyannote/segmentation-3.0',
-            local_dir='/tmp/pyannote-segmentation',
+            local_dir='/mnt/models/pyannote-segmentation',
             token=token,
             local_dir_use_symlinks=False
         )
-        subprocess.run([
-            "gsutil", "-m", "cp", "-r",
-            "/tmp/pyannote-segmentation",
-            f"{bucket}/models/"
-        ], check=True)
-        print("✓ Uploaded pyannote-segmentation")
+        print("✓ Downloaded pyannote-segmentation")
         PYEOF
-    waitFor: ['-']  # Run in parallel
+    waitFor: ['-']
 
   # ============================================
-  # Step 4: Verify
+  # Step 4: Security Scan (ModelScan + Fickling)
+  # GATE: If scan fails, pipeline aborts — nothing reaches GCS.
   # ============================================
-  - name: 'gcr.io/cloud-builders/gsutil'
-    id: 'verify'
+  - name: 'python:3.11-slim'
+    id: 'security-scan'
+    volumes:
+      - name: 'models'
+        path: '/mnt/models'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        echo "=== Models in GCS ==="
-        gsutil ls -l gs://${_PROJECT_ID}-meetchi-audio/models/ || echo "No models yet"
-        echo "=== Done ==="
+        echo "╔══════════════════════════════════════════╗"
+        echo "║  ML Model Security Scan                 ║"
+        echo "║  Tools: ModelScan ≥0.8.8 + Fickling ≥0.1.11  ║"
+        echo "╚══════════════════════════════════════════╝"
+        echo ""
+
+        pip install "modelscan>=0.8.8" "fickling[torch]>=0.1.11" --quiet
+        SCAN_FAILED=0
+
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo " Phase 1: ModelScan (all formats)"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+        for MODEL_DIR in /mnt/models/whisper-large-v3 /mnt/models/taiwanese-asr /mnt/models/pyannote-diarization /mnt/models/pyannote-segmentation; do
+          if [ -d "$MODEL_DIR" ]; then
+            echo ""
+            echo "▶ Scanning: $(basename $MODEL_DIR)"
+            modelscan --path "$MODEL_DIR" 2>&1 | tee /tmp/ms_output.txt
+            if grep -qi "CRITICAL\|HIGH" /tmp/ms_output.txt; then
+              echo "❌ ModelScan: CRITICAL/HIGH finding in $(basename $MODEL_DIR)"
+              SCAN_FAILED=1
+            else
+              echo "✓ ModelScan: $(basename $MODEL_DIR) — PASS"
+            fi
+          fi
+        done
+
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo " Phase 2: Fickling (pickle-format files)"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+        PICKLE_FILES=$(find /mnt/models -type f \( -name "*.bin" -o -name "*.pt" -o -name "*.pkl" -o -name "*.pickle" \) 2>/dev/null)
+
+        if [ -z "$PICKLE_FILES" ]; then
+          echo "✓ No pickle-format files found — all models use safetensors"
+          echo "  (Fickling scan not needed)"
+        else
+          FILE_COUNT=$(echo "$PICKLE_FILES" | wc -l)
+          echo "Found $FILE_COUNT pickle-format files to scan"
+          echo ""
+
+          while IFS= read -r f; do
+            BASENAME=$(basename "$f")
+            MODEL_NAME=$(echo "$f" | sed 's|/mnt/models/||' | cut -d'/' -f1)
+            echo "▶ [$MODEL_NAME] $BASENAME"
+            RESULT=$(python -m fickling --check-safety "$f" 2>&1)
+            EXIT_CODE=$?
+            if [ $EXIT_CODE -ne 0 ] || echo "$RESULT" | grep -qi "UNSAFE\|OVERTLY_MALICIOUS"; then
+              echo "  ❌ UNSAFE: $f"
+              echo "  $RESULT"
+              SCAN_FAILED=1
+            else
+              echo "  ✓ SAFE"
+            fi
+          done <<< "$PICKLE_FILES"
+        fi
+
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        if [ $SCAN_FAILED -eq 1 ]; then
+          echo "❌ SECURITY SCAN FAILED"
+          echo "   Pipeline will ABORT. No models will be uploaded to GCS."
+          echo "   Review the findings above and investigate the source."
+          exit 1
+        else
+          echo "✅ ALL MODELS PASSED SECURITY SCAN"
+          echo "   Proceeding to GCS upload..."
+        fi
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     waitFor:
       - 'download-whisper'
       - 'download-taiwanese'
       - 'download-pyannote'
+
+  # ============================================
+  # Step 5: Upload to GCS (only after scan passes)
+  # ============================================
+  - name: 'gcr.io/cloud-builders/gsutil'
+    id: 'upload-to-gcs'
+    volumes:
+      - name: 'models'
+        path: '/mnt/models'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        BUCKET="gs://${_PROJECT_ID}-meetchi-audio"
+        echo "Uploading scanned models to $BUCKET/models/ ..."
+
+        for MODEL_DIR in /mnt/models/whisper-large-v3 /mnt/models/taiwanese-asr /mnt/models/pyannote-diarization /mnt/models/pyannote-segmentation; do
+          if [ -d "$MODEL_DIR" ]; then
+            MODEL_NAME=$(basename "$MODEL_DIR")
+            echo "▶ Uploading $MODEL_NAME..."
+            gsutil -m cp -r "$MODEL_DIR" "$BUCKET/models/"
+            echo "✓ $MODEL_NAME uploaded"
+          fi
+        done
+
+        echo ""
+        echo "=== Final GCS state ==="
+        gsutil ls "$BUCKET/models/" || echo "No models"
+        echo "=== Done ==="
+    waitFor:
+      - 'security-scan'
