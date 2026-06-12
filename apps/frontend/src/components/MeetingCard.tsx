@@ -113,7 +113,13 @@ function ProcessingEta({ meeting }: { meeting: Meeting }) {
 
     // Historical avg: long meetings (>20min parallel ASR) ≈ 0.15x; short ≈ 0.35x
     const ratio = dur > 1200 ? 0.15 : 0.35;
-    const estimatedTotalSec = Math.round(dur * ratio) + 90;
+    // Processing time (ASR + summary + embedding)
+    const processingTimeSec = Math.round(dur * ratio) + 90;
+    // Upload time estimate: ~1MB per 60s audio; at ~5MB/s browser upload ≈ fileSize/5
+    // Simplified: for pending meetings, add ~3 min for large files
+    const uploadTimeSec = meeting.status === 'pending' ? Math.min(300, Math.round(dur * 0.016)) : 0;
+    const estimatedTotalSec = processingTimeSec + uploadTimeSec;
+
     const createdAt = new Date(meeting.createdAt).getTime();
     const elapsedSec = Math.max(0, Math.round((Date.now() - createdAt) / 1000));
     const remainingSec = Math.max(0, estimatedTotalSec - elapsedSec);
@@ -127,7 +133,7 @@ function ProcessingEta({ meeting }: { meeting: Meeting }) {
 
     return (
         <p className="text-[11px] text-muted-foreground">
-            預計剩餘 {formatEta(remainingSec)}
+            預計完成時間 {formatEta(remainingSec)}
         </p>
     );
 }
@@ -252,8 +258,9 @@ export const MeetingCard = ({ meeting, onClick, onRename }: MeetingCardProps) =>
             )}
             {meeting.status === 'pending' && (
                 <div className="px-5 mt-3">
-                    <p className="text-sm text-brand-azure italic">
-                        音檔已收到，系統正準備整理本場重點
+                    <p className="text-sm text-brand-azure flex items-center gap-1.5 italic">
+                        <Loader2 size={14} className="animate-spin text-brand-azure" />
+                        音檔上傳中，完成後自動開始轉錄
                     </p>
                     <ProcessingEta meeting={meeting} />
                 </div>
