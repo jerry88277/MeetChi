@@ -41,11 +41,20 @@ function TaskStatusIcon({ status }: { status: UploadTask["status"] }) {
     }
 }
 
-function statusLabel(status: UploadTask["status"], progress: number): string {
+function statusLabel(status: UploadTask["status"], progress: number, fileSize?: number): string {
     switch (status) {
         case "queued": return "排隊中";
         case "uploading": return `${progress}%`;
-        case "processing": return "AI 處理中";
+        case "processing": {
+            // Estimate based on file size: ~1MB ≈ 60s audio, ratio 0.15 for long
+            if (fileSize && fileSize > 0) {
+                const estAudioSec = (fileSize / (1024 * 1024)) * 60;
+                const ratio = estAudioSec > 1200 ? 0.15 : 0.35;
+                const estMin = Math.ceil((estAudioSec * ratio + 90) / 60);
+                return `AI 處理中（約 ${estMin} 分鐘）`;
+            }
+            return "AI 處理中";
+        }
         case "done": return "完成";
         case "error": return "失敗";
     }
@@ -110,7 +119,7 @@ export function UploadTray({ tasks, isOpen, onToggle, onRetry, onRemove, onClear
                                         task.status === "done" ? "text-status-success" :
                                         "text-muted-foreground"
                                     }`}>
-                                        {statusLabel(task.status, task.progress)}
+                                        {statusLabel(task.status, task.progress, task.fileSize)}
                                     </span>
                                 </div>
                                 {/* Progress bar for uploading state */}

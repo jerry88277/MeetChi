@@ -106,6 +106,32 @@ function SpeakerDots({ meeting }: { meeting: Meeting }) {
     );
 }
 
+/** Compute and display ETA for processing meetings */
+function ProcessingEta({ meeting }: { meeting: Meeting }) {
+    const dur = meeting.durationSeconds;
+    if (!dur || dur <= 0) return null;
+
+    // Historical avg: long meetings (>20min parallel ASR) ≈ 0.15x; short ≈ 0.35x
+    const ratio = dur > 1200 ? 0.15 : 0.35;
+    const estimatedTotalSec = Math.round(dur * ratio) + 90;
+    const createdAt = new Date(meeting.createdAt).getTime();
+    const elapsedSec = Math.max(0, Math.round((Date.now() - createdAt) / 1000));
+    const remainingSec = Math.max(0, estimatedTotalSec - elapsedSec);
+
+    const formatEta = (sec: number): string => {
+        if (sec <= 0) return '即將完成';
+        if (sec < 60) return '不到 1 分鐘';
+        const min = Math.ceil(sec / 60);
+        return `約 ${min} 分鐘`;
+    };
+
+    return (
+        <p className="text-[11px] text-muted-foreground">
+            預計剩餘 {formatEta(remainingSec)}
+        </p>
+    );
+}
+
 export const MeetingCard = ({ meeting, onClick, onRename }: MeetingCardProps) => {
     const config = STATUS_CONFIG[meeting.status];
     const tpl = meeting.templateName
@@ -225,9 +251,12 @@ export const MeetingCard = ({ meeting, onClick, onRename }: MeetingCardProps) =>
                 </p>
             )}
             {meeting.status === 'pending' && (
-                <p className="px-5 mt-3 text-sm text-brand-azure italic">
-                    音檔已收到，系統正準備整理本場重點
-                </p>
+                <div className="px-5 mt-3">
+                    <p className="text-sm text-brand-azure italic">
+                        音檔已收到，系統正準備整理本場重點
+                    </p>
+                    <ProcessingEta meeting={meeting} />
+                </div>
             )}
             {meeting.status === 'processing' && (
                 <div className="px-5 mt-3 space-y-2">
@@ -235,6 +264,7 @@ export const MeetingCard = ({ meeting, onClick, onRename }: MeetingCardProps) =>
                         <Loader2 size={14} className="animate-spin text-brand-chimei-orange" />
                         正在整理這場會議的決策、待辦與風險
                     </p>
+                    <ProcessingEta meeting={meeting} />
                     <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
                         <div
                             className="h-full bg-brand-chimei-orange/60 rounded-full animate-pulse"

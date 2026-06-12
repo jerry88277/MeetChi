@@ -209,7 +209,8 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
         status: apiMeeting.status?.toLowerCase() === "completed" ? "completed"
             : apiMeeting.status?.toLowerCase() === "failed" ? "failed"
                 : apiMeeting.status?.toLowerCase() === "pending" ? "pending"
-                    : "processing",
+                    : apiMeeting.status?.toLowerCase() === "transcribed" ? "transcribed"
+                        : "processing",
         summary,
         actionItems,
         transcript,
@@ -224,6 +225,7 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
         speakerCount: countDistinctSpeakers(apiMeeting),
         isConfidential: apiMeeting.is_confidential ?? false,
         failureReason: apiMeeting.failure_reason ?? null,
+        durationSeconds: apiMeeting.duration ?? null,
         // Summary V2
         chapters,
         speakerContributions,

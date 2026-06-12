@@ -634,12 +634,23 @@ async def get_meeting_progress(
             stage_label = "正在處理音檔"
             progress_pct = 10
 
-        # Calculate elapsed time
+        # Calculate elapsed time and ETA based on audio duration + historical ratio
         if meeting.created_at:
             elapsed_seconds = int((datetime.utcnow() - meeting.created_at).total_seconds())
-            # Rough estimate: 1 min per 10 min audio (based on historical data)
-            if progress_pct > 0 and progress_pct < 100:
+            # Historical avg: long meetings (>20min) ≈ 0.15x audio duration; short ≈ 0.35x
+            # Plus ~90s overhead (summary + embedding)
+            if meeting.duration and meeting.duration > 0:
+                ratio = 0.15 if meeting.duration > 1200 else 0.35
+                estimated_total = int(meeting.duration * ratio) + 90
+                estimated_remaining = max(0, estimated_total - elapsed_seconds)
+            elif progress_pct > 0 and progress_pct < 100:
                 estimated_remaining = int(elapsed_seconds * (100 - progress_pct) / max(progress_pct, 1))
+
+    # Compute estimated total based on duration
+    estimated_total = None
+    if meeting.duration and meeting.duration > 0:
+        ratio = 0.15 if meeting.duration > 1200 else 0.35
+        estimated_total = int(meeting.duration * ratio) + 90
 
     return {
         "meeting_id": meeting_id,
@@ -650,6 +661,7 @@ async def get_meeting_progress(
         "segments_count": segment_count,
         "elapsed_seconds": elapsed_seconds,
         "estimated_remaining_seconds": estimated_remaining,
+        "estimated_total_seconds": estimated_total,
         "failure_reason": meeting.failure_reason if meeting.status == MeetingStatus.FAILED else None,
     }
 
