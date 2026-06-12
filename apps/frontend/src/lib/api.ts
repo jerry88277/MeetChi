@@ -424,6 +424,68 @@ class ApiClient {
     }
 
     /**
+     * Get a GCS resumable upload session URI.
+     * Much faster than signed PUT for large files (>10MB).
+     */
+    async getResumableUploadSession(meetingId: string, filename: string, contentType: string): Promise<{ session_uri: string }> {
+        return this.fetch(`/api/v1/meetings/${meetingId}/upload-resumable`, {
+            method: 'POST',
+            body: JSON.stringify({ filename, contentType }),
+        });
+    }
+
+    /**
+     * Upload a file using GCS resumable upload protocol.
+     * Uploads in 8MB chunks directly to GCS (bypasses backend for data transfer).
+     * Supports progress tracking and automatic resume on failure.
+     */
+    async resumableUpload(
+        sessionUri: string,
+        file: File,
+        onProgress?: (percent: number, loaded: number, total: number) => void,
+    ): Promise<void> {
+        const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB chunks (GCS minimum is 256KB)
+        const totalSize = file.size;
+        let offset = 0;
+
+        while (offset < totalSize) {
+            const end = Math.min(offset + CHUNK_SIZE, totalSize);
+            const chunk = file.slice(offset, end);
+            const isLast = end === totalSize;
+
+            const contentRange = `bytes ${offset}-${end - 1}/${totalSize}`;
+
+            const response = await fetch(sessionUri, {
+                method: 'PUT',
+                headers: {
+                    'Content-Length': String(end - offset),
+                    'Content-Range': contentRange,
+                },
+                body: chunk,
+            });
+
+            if (isLast && response.status === 200) {
+                // Upload complete
+                if (onProgress) onProgress(100, totalSize, totalSize);
+                return;
+            } else if (!isLast && (response.status === 308 || response.status === 200)) {
+                // Chunk accepted, continue
+                offset = end;
+                if (onProgress) {
+                    const percent = Math.floor((offset / totalSize) * 100);
+                    onProgress(percent, offset, totalSize);
+                }
+            } else if (response.status >= 500) {
+                // Server error — retry this chunk after brief delay
+                await new Promise(r => setTimeout(r, 2000));
+                // Don't advance offset, retry same chunk
+            } else {
+                throw new Error(`Resumable upload failed at offset ${offset}: HTTP ${response.status}`);
+            }
+        }
+    }
+
+    /**
      * Get a signed URL for audio playback
      */
     async getAudioPlaybackUrl(meetingId: string): Promise<{ audio_url: string }> {
@@ -481,8 +543,8 @@ class ApiClient {
         file: File,
         onProgress?: (percent: number, loaded: number, total: number) => void,
     ): Promise<void> {
-        const CHUNK_SIZE = 2 * 1024 * 1024; // 2 MB per chunk
-        const CONCURRENCY = 2;              // 2 parallel — safe under corporate proxy
+        const CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB per chunk (was 2MB)
+        const CONCURRENCY = 4;              // 4 parallel (was 2)
         const MAX_RETRIES = 3;
         const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
 

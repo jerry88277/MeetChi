@@ -450,6 +450,78 @@ def generate_upload_url(
         raise HTTPException(status_code=500, detail="Failed to generate upload URL")
 
 
+@router.post("/{meeting_id}/upload-resumable")
+def generate_resumable_upload_url(
+    meeting_id: str,
+    request: UploadUrlRequest,
+    db: Session = Depends(get_db)
+):
+    """Generate a GCS resumable upload session URI.
+    
+    Resumable uploads are faster than signed PUT for large files because:
+    - GCS handles chunking server-side (256KB min chunk)
+    - Supports pause/resume without re-uploading
+    - Frontend can upload in large chunks (8MB+) with progress tracking
+    - More resistant to network interruptions
+    
+    The returned session_uri is valid for 7 days.
+    """
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    bucket_name = os.getenv("GCS_BUCKET")
+    if not bucket_name:
+        raise HTTPException(status_code=500, detail="GCS_BUCKET not configured on server")
+
+    try:
+        import google.auth
+        from google.auth.transport import requests as google_requests
+        import requests
+
+        credentials, project_id = google.auth.default()
+        if credentials.token is None:
+            credentials.refresh(google_requests.Request())
+
+        ext = os.path.splitext(request.filename)[1] if request.filename else ".webm"
+        blob_name = f"audio/{meeting_id}{ext}"
+        content_type = request.contentType or "application/octet-stream"
+
+        # Initiate resumable upload via GCS JSON API
+        initiate_url = (
+            f"https://storage.googleapis.com/upload/storage/v1/b/{bucket_name}/o"
+            f"?uploadType=resumable&name={blob_name}"
+        )
+        headers = {
+            "Authorization": f"Bearer {credentials.token}",
+            "Content-Type": "application/json",
+            "X-Upload-Content-Type": content_type,
+        }
+        metadata = {"contentType": content_type}
+
+        resp = requests.post(initiate_url, headers=headers, json=metadata, timeout=10)
+        if resp.status_code != 200:
+            logger.error(f"GCS resumable initiation failed: {resp.status_code} {resp.text[:200]}")
+            raise HTTPException(status_code=502, detail="Failed to initiate resumable upload")
+
+        session_uri = resp.headers.get("Location")
+        if not session_uri:
+            raise HTTPException(status_code=502, detail="No session URI in GCS response")
+
+        # Pre-assign audio_url
+        meeting.audio_url = f"gs://{bucket_name}/{blob_name}"
+        db.commit()
+
+        logger.info(f"Resumable upload session created for {meeting_id} ({blob_name})")
+        return {"session_uri": session_uri, "blob_name": blob_name}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create resumable upload session: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create resumable upload session")
+
+
 @router.post("/{meeting_id}/upload", tags=["Meeting Operations"])
 async def upload_audio_proxy(
     meeting_id: str,

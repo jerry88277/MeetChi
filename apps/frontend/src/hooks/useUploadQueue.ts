@@ -102,18 +102,37 @@ export function useUploadQueue() {
             createdMeetingId = meeting.id;
             updateTask(taskId, { meetingId: meeting.id });
 
-            const { uploadUrl } = await api.getUploadUrl(meeting.id, file.name, file.type || 'application/octet-stream');
+            const contentType = file.type || 'application/octet-stream';
+            const progressCb = (percent: number) => {
+                updateTask(taskId, { progress: percent });
+            };
 
-            // Upload to GCS
+            // Upload strategy: Resumable (fastest) → Signed PUT → Chunked (fallback)
+            let uploaded = false;
+
+            // Strategy 1: GCS Resumable Upload (8MB chunks, direct to GCS)
             try {
-                await api.uploadToGcs(uploadUrl, file, (percent) => {
-                    updateTask(taskId, { progress: percent });
-                });
-            } catch (directErr) {
-                console.warn('[MeetChi] Direct GCS failed, trying chunked:', directErr);
-                await api.chunkedUpload(meeting.id, file, (percent) => {
-                    updateTask(taskId, { progress: percent });
-                });
+                const { session_uri } = await api.getResumableUploadSession(meeting.id, file.name, contentType);
+                await api.resumableUpload(session_uri, file, progressCb);
+                uploaded = true;
+            } catch (resumableErr) {
+                console.warn('[MeetChi] Resumable upload failed, trying signed PUT:', resumableErr);
+            }
+
+            // Strategy 2: Signed URL PUT (single request)
+            if (!uploaded) {
+                try {
+                    const { uploadUrl } = await api.getUploadUrl(meeting.id, file.name, contentType);
+                    await api.uploadToGcs(uploadUrl, file, progressCb);
+                    uploaded = true;
+                } catch (directErr) {
+                    console.warn('[MeetChi] Signed PUT failed, trying chunked:', directErr);
+                }
+            }
+
+            // Strategy 3: Chunked via backend (most compatible, slowest)
+            if (!uploaded) {
+                await api.chunkedUpload(meeting.id, file, progressCb);
             }
 
             // Upload done → trigger transcription (fire-and-forget)
