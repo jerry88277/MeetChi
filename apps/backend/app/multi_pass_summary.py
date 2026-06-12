@@ -34,6 +34,19 @@ def _get_model() -> str:
     return GEMINI_MODEL
 
 
+def _safe_json_parse(text: str) -> dict:
+    """Parse JSON robustly — handles 'Extra data' (concatenated objects) by truncating."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        if "Extra data" in str(e):
+            # Gemini sometimes appends a second JSON object; parse only the first
+            decoder = json.JSONDecoder()
+            result, _ = decoder.raw_decode(text)
+            return result
+        raise
+
+
 def should_use_multi_pass(transcript_text: str) -> bool:
     """Determine if multi-pass summarization should be used."""
     return len(transcript_text) >= MULTI_PASS_THRESHOLD
@@ -94,7 +107,7 @@ def _pass0_segment_topics(client, transcript_lines: List[str]) -> List[Dict[str,
                 "max_output_tokens": 4096
             }
         )
-        result = json.loads(response.text)
+        result = _safe_json_parse(response.text)
         topics = result.get("topics", [])
         logger.info(f"[MultiPass] Pass 0: identified {len(topics)} topics")
         return topics
@@ -190,7 +203,7 @@ def _pass1_summarize_topic(client, topic: Dict, transcript_lines: List[str]) -> 
         if "MAX_TOKENS" in finish_reason.upper():
             logger.warning(f"[MultiPass] Pass 1 topic '{topic_title}' hit MAX_TOKENS, using partial")
 
-        result = json.loads(response.text)
+        result = _safe_json_parse(response.text)
         result["title"] = result.get("title", topic_title)
         logger.info(
             f"[MultiPass] Pass 1: topic '{topic_title}' → "
@@ -290,7 +303,7 @@ def _pass2_merge(client, chapters: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "max_output_tokens": 8192
             }
         )
-        result = json.loads(response.text)
+        result = _safe_json_parse(response.text)
         logger.info(f"[MultiPass] Pass 2: merge complete, {len(response.text)} chars")
         return result
     except Exception as e:
