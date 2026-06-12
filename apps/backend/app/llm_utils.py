@@ -454,10 +454,29 @@ def generate_summary(
     template_name: str = "general",
     extra_instructions: str = ""
 ) -> Dict[str, Any]:
-    """Generate summary using Gemini API with Sandwich Defense."""
+    """Generate summary using Gemini API with Sandwich Defense.
+    
+    2026-06-12: For long transcripts (>15K chars), automatically routes to
+    multi-pass summarization to preserve full granularity without hitting
+    the 65K output token limit.
+    """
     
     # Sanitize transcript
     sanitized_text = clean_text(text)
+
+    # 2026-06-12: Route to multi-pass for long transcripts
+    from app.multi_pass_summary import should_use_multi_pass, generate_multi_pass_summary
+    if should_use_multi_pass(sanitized_text):
+        logger.info(
+            f"[LLM] Routing to multi-pass summary "
+            f"(transcript={len(sanitized_text)} chars, threshold={os.getenv('MULTI_PASS_THRESHOLD', '15000')})"
+        )
+        return generate_multi_pass_summary(
+            client=client,
+            transcript_text=sanitized_text,
+            template_name=template_name,
+            extra_instructions=extra_instructions,
+        )
 
     # 2026-06-03 fix: 391-seg (2h16m) meeting → Gemini output 147k chars →
     # MAX_TOKENS at 65,535 → truncated JSON → parse fail → FAILED status.
