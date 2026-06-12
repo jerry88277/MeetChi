@@ -751,7 +751,7 @@ export default function DashboardPage() {
                     user={session?.user}
                     provider={(session as { provider?: string } | null)?.provider}
                     onOpenFeedback={() => setFeedbackContext({})}
-                    onStartTour={() => setTourOpen(true)}
+                    onStartTour={() => { setCurrentView('dashboard'); setTimeout(() => setTourOpen(true), 100); }}
                 />
             )}
 
