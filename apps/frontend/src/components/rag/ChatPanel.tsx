@@ -330,7 +330,7 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
                     <p className="text-xs text-muted-foreground line-clamp-1 mb-1">{item.answer_preview}</p>
                   )}
                   <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                    <span>{new Date(item.created_at).toLocaleString('zh-TW', { hour12: false })}</span>
+                    <span>{new Date(item.created_at).toLocaleString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei' })}</span>
                     <span>·</span>
                     <span>{item.citation_count} 個來源</span>
                     {item.confidence && (

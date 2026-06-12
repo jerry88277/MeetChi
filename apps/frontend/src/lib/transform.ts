@@ -202,7 +202,7 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
     return {
         id: apiMeeting.id,
         title: apiMeeting.title,
-        date: new Date(apiMeeting.created_at).toISOString().split('T')[0],
+        date: new Date(apiMeeting.created_at).toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' }),
         createdAt: apiMeeting.created_at,
         updatedAt: apiMeeting.updated_at,  // 2026-05-22 feedback #7
         duration: durationStr,

@@ -85,7 +85,7 @@ export function AdminFeedbackPanel({ userUpn }: AdminFeedbackPanelProps) {
 
     const formatDate = (iso: string) => {
         const d = new Date(iso);
-        return d.toLocaleDateString('zh-TW', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        return d.toLocaleDateString('zh-TW', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Taipei' });
     };
 
     if (error) {

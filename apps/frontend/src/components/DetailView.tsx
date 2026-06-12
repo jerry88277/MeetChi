@@ -691,7 +691,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                                     <div className="flex items-center gap-2">
                                                         <span className="px-1.5 py-0.5 bg-brand-cta/10 text-brand-cta rounded font-medium">{v.template_name}</span>
                                                         <span className="text-muted-foreground">
-                                                            {v.created_at ? new Date(v.created_at).toLocaleString('zh-TW') : '未知時間'}
+                                                            {v.created_at ? new Date(v.created_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }) : '未知時間'}
                                                         </span>
                                                     </div>
                                                     <button
@@ -892,12 +892,12 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                         <div className="mt-8 pt-4 border-t border-border/40 text-[11px] text-muted-foreground/80 flex flex-wrap gap-x-4 gap-y-1 justify-center font-mono">
                             {meeting.createdAt && (
                                 <span title="會議建立時間">
-                                    建立：{new Date(meeting.createdAt).toLocaleString('zh-TW', { hour12: false })}
+                                    建立：{new Date(meeting.createdAt).toLocaleString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei' })}
                                 </span>
                             )}
                             {meeting.updatedAt && (
                                 <span title="轉錄 / 摘要最後完成時間">
-                                    完成：{new Date(meeting.updatedAt).toLocaleString('zh-TW', { hour12: false })}
+                                    完成：{new Date(meeting.updatedAt).toLocaleString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei' })}
                                 </span>
                             )}
                             {meeting.duration && (
