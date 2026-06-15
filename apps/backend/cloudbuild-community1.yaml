@@ -1,19 +1,6 @@
 steps:
-  # Step 1: Download pyannote model from GCS into build context
-  - name: 'gcr.io/cloud-builders/gsutil'
-    id: 'download-model'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        mkdir -p models/pyannote
-        gsutil -m cp -r gs://prj-ai-meetchi-du-meetchi-audio/models/pyannote/speaker-diarization-community-1 models/pyannote/
-        echo "✓ Model downloaded"
-        ls -la models/pyannote/speaker-diarization-community-1/
-
-  # Step 2: Build Docker image with model baked in
+  # Build Docker image (model downloaded from GCS during build via google-cloud-storage)
   - name: 'gcr.io/cloud-builders/docker'
-    id: 'build'
     args:
       - 'build'
       - '-f'
@@ -21,7 +8,6 @@ steps:
       - '-t'
       - 'asia-southeast1-docker.pkg.dev/prj-ai-meetchi-du/meetchi/meetchi-gpu-asr:v18-community1'
       - '.'
-    waitFor: ['download-model']
 
 images:
   - 'asia-southeast1-docker.pkg.dev/prj-ai-meetchi-du/meetchi/meetchi-gpu-asr:v18-community1'

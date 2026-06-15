@@ -101,10 +101,27 @@ RUN find /usr/local/lib/python3.10/dist-packages -name "libctranslate2*.so*" -ex
 # Model was pre-downloaded and security-scanned before upload.
 # See: docs/pyannote_model_manifest.md
 # ============================================
-RUN pip install --no-cache-dir google-cloud-storage
-RUN mkdir -p /app/models/pyannote
-# Model will be copied via cloudbuild step (gsutil cp from GCS → build context)
-COPY models/pyannote/speaker-diarization-community-1 /app/models/pyannote/speaker-diarization-community-1
+RUN pip install --no-cache-dir google-cloud-storage 2>/dev/null || true
+RUN mkdir -p /app/models/pyannote/speaker-diarization-community-1
+
+# Download model from GCS at build time (Cloud Build SA has access)
+# Note: Cannot use COPY because .dockerignore excludes models/*.bin
+RUN python -c "\
+from google.cloud import storage; \
+import os; \
+client = storage.Client(); \
+bucket = client.bucket('prj-ai-meetchi-du-meetchi-audio'); \
+prefix = 'models/pyannote/speaker-diarization-community-1/'; \
+blobs = list(bucket.list_blobs(prefix=prefix)); \
+print(f'Downloading {len(blobs)} files from GCS...'); \
+for blob in blobs: \
+    rel = blob.name[len(prefix):]; \
+    if not rel: continue; \
+    local_path = f'/app/models/pyannote/speaker-diarization-community-1/{rel}'; \
+    os.makedirs(os.path.dirname(local_path), exist_ok=True); \
+    blob.download_to_filename(local_path); \
+    print(f'  ✓ {rel} ({blob.size} bytes)'); \
+print('Done')"
 
 ENV PYANNOTE_MODEL_PATH=/app/models/pyannote/speaker-diarization-community-1
 
