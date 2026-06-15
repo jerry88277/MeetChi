@@ -56,17 +56,17 @@ def _load_pipeline():
 
     try:
         _pipeline = Pipeline.from_pretrained(MODEL_PATH)
-        _pipeline.to(torch.device(device))
-    except (NotImplementedError, RuntimeError) as load_err:
-        if "meta tensor" in str(load_err) or "Cannot copy out of meta" in str(load_err):
-            logger.warning(f"Meta tensor issue, retrying with map_location=cpu: {load_err}")
-            _pipeline = Pipeline.from_pretrained(
-                MODEL_PATH, map_location=torch.device("cpu")
-            )
-            if device == "cuda":
-                _pipeline.to(torch.device(device))
-        else:
-            raise
+        # Only move to GPU if no meta tensor issue
+        try:
+            _pipeline.to(torch.device(device))
+        except (NotImplementedError, RuntimeError) as move_err:
+            if "meta tensor" in str(move_err) or "Cannot copy" in str(move_err):
+                logger.warning(
+                    f"Cannot move pipeline to {device} (meta tensor), "
+                    f"running on CPU: {move_err}"
+                )
+            else:
+                raise
     finally:
         torch.load = _orig_torch_load
 
