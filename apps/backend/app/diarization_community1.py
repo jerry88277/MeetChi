@@ -85,11 +85,26 @@ def diarize_full_audio(
         kwargs["max_speakers"] = max_speakers
 
     # Run diarization
-    diarization = pipeline(audio_input, **kwargs)
+    result = pipeline(audio_input, **kwargs)
+
+    # pyannote 4.x community-1 returns DiarizeOutput (not Annotation directly)
+    # Access the underlying Annotation via .annotation or tuple indexing
+    if hasattr(result, 'itertracks'):
+        annotation = result
+    elif hasattr(result, 'annotation'):
+        annotation = result.annotation
+    elif isinstance(result, tuple):
+        annotation = result[0]
+    else:
+        # Try to iterate keys/values as a fallback
+        raise TypeError(
+            f"Unexpected diarization output type: {type(result).__name__}. "
+            f"Attributes: {dir(result)}"
+        )
 
     # Extract segments
     segments = []
-    for turn, _, speaker in diarization.itertracks(yield_label=True):
+    for turn, _, speaker in annotation.itertracks(yield_label=True):
         segments.append({
             "speaker": speaker,
             "start": round(turn.start, 2),
