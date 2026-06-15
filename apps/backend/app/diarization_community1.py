@@ -42,10 +42,25 @@ def _load_pipeline():
         )
 
     logger.info(f"Loading pyannote community-1 from {MODEL_PATH}")
-    _pipeline = Pipeline.from_pretrained(MODEL_PATH)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    _pipeline.to(torch.device(device))
+
+    # Try normal loading first; fall back to CPU-only if meta tensor issue
+    try:
+        _pipeline = Pipeline.from_pretrained(MODEL_PATH)
+        _pipeline.to(torch.device(device))
+    except (NotImplementedError, RuntimeError) as load_err:
+        if "meta tensor" in str(load_err) or "Cannot copy out of meta" in str(load_err):
+            logger.warning(f"Meta tensor issue, retrying with map_location=cpu: {load_err}")
+            # Force CPU loading by setting default device
+            _pipeline = Pipeline.from_pretrained(
+                MODEL_PATH, map_location=torch.device("cpu")
+            )
+            if device == "cuda":
+                _pipeline.to(torch.device(device))
+        else:
+            raise
+
     logger.info(f"Pyannote community-1 loaded on {device}")
 
     return _pipeline
