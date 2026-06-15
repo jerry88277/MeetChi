@@ -19,6 +19,7 @@ steps:
     id: 'build'
     args:
       - 'build'
+      - '--no-cache'
       - '-f'
       - 'Dockerfile.gpu-service-community1'
       - '-t'
