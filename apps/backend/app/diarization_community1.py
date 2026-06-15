@@ -43,16 +43,22 @@ def _load_pipeline():
 
     logger.info(f"Loading pyannote community-1 from {MODEL_PATH}")
 
+    # PyTorch 2.6+ defaults weights_only=True which breaks pyannote checkpoints.
+    # Model was security-scanned (ModelScan PASS) — safe to load with weights_only=False.
+    _orig_torch_load = torch.load
+    def _patched_load(*args, **kwargs):
+        kwargs.setdefault("weights_only", False)
+        return _orig_torch_load(*args, **kwargs)
+    torch.load = _patched_load
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # Try normal loading first; fall back to CPU-only if meta tensor issue
     try:
         _pipeline = Pipeline.from_pretrained(MODEL_PATH)
         _pipeline.to(torch.device(device))
     except (NotImplementedError, RuntimeError) as load_err:
         if "meta tensor" in str(load_err) or "Cannot copy out of meta" in str(load_err):
             logger.warning(f"Meta tensor issue, retrying with map_location=cpu: {load_err}")
-            # Force CPU loading by setting default device
             _pipeline = Pipeline.from_pretrained(
                 MODEL_PATH, map_location=torch.device("cpu")
             )
@@ -60,6 +66,8 @@ def _load_pipeline():
                 _pipeline.to(torch.device(device))
         else:
             raise
+    finally:
+        torch.load = _orig_torch_load
 
     logger.info(f"Pyannote community-1 loaded on {device}")
 
