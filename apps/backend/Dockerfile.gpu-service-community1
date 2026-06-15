@@ -86,9 +86,9 @@ RUN pip install --no-cache-dir --no-deps "faster-whisper>=1.0.0" && \
     "tokenizers" \
     "onnxruntime" || true
 
-# Stage 4: Install WhisperX (alignment only, not diarization)
-RUN pip install --no-cache-dir "whisperx>=3.1.0" || \
-    pip install --no-cache-dir --no-deps "whisperx>=3.1.0"
+# Stage 4: Install WhisperX with --no-deps to prevent upgrading torch/lightning
+# WhisperX's deps (pyannote.audio, lightning>=2.4) would override our pins
+RUN pip install --no-cache-dir --no-deps "whisperx>=3.1.0" || true
 
 # Stage 5: Install remaining audio utilities
 RUN pip install --no-cache-dir \
@@ -97,15 +97,15 @@ RUN pip install --no-cache-dir \
     "librosa" || true
 
 
-# Diagnostic: print installed versions for diarization-critical packages
+# Diagnostic: print AND verify installed versions — fail build if wrong
 RUN python -c "\
-import pyannote.audio, huggingface_hub, whisperx; \
-print(f'[community1] pyannote.audio=={pyannote.audio.__version__}'); \
-print(f'[community1] huggingface_hub=={huggingface_hub.__version__}'); \
-print(f'[community1] whisperx=={whisperx.__version__}'); \
-v = tuple(int(x) for x in pyannote.audio.__version__.split('.')[:2]); \
-assert v >= (4, 0), f'pyannote.audio must be >= 4.0, got {pyannote.audio.__version__}'; \
-print('[community1] version assertion PASSED')" || true
+import torch, lightning; \
+print(f'[community1] torch=={torch.__version__}'); \
+print(f'[community1] lightning=={lightning.__version__}'); \
+assert torch.__version__.startswith('2.5'), f'torch must be 2.5.x, got {torch.__version__}'; \
+lv = tuple(int(x) for x in lightning.__version__.split('.')[:2]); \
+assert lv < (2, 4), f'lightning must be <2.4, got {lightning.__version__}'; \
+print('[community1] version assertions PASSED')"
 
 # Fix: libctranslate2 executable stack issue on Cloud Run GPU (glibc >= 2.41)
 RUN find /usr/local/lib/python3.10/dist-packages -name "libctranslate2*.so*" -exec patchelf --clear-execstack {} \; 2>/dev/null || \
