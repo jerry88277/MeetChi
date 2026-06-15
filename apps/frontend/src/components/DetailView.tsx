@@ -180,11 +180,45 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     };
 
     const handleTimestampClick = (timeStr: string) => {
-        if (!audioRef.current) return;
-        // 跳到指定時間時自動展開逐字稿（如果是從 quote 點過來）
+        const seconds = parseTimeToSeconds(timeStr);
+
+        // Try to play audio if available
+        if (audioRef.current) {
+            audioRef.current.currentTime = seconds;
+            audioRef.current.play().catch(() => {/* autoplay may be blocked */});
+        }
+
+        // Always expand transcript and scroll to the matching line
         if (!showTranscript) setShowTranscript(true);
-        audioRef.current.currentTime = parseTimeToSeconds(timeStr);
-        audioRef.current.play().catch(e => console.error("Playback failed:", e));
+
+        // Highlight and scroll to corresponding transcript line
+        setTimeout(() => {
+            const targetId = `transcript-line-${Math.floor(seconds)}`;
+            const el = document.getElementById(targetId);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el.classList.add('ring-2', 'ring-brand-cta/50', 'bg-brand-cta/5', 'rounded');
+                setTimeout(() => el.classList.remove('ring-2', 'ring-brand-cta/50', 'bg-brand-cta/5', 'rounded'), 2000);
+            } else {
+                // Fallback: find closest transcript line by time
+                const container = document.querySelector('[data-transcript-container]');
+                if (container) {
+                    const lines = container.querySelectorAll('[data-time]');
+                    let closest: Element | null = null;
+                    let minDiff = Infinity;
+                    lines.forEach(line => {
+                        const t = parseFloat(line.getAttribute('data-time') || '0');
+                        const diff = Math.abs(t - seconds);
+                        if (diff < minDiff) { minDiff = diff; closest = line; }
+                    });
+                    if (closest) {
+                        (closest as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        (closest as HTMLElement).classList.add('ring-2', 'ring-brand-cta/50', 'bg-brand-cta/5', 'rounded');
+                        setTimeout(() => (closest as HTMLElement).classList.remove('ring-2', 'ring-brand-cta/50', 'bg-brand-cta/5', 'rounded'), 2000);
+                    }
+                }
+            }
+        }, showTranscript ? 50 : 300); // longer delay if transcript needs to expand first
     };
 
     /**
@@ -829,12 +863,13 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                           mobile/sm: 75vh（手機螢幕窄但長，多給空間）
                                           md+: 60vh（桌機橫向有空間，較緊湊讓使用者
                                           看到下方音訊播放器） */}
-                                    <div className="p-4 sm:p-5 space-y-5 max-h-[75vh] md:max-h-[60vh] overflow-y-auto">
+                                    <div className="p-4 sm:p-5 space-y-5 max-h-[75vh] md:max-h-[60vh] overflow-y-auto" data-transcript-container>
                                         {meeting.transcript && meeting.transcript.length > 0 ? (
                                             meeting.transcript.map((line, idx) => {
                                                 const speaker = getSpeakerDisplay(line.speaker);
+                                                const timeSec = parseTimeToSeconds(line.time);
                                                 return (
-                                                    <div key={idx} className="group flex gap-4">
+                                                    <div key={idx} className="group flex gap-4 transition-all duration-300" id={`transcript-line-${Math.floor(timeSec)}`} data-time={timeSec}>
                                                         <div
                                                             onClick={() => handleTimestampClick(line.time)}
                                                             className="w-14 text-xs text-muted-foreground font-mono pt-1 text-right flex-shrink-0 group-hover:text-brand-cta cursor-pointer transition-colors"
