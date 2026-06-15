@@ -34,6 +34,7 @@ def _load_pipeline():
 
     import torch
     from pyannote.audio import Pipeline
+    import pyannote.audio.core.model as _pam
 
     if not os.path.isdir(MODEL_PATH):
         raise FileNotFoundError(
@@ -52,11 +53,20 @@ def _load_pipeline():
         return _orig_torch_load(*args, **kwargs)
     torch.load = _patched_load
 
+    # Lightning 2.4+ uses meta device init, causing "Cannot copy out of meta tensor"
+    # in pyannote's Model.setup(). Monkey-patch to skip .to(device) on meta tensors.
+    _orig_setup = _pam.Model.setup
+    def _safe_setup(self):
+        try:
+            _orig_setup(self)
+        except NotImplementedError:
+            logger.warning("Skipping meta tensor .to(device) in Model.setup()")
+    _pam.Model.setup = _safe_setup
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     try:
         _pipeline = Pipeline.from_pretrained(MODEL_PATH)
-        # Only move to GPU if no meta tensor issue
         try:
             _pipeline.to(torch.device(device))
         except (NotImplementedError, RuntimeError) as move_err:
@@ -69,6 +79,7 @@ def _load_pipeline():
                 raise
     finally:
         torch.load = _orig_torch_load
+        _pam.Model.setup = _orig_setup
 
     logger.info(f"Pyannote community-1 loaded on {device}")
 

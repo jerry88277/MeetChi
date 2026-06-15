@@ -62,13 +62,14 @@ RUN pip install --no-cache-dir \
 
 # Stage 2: Install pyannote.audio 4.0.0 (community-1 requirement)
 # Pin exact version; use --no-deps to prevent torch upgrade, then install deps
+# Pin lightning<2.4 to avoid meta tensor initialization that breaks pyannote
 RUN pip install --no-cache-dir --no-deps "pyannote.audio==4.0.0" && \
     pip install --no-cache-dir \
     "pyannote.core>=5.0.0" \
     "pyannote.database>=5.0.0" \
     "pyannote.pipeline>=3.0.0" \
-    "pytorch-lightning>=2.0.0" \
-    "lightning>=2.0.0" \
+    "pytorch-lightning>=2.0.0,<2.4.0" \
+    "lightning>=2.0.0,<2.4.0" \
     "asteroid-filterbanks>=0.4.0" \
     "einops>=0.7.0" \
     "rich>=10.0.0" \
