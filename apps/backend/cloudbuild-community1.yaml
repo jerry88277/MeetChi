@@ -14,18 +14,27 @@ steps:
         echo "✓ Model downloaded, .dockerignore patched"
         ls -la models/pyannote/speaker-diarization-community-1/
 
-  # Step 2: Build Docker image
+  # Step 2: Build Docker image (use --cache-from for faster builds when only source changed)
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'pull-cache'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - 'docker pull asia-southeast1-docker.pkg.dev/prj-ai-meetchi-du/meetchi/meetchi-gpu-asr:v18-community1 || true'
+    waitFor: ['download-model']
+
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build'
     args:
       - 'build'
-      - '--no-cache'
+      - '--cache-from'
+      - 'asia-southeast1-docker.pkg.dev/prj-ai-meetchi-du/meetchi/meetchi-gpu-asr:v18-community1'
       - '-f'
       - 'Dockerfile.gpu-service-community1'
       - '-t'
       - 'asia-southeast1-docker.pkg.dev/prj-ai-meetchi-du/meetchi/meetchi-gpu-asr:v18-community1'
       - '.'
-    waitFor: ['download-model']
+    waitFor: ['pull-cache']
 
 images:
   - 'asia-southeast1-docker.pkg.dev/prj-ai-meetchi-du/meetchi/meetchi-gpu-asr:v18-community1'
