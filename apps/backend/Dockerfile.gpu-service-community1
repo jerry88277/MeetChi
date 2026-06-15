@@ -100,13 +100,9 @@ RUN find /usr/local/lib/python3.10/dist-packages -name "libctranslate2*.so*" -ex
 # Bake pyannote community-1 model from GCS (no runtime HF token needed)
 # Model was pre-downloaded and security-scanned before upload.
 # See: docs/pyannote_model_manifest.md
+# Note: Model files are placed by cloudbuild gsutil step; .dockerignore patched there.
 # ============================================
-RUN pip install --no-cache-dir google-cloud-storage 2>/dev/null || true
-RUN mkdir -p /app/models/pyannote/speaker-diarization-community-1
-
-# Download model from GCS at build time (Cloud Build SA has access)
-COPY scripts/download_model_from_gcs.py /tmp/download_model_from_gcs.py
-RUN python /tmp/download_model_from_gcs.py && rm /tmp/download_model_from_gcs.py
+COPY models/pyannote/speaker-diarization-community-1 /app/models/pyannote/speaker-diarization-community-1
 
 ENV PYANNOTE_MODEL_PATH=/app/models/pyannote/speaker-diarization-community-1
 

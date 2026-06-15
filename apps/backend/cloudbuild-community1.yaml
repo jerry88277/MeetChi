@@ -1,6 +1,22 @@
 steps:
-  # Build Docker image (model downloaded from GCS during build via google-cloud-storage)
+  # Step 1: Download model from GCS into workspace (Cloud Build SA has creds)
+  - name: 'gcr.io/cloud-builders/gsutil'
+    id: 'download-model'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        mkdir -p models/pyannote
+        gsutil -m cp -r gs://prj-ai-meetchi-du-meetchi-audio/models/pyannote/speaker-diarization-community-1 models/pyannote/
+        # Allow models dir in dockerignore for this build
+        sed -i '/^models\//d' .dockerignore
+        sed -i '/^\*\.bin$/d' .dockerignore
+        echo "✓ Model downloaded, .dockerignore patched"
+        ls -la models/pyannote/speaker-diarization-community-1/
+
+  # Step 2: Build Docker image
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'build'
     args:
       - 'build'
       - '-f'
@@ -8,6 +24,7 @@ steps:
       - '-t'
       - 'asia-southeast1-docker.pkg.dev/prj-ai-meetchi-du/meetchi/meetchi-gpu-asr:v18-community1'
       - '.'
+    waitFor: ['download-model']
 
 images:
   - 'asia-southeast1-docker.pkg.dev/prj-ai-meetchi-du/meetchi/meetchi-gpu-asr:v18-community1'

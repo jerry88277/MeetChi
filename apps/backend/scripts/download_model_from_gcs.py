@@ -5,8 +5,9 @@ import os
 BUCKET = "prj-ai-meetchi-du-meetchi-audio"
 PREFIX = "models/pyannote/speaker-diarization-community-1/"
 LOCAL_DIR = "/app/models/pyannote/speaker-diarization-community-1"
+PROJECT = "prj-ai-meetchi-du"
 
-client = storage.Client()
+client = storage.Client(project=PROJECT)
 bucket = client.bucket(BUCKET)
 blobs = list(bucket.list_blobs(prefix=PREFIX))
 print(f"Downloading {len(blobs)} files from gs://{BUCKET}/{PREFIX}")
