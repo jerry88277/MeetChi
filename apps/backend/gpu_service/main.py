@@ -26,6 +26,7 @@ import httpx
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.offline_asr import get_offline_asr_provider, BreezeASRProvider, BreezeASRConfig
+from app.diarization_community1 import diarize_full_audio
 
 # ============================================
 # Logging
@@ -68,6 +69,26 @@ class ASRRefineResponse(BaseModel):
     segments: list[SegmentResponse] = []
     speakers_count: int = 0
     duration: float = 0.0
+    error: Optional[str] = None
+
+
+class DiarizeRequest(BaseModel):
+    meeting_id: str
+    audio_url: str  # GCS URL (gs://...)
+    min_speakers: Optional[int] = None
+    max_speakers: Optional[int] = None
+
+class DiarizeSegment(BaseModel):
+    speaker: str
+    start: float
+    end: float
+
+class DiarizeResponse(BaseModel):
+    status: str
+    meeting_id: str
+    segments: list[DiarizeSegment] = []
+    speakers_count: int = 0
+    duration_seconds: float = 0.0
     error: Optional[str] = None
 
 
@@ -277,6 +298,74 @@ async def asr_refine(request: ASRRefineRequest):
             )
 
     return response_payload
+
+
+# ============================================
+# Diarize Endpoint (Full-Audio Speaker Diarization)
+# ============================================
+@app.post("/asr/diarize", response_model=DiarizeResponse)
+async def asr_diarize(request: DiarizeRequest):
+    """
+    Run speaker diarization on full audio using pyannote community-1.
+    
+    This endpoint is called AFTER parallel ASR chunks are merged,
+    to assign consistent global speaker labels across the entire meeting.
+    """
+    start_time = time.time()
+    meeting_id = request.meeting_id
+    temp_dir = None
+
+    logger.info(f"[Diarize] Received request for {meeting_id}")
+
+    try:
+        # Download audio from GCS
+        audio_path = request.audio_url
+        if audio_path.startswith("gs://"):
+            temp_dir = tempfile.mkdtemp(prefix="meetchi-diarize-")
+            audio_path = _download_from_gcs(audio_path, temp_dir)
+
+        if not os.path.exists(audio_path):
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+        # Run diarization
+        segments = await asyncio.to_thread(
+            diarize_full_audio,
+            audio_path,
+            min_speakers=request.min_speakers,
+            max_speakers=request.max_speakers,
+        )
+
+        elapsed = time.time() - start_time
+        speakers = set(s["speaker"] for s in segments)
+
+        logger.info(
+            f"[Diarize] Done for {meeting_id}: "
+            f"{len(segments)} segments, {len(speakers)} speakers, {elapsed:.1f}s"
+        )
+
+        return DiarizeResponse(
+            status="completed",
+            meeting_id=meeting_id,
+            segments=[DiarizeSegment(**s) for s in segments],
+            speakers_count=len(speakers),
+            duration_seconds=elapsed,
+        )
+
+    except Exception as e:
+        logger.error(f"[Diarize] Failed for {meeting_id}: {e}", exc_info=True)
+        return DiarizeResponse(
+            status="failed",
+            meeting_id=meeting_id,
+            error=str(e),
+            duration_seconds=time.time() - start_time,
+        )
+    finally:
+        if temp_dir:
+            import shutil
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
 
 
 # ============================================

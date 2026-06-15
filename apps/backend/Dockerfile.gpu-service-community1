@@ -96,9 +96,22 @@ print('[community1] version assertion PASSED')" || true
 RUN find /usr/local/lib/python3.10/dist-packages -name "libctranslate2*.so*" -exec patchelf --clear-execstack {} \; 2>/dev/null || \
     find /usr/local/lib -name "libctranslate2*.so*" -exec patchelf --clear-execstack {} \; 2>/dev/null || true
 
+# ============================================
+# Bake pyannote community-1 model from GCS (no runtime HF token needed)
+# Model was pre-downloaded and security-scanned before upload.
+# See: docs/pyannote_model_manifest.md
+# ============================================
+RUN pip install --no-cache-dir google-cloud-storage
+RUN mkdir -p /app/models/pyannote
+# Model will be copied via cloudbuild step (gsutil cp from GCS → build context)
+COPY models/pyannote/speaker-diarization-community-1 /app/models/pyannote/speaker-diarization-community-1
+
+ENV PYANNOTE_MODEL_PATH=/app/models/pyannote/speaker-diarization-community-1
+
 # Copy service files
 COPY app/offline_asr.py app/offline_asr.py
 COPY app/offline_asr_community1.py app/offline_asr_community1.py
+COPY app/diarization_community1.py app/diarization_community1.py
 COPY app/models.py app/models.py
 COPY app/__init__.py app/__init__.py
 COPY gpu_service/ gpu_service/

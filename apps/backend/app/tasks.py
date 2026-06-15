@@ -136,6 +136,71 @@ def apply_glossary_correction(db: Session, meeting_id: str, user_upn: str = None
     return modified_count
 
 
+def _try_global_diarization(
+    all_segments: list,
+    audio_url: str,
+    meeting_id: str,
+    gpu_asr_url: str,
+) -> list:
+    """
+    Call GPU service /asr/diarize to get consistent global speaker labels.
+    Falls back to per-chunk labels if diarization fails.
+    """
+    import httpx
+
+    try:
+        logger.info(f"[ParallelASR] {meeting_id}: requesting global diarization")
+        resp = httpx.post(
+            f"{gpu_asr_url.rstrip('/')}/asr/diarize",
+            json={
+                "meeting_id": meeting_id,
+                "audio_url": audio_url,
+            },
+            timeout=1800.0,  # 30 min max for long meetings
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        if data.get("status") != "completed" or not data.get("segments"):
+            logger.warning(
+                f"[ParallelASR] Global diarization returned status={data.get('status')}, "
+                f"keeping per-chunk labels"
+            )
+            return all_segments
+
+        # Re-assign speakers based on global diarization
+        diar_segments = data["segments"]
+        reassigned = 0
+        for seg in all_segments:
+            seg_start = seg["start_time"]
+            seg_end = seg["end_time"]
+
+            # Find speaker with maximum overlap
+            overlaps = {}
+            for dseg in diar_segments:
+                overlap = min(seg_end, dseg["end"]) - max(seg_start, dseg["start"])
+                if overlap > 0:
+                    spk = dseg["speaker"]
+                    overlaps[spk] = overlaps.get(spk, 0) + overlap
+
+            if overlaps:
+                seg["speaker"] = max(overlaps, key=overlaps.get)
+                reassigned += 1
+
+        logger.info(
+            f"[ParallelASR] Global diarization assigned {reassigned}/{len(all_segments)} segments, "
+            f"{data.get('speakers_count', '?')} speakers, took {data.get('duration_seconds', '?'):.1f}s"
+        )
+        return all_segments
+
+    except Exception as e:
+        logger.warning(
+            f"[ParallelASR] Global diarization failed (non-fatal), "
+            f"keeping per-chunk labels: {type(e).__name__}: {e}"
+        )
+        return all_segments
+
+
 def _process_split_audio_sync(
     meeting_id: str,
     audio_url: str,
@@ -271,8 +336,7 @@ def _process_split_audio_sync(
                 })
                 order_counter += 1
 
-        # 重新編碼 speaker IDs 以反映「跨 chunk 不連貫」(Phase A)
-        # 後續 user 可在 frontend 手動合併同一人的不同 chunk 標籤
+        # 重新編碼 speaker IDs 以反映「跨 chunk 不連貫」(Phase A fallback)
         for seg in all_segments:
             spk = seg["speaker"]
             cidx = seg["_chunk_idx"]
@@ -282,6 +346,12 @@ def _process_split_audio_sync(
 
         # Sort by start_time then by chunk_idx (stable)
         all_segments.sort(key=lambda s: s["start_time"])
+
+        # 3.5 Global diarization: re-assign speakers using full-audio pyannote
+        # This replaces per-chunk SPEAKER_XX_cN labels with consistent global IDs
+        all_segments = _try_global_diarization(
+            all_segments, audio_url, meeting_id, gpu_asr_url
+        )
 
         # 4. Write all segments to DB
         meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
