@@ -48,9 +48,10 @@ RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 COPY requirements-gpu-community1.txt .
 
 # Stage 1: Install PyTorch + core dependencies first (largest, cached separately)
+# Pin PyTorch 2.5.1 exactly — 2.6+ introduces meta tensors that break pyannote loading
 RUN pip install --no-cache-dir \
-    "torch>=2.1.0,<2.6.0" \
-    "torchaudio>=2.1.0,<2.6.0" \
+    "torch==2.5.1" \
+    "torchaudio==2.5.1" \
     "numpy>=1.24.0" \
     "huggingface_hub>=1.0.0" \
     "google-cloud-storage>=2.14.0" \
@@ -59,9 +60,22 @@ RUN pip install --no-cache-dir \
     "uvicorn[standard]>=0.23.0" \
     "pydantic>=2.0.0"
 
-# Stage 2: Install pyannote.audio v4.0 (community-1 requirement)
-# Pin to 4.0.0 — newer versions have "meta tensor" bug when loading from local path
-RUN pip install --no-cache-dir "pyannote.audio==4.0.0"
+# Stage 2: Install pyannote.audio 4.0.0 (community-1 requirement)
+# Pin exact version; use --no-deps to prevent torch upgrade, then install deps
+RUN pip install --no-cache-dir --no-deps "pyannote.audio==4.0.0" && \
+    pip install --no-cache-dir \
+    "pyannote.core>=5.0.0" \
+    "pyannote.database>=5.0.0" \
+    "pyannote.pipeline>=3.0.0" \
+    "pytorch-lightning>=2.0.0" \
+    "lightning>=2.0.0" \
+    "asteroid-filterbanks>=0.4.0" \
+    "einops>=0.7.0" \
+    "rich>=10.0.0" \
+    "soundfile>=0.12.0" \
+    "tensorboardX>=2.6" \
+    "optuna>=3.0.0" \
+    "speechbrain>=0.5.0"
 
 # Stage 3: Install faster-whisper with --no-deps to avoid av conflict with pyannote
 # Then install faster-whisper's deps manually (ctranslate2, tokenizers, etc.)
