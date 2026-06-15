@@ -26,7 +26,10 @@ import httpx
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.offline_asr import get_offline_asr_provider, BreezeASRProvider, BreezeASRConfig
-from app.diarization_community1 import diarize_full_audio
+
+# Lazy import: diarization_community1 imports pyannote/torch which may fail
+# The function is imported at call time in the endpoint instead
+
 
 # ============================================
 # Logging
@@ -318,6 +321,9 @@ async def asr_diarize(request: DiarizeRequest):
     logger.info(f"[Diarize] Received request for {meeting_id}")
 
     try:
+        # Lazy import to avoid blocking app startup if pyannote has issues
+        from app.diarization_community1 import diarize_full_audio
+
         # Download audio from GCS
         audio_path = request.audio_url
         if audio_path.startswith("gs://"):
