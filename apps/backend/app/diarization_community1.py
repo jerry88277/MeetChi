@@ -44,10 +44,11 @@ def _load_pipeline():
     logger.info(f"Loading pyannote community-1 from {MODEL_PATH}")
 
     # PyTorch 2.6+ defaults weights_only=True which breaks pyannote checkpoints.
+    # lightning/fabric also explicitly passes weights_only=True.
     # Model was security-scanned (ModelScan PASS) — safe to load with weights_only=False.
     _orig_torch_load = torch.load
     def _patched_load(*args, **kwargs):
-        kwargs.setdefault("weights_only", False)
+        kwargs["weights_only"] = False
         return _orig_torch_load(*args, **kwargs)
     torch.load = _patched_load
 
