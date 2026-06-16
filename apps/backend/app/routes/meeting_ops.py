@@ -690,12 +690,19 @@ def get_audio_url(
         bucket = client.bucket(bucket_name)
         blob = bucket.blob(blob_name)
 
+        # Determine MIME type from extension for browser playback
+        import mimetypes
+        ext = os.path.splitext(blob_name)[1].lower()
+        mime_map = {".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".webm": "audio/webm", ".ogg": "audio/ogg"}
+        content_type = mime_map.get(ext) or mimetypes.guess_type(blob_name)[0] or "audio/mpeg"
+
         url = blob.generate_signed_url(
             version="v4",
             expiration=timedelta(minutes=120),
             method="GET",
             service_account_email=sa_email,
-            access_token=credentials.token
+            access_token=credentials.token,
+            response_type=content_type,
         )
 
         return AudioUrlResponse(audio_url=url)

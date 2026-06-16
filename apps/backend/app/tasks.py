@@ -834,7 +834,32 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
                     f"Auto-populated speaker_mappings for {meeting_id}: "
                     f"{len(mappings)} labels → {unique_people} unique people"
                 )
-            
+
+            # Fallback: if LLM didn't produce speaker_roles, generate default
+            # mappings from transcript segments so frontend speaker legend shows up
+            if not meeting.speaker_mappings:
+                segments = json.loads(meeting.transcript_segments) if meeting.transcript_segments else []
+                unique_speakers = sorted(set(
+                    s.get("speaker") for s in segments if s.get("speaker")
+                ))
+                if unique_speakers:
+                    SPEAKER_COLORS = [
+                        "#5FB7AC", "#2D428B", "#48B070", "#E4831A",
+                        "#D2343D", "#EDD414", "#513A57", "#1E455E"
+                    ]
+                    fallback_mappings = {}
+                    for i, sid in enumerate(unique_speakers):
+                        fallback_mappings[sid] = {
+                            "display_name": f"講者 {i + 1}",
+                            "role": "",
+                            "color": SPEAKER_COLORS[i % len(SPEAKER_COLORS)],
+                        }
+                    meeting.speaker_mappings = json.dumps(fallback_mappings, ensure_ascii=False)
+                    logger.info(
+                        f"Fallback speaker_mappings for {meeting_id}: "
+                        f"{len(fallback_mappings)} speakers from segments"
+                    )
+
             meeting.status = MeetingStatus.COMPLETED
             
             db.commit()
