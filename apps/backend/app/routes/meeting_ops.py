@@ -634,6 +634,12 @@ async def upload_chunk(
         final_blob = bucket.blob(final_blob_name)
         _compose_blobs(bucket, source_blobs, final_blob, f"audio/{meeting_id}/meta/")
 
+        # Set proper content-type after compose (compose doesn't preserve metadata)
+        mime_map = {".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".wav": "audio/wav", 
+                    ".webm": "audio/webm", ".ogg": "audio/ogg", ".aac": "audio/aac"}
+        final_blob.content_type = mime_map.get(ext.lower(), "audio/mpeg")
+        final_blob.patch()
+
         # Cleanup chunk files
         for blob in source_blobs:
             try:
@@ -690,11 +696,18 @@ def get_audio_url(
         bucket = client.bucket(bucket_name)
         blob = bucket.blob(blob_name)
 
-        # Determine MIME type from extension for browser playback
+        # Reload blob metadata to get the actual stored content-type
+        # This avoids mismatch when file extension doesn't match actual format
+        # (e.g., .m4a file that's actually raw ADTS AAC)
+        blob.reload()
+        stored_content_type = blob.content_type
+
+        # If GCS has no content-type or it's generic, infer from extension
         import mimetypes
-        ext = os.path.splitext(blob_name)[1].lower()
-        mime_map = {".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".webm": "audio/webm", ".ogg": "audio/ogg"}
-        content_type = mime_map.get(ext) or mimetypes.guess_type(blob_name)[0] or "audio/mpeg"
+        if not stored_content_type or stored_content_type in ("application/octet-stream", "None"):
+            ext = os.path.splitext(blob_name)[1].lower()
+            mime_map = {".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".webm": "audio/webm", ".ogg": "audio/ogg", ".aac": "audio/aac"}
+            stored_content_type = mime_map.get(ext) or mimetypes.guess_type(blob_name)[0] or "audio/mpeg"
 
         url = blob.generate_signed_url(
             version="v4",
@@ -702,7 +715,7 @@ def get_audio_url(
             method="GET",
             service_account_email=sa_email,
             access_token=credentials.token,
-            response_type=content_type,
+            response_type=stored_content_type,
         )
 
         return AudioUrlResponse(audio_url=url)
