@@ -33,6 +33,9 @@ const MAX_CONCURRENT = 2;
 export function useUploadQueue() {
     const { data: session } = useSession();
     const sessionUpn = session?.user?.email ?? '';
+    // Use ref so callbacks always access latest sessionUpn without stale closures
+    const sessionUpnRef = useRef(sessionUpn);
+    sessionUpnRef.current = sessionUpn;
 
     const [tasks, setTasks] = useState<UploadTask[]>([]);
     const [isTrayOpen, setIsTrayOpen] = useState(true);
@@ -91,12 +94,16 @@ export function useUploadQueue() {
             });
 
             const title = file.name.replace(/\.[^/.]+$/, "").trim() || "未命名會議";
+            const upn = sessionUpnRef.current;
+            if (!upn) {
+                throw new Error("使用者未登入，無法上傳");
+            }
             const meeting = await api.createMeeting({
                 title,
                 template_name: templateName,
                 duration,
                 custom_context: context,
-                user_upn: sessionUpn,
+                user_upn: upn,
                 is_confidential: isConfidential,
             });
             createdMeetingId = meeting.id;
@@ -154,7 +161,7 @@ export function useUploadQueue() {
             });
             // Clean up orphan
             if (createdMeetingId) {
-                api.deleteMeeting(createdMeetingId, sessionUpn).catch(() => {});
+                api.deleteMeeting(createdMeetingId, sessionUpnRef.current).catch(() => {});
             }
         } finally {
             activeCountRef.current--;
