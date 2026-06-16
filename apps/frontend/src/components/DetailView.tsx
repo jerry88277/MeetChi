@@ -969,6 +969,8 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                             ref={audioRef}
                             src={audioUrl}
                             controls
+                            preload="metadata"
+                            crossOrigin="anonymous"
                             className="w-full h-10"
                         />
                     </div>
