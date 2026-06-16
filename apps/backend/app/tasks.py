@@ -201,6 +201,62 @@ def _try_global_diarization(
         return all_segments
 
 
+def _merge_short_segments(
+    segments: list,
+    max_chars: int = 20,
+    max_gap_seconds: float = 1.5,
+    target_min_chars: int = 30,
+) -> list:
+    """
+    Merge consecutive short segments from the same speaker for readability.
+
+    Rules:
+      - Only merge if both current and next segment are from the same speaker
+      - Only merge if the gap between segments is <= max_gap_seconds
+      - Only merge if current segment text is <= max_chars
+      - Stop merging once combined text reaches target_min_chars
+      - Preserve start_time of first segment and end_time of last merged segment
+    """
+    if not segments:
+        return segments
+
+    merged = []
+    i = 0
+    while i < len(segments):
+        current = dict(segments[i])  # copy
+        i += 1
+
+        # Try to absorb following short segments from same speaker
+        while i < len(segments):
+            next_seg = segments[i]
+            current_text = (current.get("content_raw") or "").strip()
+            next_text = (next_seg.get("content_raw") or "").strip()
+
+            # Stop conditions
+            if not next_text:
+                break
+            if next_seg.get("speaker") != current.get("speaker"):
+                break
+            if len(current_text) > max_chars and len(current_text) >= target_min_chars:
+                break
+            gap = next_seg.get("start_time", 0) - current.get("end_time", 0)
+            if gap > max_gap_seconds:
+                break
+
+            # Merge
+            current["content_raw"] = (current_text + next_text).strip()
+            current["end_time"] = next_seg.get("end_time", current.get("end_time"))
+            i += 1
+
+        merged.append(current)
+
+    logger.info(
+        f"[SegmentMerge] {len(segments)} → {len(merged)} segments "
+        f"({100 - 100*len(merged)/max(len(segments),1):.0f}% reduction)"
+    )
+    return merged
+
+
 def _process_split_audio_sync(
     meeting_id: str,
     audio_url: str,
@@ -352,6 +408,9 @@ def _process_split_audio_sync(
         all_segments = _try_global_diarization(
             all_segments, audio_url, meeting_id, gpu_asr_url
         )
+
+        # 3.6 Merge consecutive short segments from same speaker for readability
+        all_segments = _merge_short_segments(all_segments)
 
         # 4. Write all segments to DB
         meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
