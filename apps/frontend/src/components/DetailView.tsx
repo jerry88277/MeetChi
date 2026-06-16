@@ -938,9 +938,10 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                             {meeting.duration && (
                                 <span title="音檔長度">音檔長度：{meeting.duration}</span>
                             )}
-                            {meeting.createdAt && meeting.updatedAt && (() => {
-                                const ms = new Date(meeting.updatedAt).getTime() - new Date(meeting.createdAt).getTime();
-                                if (ms <= 0) return null;
+                            {meeting.createdAt && (meeting.completedAt || meeting.updatedAt) && (() => {
+                                const endTime = meeting.completedAt || meeting.updatedAt;
+                                const ms = new Date(endTime!).getTime() - new Date(meeting.createdAt).getTime();
+                                if (ms <= 0 || ms > 24 * 60 * 60 * 1000) return null; // Skip if > 24h (stale data)
                                 const totalSec = Math.floor(ms / 1000);
                                 const m = Math.floor(totalSec / 60);
                                 const s = totalSec % 60;

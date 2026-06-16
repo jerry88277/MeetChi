@@ -141,6 +141,10 @@ class Meeting(Base):
     # FALSE = 一般：開放複製、匯出
     is_confidential = Column(Boolean, nullable=False, default=False)
 
+    # Processing completion timestamp — set once when status transitions to COMPLETED
+    # Used for accurate "processing time" display (updated_at gets modified by any edit)
+    completed_at = Column(DateTime, nullable=True)
+
     # 2026-05-25 (Y7)：failed meetings 的人類可讀失敗原因
     # 配合 detail page UX 顯示具體原因（如 "Gemini 回應截斷"、"GCS 上傳失敗"），
     # 不只顯示 generic "處理失敗"。

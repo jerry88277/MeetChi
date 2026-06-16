@@ -551,6 +551,7 @@ def run_offline_asr_refinement(meeting_id: str, audio_path: str, language: str =
         if not result.segments:
             logger.warning(f"[Offline ASR] Empty result for {meeting_id}, keeping Gemini transcript")
             meeting.status = MeetingStatus.COMPLETED
+            meeting.completed_at = datetime.utcnow()
             db.commit()
             _update_task_status(db, meeting_id, "offline_asr", "COMPLETED", "Empty result, kept Gemini transcript")
             return {"status": "completed", "note": "empty_result_kept_gemini"}
@@ -577,6 +578,7 @@ def run_offline_asr_refinement(meeting_id: str, audio_path: str, language: str =
         # Update transcript_raw with speaker-labeled text
         meeting.transcript_raw = result.to_transcript_text(include_speaker=True)
         meeting.status = MeetingStatus.COMPLETED
+        meeting.completed_at = datetime.utcnow()
         db.commit()
 
         # C1: Apply glossary-based post-correction
@@ -604,6 +606,7 @@ def run_offline_asr_refinement(meeting_id: str, audio_path: str, language: str =
         try:
             if meeting:
                 meeting.status = MeetingStatus.COMPLETED  # Fallback: keep Gemini transcript
+                meeting.completed_at = meeting.completed_at or datetime.utcnow()
                 db.commit()
             _update_task_status(db, meeting_id, "offline_asr", "FAILED", str(e))
         except Exception:
@@ -861,9 +864,9 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
                     )
 
             meeting.status = MeetingStatus.COMPLETED
+            meeting.completed_at = datetime.utcnow()
             
             db.commit()
-            logger.info(f"Successfully generated summary for {meeting_id}")
 
             try:
                 count = _sync_action_items(db, meeting.id, summary_json_data)

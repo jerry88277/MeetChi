@@ -36,6 +36,7 @@ export interface Meeting {
     transcript_polished: string | null;
     summary_json: string | null;
     speaker_mappings: string | null;  // Phase 8.1.3
+    completed_at: string | null;  // Processing completion timestamp
     transcript_segments: TranscriptSegment[];
     is_confidential?: boolean;  // Sprint 2e Phase 1 (2026-05-11)
     failure_reason?: string | null;  // 2026-05-25 Y7

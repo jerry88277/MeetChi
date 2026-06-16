@@ -94,7 +94,8 @@ Base.metadata.create_all(bind=engine)
 if DATABASE_URL.startswith("postgresql"):
     with engine.connect() as conn:
         # Add missing columns if not exist
-        for col_name in ["speaker_mappings", "custom_prompt"]:
+        for col_name in ["speaker_mappings", "custom_prompt", "completed_at"]:
+            col_type = "TIMESTAMP" if col_name == "completed_at" else "TEXT"
             conn.execute(text(f"""
                 DO $$
                 BEGIN
@@ -102,7 +103,7 @@ if DATABASE_URL.startswith("postgresql"):
                         SELECT 1 FROM information_schema.columns
                         WHERE table_name='meetings' AND column_name='{col_name}'
                     ) THEN
-                        ALTER TABLE meetings ADD COLUMN {col_name} TEXT;
+                        ALTER TABLE meetings ADD COLUMN {col_name} {col_type};
                     END IF;
                 END $$;
             """))

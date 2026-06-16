@@ -205,6 +205,7 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
         date: new Date(apiMeeting.created_at).toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' }),
         createdAt: apiMeeting.created_at,
         updatedAt: apiMeeting.updated_at,  // 2026-05-22 feedback #7
+        completedAt: apiMeeting.completed_at ?? null,
         duration: durationStr,
         status: apiMeeting.status?.toLowerCase() === "completed" ? "completed"
             : apiMeeting.status?.toLowerCase() === "failed" ? "failed"
