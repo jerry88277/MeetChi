@@ -17,8 +17,10 @@ WORKDIR /app
 
 # Install Python 3.10 + system dependencies (including patchelf for libctranslate2 fix)
 # pkg-config + ffmpeg dev headers required for PyAV (faster-whisper >= 1.0 dependency)
+# python3.10-dev required for numpy-minmax (torch-audiomentations dependency)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
+    python3.10-dev \
     python3.10-venv \
     python3-pip \
     build-essential \
@@ -76,19 +78,37 @@ RUN pip install --no-cache-dir --no-deps "pyannote.audio==4.0.0" && \
     "soundfile>=0.12.0" \
     "tensorboardX>=2.6" \
     "optuna>=3.0.0" \
-    "speechbrain>=0.5.0"
+    "speechbrain>=0.5.0" \
+    "torch-audiomentations>=0.11.0" \
+    "audiomentations>=0.33.0" \
+    "opentelemetry-api==1.34.0" \
+    "opentelemetry-sdk==1.34.0" \
+    "opentelemetry-exporter-otlp==1.34.0" \
+    "safetensors>=0.5.2" \
+    "pytorch-metric-learning>=2.8.1" \
+    "pyannote-metrics>=4.0.0" \
+    "pyannoteai-sdk>=0.2.1" || true
+
+# Stage 2b: Install torchcodec (optional, pyannote uses it for audio I/O but falls back)
+# and omegaconf (whisperx runtime dep)
+RUN pip install --no-cache-dir "omegaconf>=2.3.0" && \
+    pip install --no-cache-dir "torchcodec>=0.6.0" || true
 
 # Stage 3: Install faster-whisper with --no-deps to avoid av conflict with pyannote
-# Then install faster-whisper's deps manually (ctranslate2, tokenizers, etc.)
+# Then install faster-whisper's deps manually (ctranslate2, tokenizers, av, etc.)
 RUN pip install --no-cache-dir --no-deps "faster-whisper>=1.0.0" && \
     pip install --no-cache-dir \
     "ctranslate2>=4.0.0" \
     "tokenizers" \
-    "onnxruntime" || true
+    "onnxruntime" \
+    "av>=11" || true
 
 # Stage 4: Install WhisperX with --no-deps to prevent upgrading torch/lightning
-# WhisperX's deps (pyannote.audio, lightning>=2.4) would override our pins
-RUN pip install --no-cache-dir --no-deps "whisperx>=3.1.0" || true
+# Then install whisperx runtime deps that aren't already present
+RUN pip install --no-cache-dir --no-deps "whisperx>=3.1.0" && \
+    pip install --no-cache-dir \
+    "nltk>=3.8.0" \
+    "pandas>=2.0.0" || true
 
 # Stage 5: Install remaining audio utilities
 RUN pip install --no-cache-dir \

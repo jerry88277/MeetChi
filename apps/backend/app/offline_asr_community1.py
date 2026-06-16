@@ -222,15 +222,39 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
         """
         Load pyannote/speaker-diarization-community-1 (v4.0 API).
 
+        Loading strategy (ordered):
+          1. Local path from PYANNOTE_MODEL_PATH env var (baked into Docker image)
+          2. HuggingFace Hub download with token authentication
+
         pyannote v4.0 API changes vs v3.x:
           - Removed: use_auth_token parameter
           - Use: token= parameter OR session login via huggingface_hub.login()
           - New: output.exclusive_speaker_diarization property
-
-        HuggingFace terms:
-          Accept at: https://huggingface.co/pyannote/speaker-diarization-community-1
         """
         import torch as _torch
+
+        # Strategy 1: Load from local baked model path (no network/token needed)
+        local_model_path = os.getenv("PYANNOTE_MODEL_PATH", "")
+        if local_model_path and os.path.isdir(local_model_path):
+            config_path = os.path.join(local_model_path, "config.yaml")
+            if os.path.isfile(config_path):
+                try:
+                    from pyannote.audio import Pipeline
+
+                    logger.info(f"[Community1] Loading pipeline from local path: {local_model_path}")
+                    pipeline = Pipeline.from_pretrained(config_path)
+
+                    if pipeline is None:
+                        raise RuntimeError("Pipeline.from_pretrained returned None for local model")
+
+                    pipeline.to(_torch.device(device))
+                    logger.info("[Community1] pyannote pipeline loaded from local model (offline)")
+                    return pipeline
+
+                except Exception as e:
+                    logger.warning(f"[Community1] Local model load failed: {e}, trying HF Hub...")
+
+        # Strategy 2: Fall back to HuggingFace Hub download
         import huggingface_hub
 
         hf_token = self.config.hf_token
@@ -246,14 +270,12 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
         try:
             from pyannote.audio import Pipeline
 
-            # pyannote v4.0: use token= parameter (use_auth_token removed)
             try:
                 pipeline = Pipeline.from_pretrained(
                     "pyannote/speaker-diarization-community-1",
                     token=hf_token,
                 )
             except TypeError:
-                # Fallback: rely on session token from login() above
                 logger.info("[Community1] token= kwarg not supported, using session token")
                 pipeline = Pipeline.from_pretrained(
                     "pyannote/speaker-diarization-community-1",
@@ -267,15 +289,16 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
                 )
 
             pipeline.to(_torch.device(device))
-            logger.info("[Community1] pyannote/speaker-diarization-community-1 loaded")
+            logger.info("[Community1] pyannote/speaker-diarization-community-1 loaded from HF Hub")
             return pipeline
 
         except Exception as e:
             raise RuntimeError(
                 f"[Community1] Failed to load community-1 pipeline: {e}\n"
                 "Ensure:\n"
-                "  1. HF token is valid\n"
-                "  2. Terms accepted at https://huggingface.co/pyannote/speaker-diarization-community-1\n"
+                "  1. PYANNOTE_MODEL_PATH points to local model dir, OR\n"
+                "  2. HF token is valid and terms accepted at "
+                "https://huggingface.co/pyannote/speaker-diarization-community-1\n"
                 "  3. pyannote.audio >= 4.0.0 is installed"
             )
 

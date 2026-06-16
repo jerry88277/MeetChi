@@ -123,9 +123,11 @@ def diarize_full_audio(
     result = pipeline(audio_input, **kwargs)
 
     # pyannote 4.x community-1 returns DiarizeOutput (not Annotation directly)
-    # Access the underlying Annotation via .annotation or tuple indexing
+    # DiarizeOutput is a dataclass with .exclusive_speaker_diarization (Annotation)
     if hasattr(result, 'itertracks'):
         annotation = result
+    elif hasattr(result, 'exclusive_speaker_diarization'):
+        annotation = result.exclusive_speaker_diarization
     elif hasattr(result, 'annotation'):
         annotation = result.annotation
     elif isinstance(result, tuple):
