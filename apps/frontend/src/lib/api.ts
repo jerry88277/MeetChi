@@ -487,10 +487,12 @@ class ApiClient {
     }
 
     /**
-     * Get a signed URL for audio playback
+     * Get audio playback URL — uses backend streaming proxy to bypass
+     * enterprise firewall/proxy that may block direct GCS access.
      */
     async getAudioPlaybackUrl(meetingId: string): Promise<{ audio_url: string }> {
-        return this.fetch(`/api/v1/meetings/${meetingId}/audio-url`);
+        // Use backend proxy stream endpoint (same origin, no CORS/firewall issues)
+        return { audio_url: `${this.baseUrl}/api/v1/meetings/${meetingId}/audio-stream` };
     }
 
     /**

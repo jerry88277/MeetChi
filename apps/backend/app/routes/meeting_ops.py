@@ -722,3 +722,86 @@ def get_audio_url(
     except Exception as e:
         logger.error(f"Failed to generate signed GET url: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate playback URL")
+
+
+@router.get("/{meeting_id}/audio-stream")
+def stream_audio(
+    meeting_id: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Stream audio through backend proxy — bypasses enterprise proxy/firewall
+    blocking direct GCS access. Supports Range requests for seeking."""
+    from fastapi.responses import StreamingResponse
+
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    if not meeting.audio_url or not meeting.audio_url.startswith("gs://"):
+        raise HTTPException(status_code=404, detail="No audio available")
+
+    parts = meeting.audio_url.replace("gs://", "").split("/", 1)
+    if len(parts) != 2:
+        raise HTTPException(status_code=404, detail="Invalid audio URL")
+
+    bucket_name, blob_name = parts[0], parts[1]
+    client = gcs_storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(blob_name)
+    blob.reload()
+
+    file_size = blob.size
+    content_type = blob.content_type or "audio/mp4"
+
+    # Parse Range header
+    range_header = request.headers.get("range")
+    if range_header:
+        # e.g. "bytes=0-1023" or "bytes=0-"
+        range_spec = range_header.replace("bytes=", "")
+        parts_range = range_spec.split("-")
+        start = int(parts_range[0]) if parts_range[0] else 0
+        end = int(parts_range[1]) if parts_range[1] else file_size - 1
+        end = min(end, file_size - 1)
+        length = end - start + 1
+
+        def iter_range():
+            stream = blob.open("rb")
+            stream.seek(start)
+            remaining = length
+            chunk_size = 64 * 1024  # 64KB chunks
+            while remaining > 0:
+                read_size = min(chunk_size, remaining)
+                data = stream.read(read_size)
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+            stream.close()
+
+        headers = {
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(length),
+            "Content-Type": content_type,
+            "Cache-Control": "public, max-age=3600",
+        }
+        return StreamingResponse(iter_range(), status_code=206, headers=headers, media_type=content_type)
+    else:
+        # No Range — stream full file
+        def iter_full():
+            stream = blob.open("rb")
+            while True:
+                data = stream.read(64 * 1024)
+                if not data:
+                    break
+                yield data
+            stream.close()
+
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(file_size),
+            "Content-Type": content_type,
+            "Cache-Control": "public, max-age=3600",
+        }
+        return StreamingResponse(iter_full(), status_code=200, headers=headers, media_type=content_type)

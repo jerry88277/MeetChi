@@ -90,7 +90,7 @@ export function useUploadQueue() {
                 audio.src = url;
             });
 
-            const title = file.name.replace(/\.[^/.]+$/, "");
+            const title = file.name.replace(/\.[^/.]+$/, "").trim() || "未命名會議";
             const meeting = await api.createMeeting({
                 title,
                 template_name: templateName,
