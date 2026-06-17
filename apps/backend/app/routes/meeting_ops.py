@@ -797,7 +797,17 @@ def stream_audio(
         range_spec = range_header.replace("bytes=", "")
         parts_range = range_spec.split("-")
         start = int(parts_range[0]) if parts_range[0] else 0
-        end = int(parts_range[1]) if parts_range[1] else file_size - 1
+        end_str = parts_range[1] if len(parts_range) > 1 else ""
+        
+        # For open-ended range (bytes=0-), limit to prevent Cloud Run timeout
+        # Most browsers request in chunks anyway, so this is just a safety net
+        MAX_RANGE_CHUNK = 32 * 1024 * 1024  # 32MB max per request
+        if end_str:
+            end = min(int(end_str), file_size - 1)
+        else:
+            # Open-ended: cap at 32MB from start
+            end = min(start + MAX_RANGE_CHUNK - 1, file_size - 1)
+        
         end = min(end, file_size - 1)
         length = end - start + 1
 
@@ -824,20 +834,32 @@ def stream_audio(
         }
         return StreamingResponse(iter_range(), status_code=206, headers=headers, media_type=content_type)
     else:
-        # No Range — stream full file
-        def iter_full():
+        # No Range header: treat as bytes=0-32MB to prevent Cloud Run timeout on large files
+        # Browsers will automatically request more chunks if needed
+        MAX_INITIAL_CHUNK = 32 * 1024 * 1024  # 32MB
+        start = 0
+        end = min(MAX_INITIAL_CHUNK - 1, file_size - 1)
+        length = end - start + 1
+        
+        def iter_range():
             stream = blob.open("rb")
-            while True:
-                data = stream.read(64 * 1024)
+            stream.seek(start)
+            remaining = length
+            chunk_size = 64 * 1024
+            while remaining > 0:
+                read_size = min(chunk_size, remaining)
+                data = stream.read(read_size)
                 if not data:
                     break
+                remaining -= len(data)
                 yield data
             stream.close()
-
+        
         headers = {
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
             "Accept-Ranges": "bytes",
-            "Content-Length": str(file_size),
+            "Content-Length": str(length),
             "Content-Type": content_type,
             "Cache-Control": "public, max-age=3600",
         }
-        return StreamingResponse(iter_full(), status_code=200, headers=headers, media_type=content_type)
+        return StreamingResponse(iter_range(), status_code=206, headers=headers, media_type=content_type)
