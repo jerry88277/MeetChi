@@ -634,10 +634,46 @@ async def upload_chunk(
         final_blob = bucket.blob(final_blob_name)
         _compose_blobs(bucket, source_blobs, final_blob, f"audio/{meeting_id}/meta/")
 
-        # Set proper content-type after compose (compose doesn't preserve metadata)
+        # Remux to proper M4A container if the composed file is raw ADTS AAC.
+        # Raw AAC (0xFFF1) has no moov atom → browsers can't parse duration.
+        # ffmpeg remux adds ftyp+moov+mdat with faststart for streaming.
+        import tempfile, subprocess
+        with tempfile.TemporaryDirectory(prefix="meetchi-remux-") as tmpdir:
+            raw_path = os.path.join(tmpdir, f"raw{ext}")
+            final_blob.download_to_filename(raw_path)
+
+            # Check if file needs remux: raw ADTS starts with 0xFF 0xF1
+            with open(raw_path, "rb") as f:
+                header = f.read(4)
+            needs_remux = (len(header) >= 2 and header[0] == 0xFF and (header[1] & 0xF0) == 0xF0)
+
+            if needs_remux:
+                out_path = os.path.join(tmpdir, "remuxed.m4a")
+                result = subprocess.run(
+                    ["ffmpeg", "-y", "-i", raw_path, "-c", "copy", "-movflags", "+faststart", out_path],
+                    capture_output=True, timeout=300
+                )
+                if result.returncode == 0:
+                    final_blob.upload_from_filename(out_path, content_type="audio/mp4")
+                    # Force extension to .m4a since we remuxed
+                    if ext.lower() != ".m4a":
+                        new_blob_name = f"audio/{meeting_id}.m4a"
+                        new_blob = bucket.blob(new_blob_name)
+                        bucket.copy_blob(final_blob, bucket, new_blob_name)
+                        final_blob.delete()
+                        final_blob = new_blob
+                        final_blob_name = new_blob_name
+                    logger.info(f"[ChunkedUpload] Remuxed raw AAC → M4A (faststart) for {meeting_id}")
+                else:
+                    logger.warning(f"[ChunkedUpload] ffmpeg remux failed: {result.stderr[:500]}")
+                    # Fall through — keep composed file as-is
+            else:
+                logger.info(f"[ChunkedUpload] File already has container (no remux needed) for {meeting_id}")
+
+        # Set proper content-type after compose/remux
         mime_map = {".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".wav": "audio/wav", 
                     ".webm": "audio/webm", ".ogg": "audio/ogg", ".aac": "audio/aac"}
-        final_blob.content_type = mime_map.get(ext.lower(), "audio/mpeg")
+        final_blob.content_type = mime_map.get(os.path.splitext(final_blob_name)[1].lower(), "audio/mp4")
         final_blob.patch()
 
         # Cleanup chunk files
