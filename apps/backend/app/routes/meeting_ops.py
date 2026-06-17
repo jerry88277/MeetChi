@@ -801,7 +801,8 @@ def stream_audio(
         
         # For open-ended range (bytes=0-), limit to prevent Cloud Run timeout
         # Most browsers request in chunks anyway, so this is just a safety net
-        MAX_RANGE_CHUNK = 32 * 1024 * 1024  # 32MB max per request
+        # Cloud Run response limit: 32MB. Use 31MB to leave room for headers.
+        MAX_RANGE_CHUNK = 31 * 1024 * 1024  # 31MB max per request
         if end_str:
             end = min(int(end_str), file_size - 1)
         else:
@@ -834,9 +835,10 @@ def stream_audio(
         }
         return StreamingResponse(iter_range(), status_code=206, headers=headers, media_type=content_type)
     else:
-        # No Range header: treat as bytes=0-32MB to prevent Cloud Run timeout on large files
+        # No Range header: treat as bytes=0-31MB to prevent Cloud Run timeout on large files
         # Browsers will automatically request more chunks if needed
-        MAX_INITIAL_CHUNK = 32 * 1024 * 1024  # 32MB
+        # Cloud Run response limit: 32MB. Use 31MB to leave room for headers.
+        MAX_INITIAL_CHUNK = 31 * 1024 * 1024  # 31MB
         start = 0
         end = min(MAX_INITIAL_CHUNK - 1, file_size - 1)
         length = end - start + 1
