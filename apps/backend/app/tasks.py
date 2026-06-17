@@ -841,9 +841,10 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
             # Fallback: if LLM didn't produce speaker_roles, generate default
             # mappings from transcript segments so frontend speaker legend shows up
             if not meeting.speaker_mappings:
-                segments = json.loads(meeting.transcript_segments) if meeting.transcript_segments else []
+                # transcript_segments is an ORM relationship (InstrumentedList),
+                # not a JSON string — iterate ORM objects directly
                 unique_speakers = sorted(set(
-                    s.get("speaker") for s in segments if s.get("speaker")
+                    seg.speaker for seg in meeting.transcript_segments if seg.speaker
                 ))
                 if unique_speakers:
                     SPEAKER_COLORS = [
