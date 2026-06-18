@@ -6,10 +6,12 @@ Receives task requests from Google Cloud Tasks queues
 from fastapi import APIRouter, HTTPException, Request, Header, Depends, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import Optional
+import json
 import logging
 import os
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
+from app.models import Meeting
 from app.tasks import generate_meeting_minutes
 
 logger = logging.getLogger(__name__)
@@ -161,6 +163,112 @@ def handle_summarization_task(
     except Exception as e:
         logger.error(f"Error processing summarization task: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class EnqueueTranscriptionRequest(BaseModel):
+    """Request body for enqueuing a transcription task via Cloud Tasks"""
+    meeting_id: str = Field(..., description="Meeting ID to process")
+    template_type: str = Field("general", description="Summary template type")
+    context: Optional[str] = Field("", description="Additional context for summary")
+
+
+class EnqueueResponse(BaseModel):
+    """Response for enqueue endpoint"""
+    status: str
+    meeting_id: str
+    message: str
+
+
+@router.post("/enqueue-transcription", response_model=EnqueueResponse)
+def enqueue_transcription(request: EnqueueTranscriptionRequest):
+    """
+    Lightweight endpoint that enqueues a transcription job via Cloud Tasks.
+
+    Instead of running transcription synchronously (which blocks for 10-30 min
+    and risks crashing the instance when many meetings are uploaded at once),
+    this creates a Cloud Task that will call /api/v1/tasks/transcription with
+    queue-level concurrency control (maxConcurrentDispatches).
+
+    This prevents the bulk-upload crash scenario where N simultaneous large
+    meetings exhaust CPU/memory and kill the backend instance.
+    """
+    project = os.getenv("GCP_PROJECT")
+    location = os.getenv("GCP_LOCATION")
+
+    if not project or not location:
+        # Fallback: no Cloud Tasks config → run synchronously (dev environment)
+        logger.warning(
+            "[Enqueue] GCP_PROJECT/GCP_LOCATION not set, falling back to synchronous processing"
+        )
+        try:
+            result = generate_meeting_minutes(
+                meeting_id=request.meeting_id,
+                template_type=request.template_type,
+                context=request.context or "",
+            )
+            return EnqueueResponse(
+                status=result.get("status", "completed"),
+                meeting_id=request.meeting_id,
+                message="Processed synchronously (no Cloud Tasks config)",
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # Verify meeting exists before enqueuing
+    db = SessionLocal()
+    try:
+        meeting = db.query(Meeting).filter(Meeting.id == request.meeting_id).first()
+        if not meeting:
+            raise HTTPException(status_code=404, detail=f"Meeting {request.meeting_id} not found")
+        if not meeting.audio_url:
+            raise HTTPException(status_code=400, detail="Meeting has no audio to transcribe")
+    finally:
+        db.close()
+
+    try:
+        from google.cloud import tasks_v2
+
+        client = tasks_v2.CloudTasksClient()
+        queue_name = os.getenv("CLOUD_TASKS_TRANSCRIPTION_QUEUE", "meetchi-transcription-queue")
+        parent = client.queue_path(project, location, queue_name)
+
+        backend_url = os.getenv("BACKEND_PUBLIC_URL", "http://localhost:8000")
+        url = f"{backend_url}/api/v1/tasks/transcription"
+
+        task_payload = {
+            "meeting_id": request.meeting_id,
+            "template_type": request.template_type,
+            "context": request.context or "",
+        }
+
+        task = {
+            "http_request": {
+                "http_method": tasks_v2.HttpMethod.POST,
+                "url": url,
+                "headers": {"Content-type": "application/json"},
+                "body": json.dumps(task_payload).encode(),
+            }
+        }
+
+        response = client.create_task(request={"parent": parent, "task": task})
+        logger.info(
+            f"[Enqueue] Transcription task created for meeting {request.meeting_id}: {response.name}"
+        )
+
+        return EnqueueResponse(
+            status="enqueued",
+            meeting_id=request.meeting_id,
+            message=f"Transcription enqueued via Cloud Tasks (queue: {queue_name})",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Enqueue] Failed to create Cloud Task: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to enqueue transcription task: {str(e)}",
+        )
 
 
 @router.get("/health", response_model=dict)

@@ -630,14 +630,12 @@ class ApiClient {
      * Trigger the background transcription and summarization task
      */
     async startTranscriptionTask(meetingId: string, templateType = 'general', context = '', length = 'medium', style = 'formal'): Promise<{ status: string }> {
-        return this.fetch('/api/v1/tasks/transcription', {
+        return this.fetch('/api/v1/tasks/enqueue-transcription', {
             method: 'POST',
             body: JSON.stringify({
                 meeting_id: meetingId,
                 template_type: templateType,
                 context,
-                length,
-                style
             }),
         });
     }
