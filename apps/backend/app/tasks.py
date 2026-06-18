@@ -136,6 +136,130 @@ def apply_glossary_correction(db: Session, meeting_id: str, user_upn: str = None
     return modified_count
 
 
+def _link_speakers_across_chunks(
+    chunk_speaker_embeddings: dict,
+) -> dict:
+    """Phase B: Cross-chunk speaker linking via embedding cosine similarity clustering.
+
+    Given per-chunk speaker embeddings, clusters speakers across chunks by comparing
+    their voice embedding centroids. Returns a mapping from chunk-local speaker IDs
+    (e.g., "SPEAKER_00_c0") to global consistent IDs (e.g., "SPEAKER_A").
+
+    Algorithm:
+      1. Flatten all (chunk_idx, speaker_label, embedding) into a list
+      2. Compute pairwise cosine similarity matrix
+      3. Agglomerative clustering with threshold (0.7 cosine similarity)
+      4. Assign global labels based on cluster membership
+
+    Args:
+        chunk_speaker_embeddings: {chunk_idx: {"SPEAKER_00": [float, ...], ...}}
+
+    Returns:
+        Mapping {"SPEAKER_00_c0": "SPEAKER_A", "SPEAKER_01_c0": "SPEAKER_B", ...}
+        Returns empty dict if clustering fails.
+    """
+    import numpy as np
+
+    try:
+        # 1. Flatten embeddings
+        entries = []  # [(chunk_key, embedding_vector), ...]
+        for chunk_idx, speakers in chunk_speaker_embeddings.items():
+            for spk_label, embedding in speakers.items():
+                chunk_key = f"{spk_label}_c{chunk_idx}"
+                entries.append((chunk_key, np.array(embedding, dtype=np.float32)))
+
+        if len(entries) < 2:
+            # Only 1 speaker across all chunks, trivial mapping
+            if entries:
+                return {entries[0][0]: "SPEAKER_A"}
+            return {}
+
+        # 2. Compute cosine similarity matrix
+        keys = [e[0] for e in entries]
+        embeddings = np.stack([e[1] for e in entries])
+
+        # Normalize (should already be normalized, but ensure)
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        norms = np.where(norms == 0, 1, norms)
+        embeddings_norm = embeddings / norms
+
+        # Cosine similarity matrix
+        sim_matrix = embeddings_norm @ embeddings_norm.T
+
+        # 3. Agglomerative clustering with distance threshold
+        # Convert similarity to distance: distance = 1 - similarity
+        distance_matrix = 1.0 - sim_matrix
+        np.fill_diagonal(distance_matrix, 0)
+
+        # Simple single-linkage clustering with threshold
+        SIMILARITY_THRESHOLD = float(os.getenv("SPEAKER_LINK_THRESHOLD", "0.65"))
+        distance_threshold = 1.0 - SIMILARITY_THRESHOLD
+
+        n = len(entries)
+        cluster_labels = list(range(n))  # Each entry starts in its own cluster
+
+        # Greedy agglomerative: merge pairs with distance < threshold
+        # Use average-linkage for robustness
+        merged = True
+        while merged:
+            merged = False
+            # Find unique clusters
+            unique_clusters = list(set(cluster_labels))
+            if len(unique_clusters) <= 1:
+                break
+
+            best_pair = None
+            best_dist = float('inf')
+
+            for i, ci in enumerate(unique_clusters):
+                for j, cj in enumerate(unique_clusters):
+                    if i >= j:
+                        continue
+                    # Average-linkage distance between clusters
+                    members_i = [idx for idx, c in enumerate(cluster_labels) if c == ci]
+                    members_j = [idx for idx, c in enumerate(cluster_labels) if c == cj]
+                    avg_dist = np.mean([
+                        distance_matrix[a, b]
+                        for a in members_i
+                        for b in members_j
+                    ])
+                    if avg_dist < best_dist:
+                        best_dist = avg_dist
+                        best_pair = (ci, cj)
+
+            if best_pair and best_dist < distance_threshold:
+                # Merge: relabel all cj → ci
+                ci, cj = best_pair
+                cluster_labels = [ci if c == cj else c for c in cluster_labels]
+                merged = True
+
+        # 4. Assign global speaker labels
+        # Map cluster IDs to sequential labels
+        unique_final = sorted(set(cluster_labels))
+        cluster_to_label = {}
+        for idx, cid in enumerate(unique_final):
+            if idx < 26:
+                cluster_to_label[cid] = f"SPEAKER_{chr(65 + idx)}"  # A, B, C, ...
+            else:
+                cluster_to_label[cid] = f"SPEAKER_{idx:02d}"
+
+        mapping = {}
+        for i, key in enumerate(keys):
+            mapping[key] = cluster_to_label[cluster_labels[i]]
+
+        logger.info(
+            f"[SpeakerLink] Clustered {len(entries)} chunk-speakers → "
+            f"{len(unique_final)} global speakers "
+            f"(threshold={SIMILARITY_THRESHOLD})"
+        )
+
+        return mapping
+
+    except Exception as e:
+        logger.error(f"[SpeakerLink] Cross-chunk speaker linking failed: {e}", exc_info=True)
+        return {}
+
+
 def _try_global_diarization(
     all_segments: list,
     audio_url: str,
@@ -388,6 +512,8 @@ def _process_split_audio_sync(
         # 3. Merge segments with time offset
         all_segments = []
         order_counter = 0
+        # Collect per-chunk speaker embeddings for Phase B cross-chunk linking
+        chunk_speaker_embeddings = {}  # {chunk_idx: {"SPEAKER_00": [float, ...], ...}}
         for result in results:
             offset = result["_chunk_offset"]
             chunk_idx = result["_chunk_idx"]
@@ -396,21 +522,63 @@ def _process_split_audio_sync(
                     "start_time": seg["start"] + offset,
                     "end_time": seg["end"] + offset,
                     "speaker": seg.get("speaker", "") or "",
-                    # Phase A 限制：speaker ID 跨 chunk 不連貫，加 chunk 後綴避免合併
-                    # 例：SPEAKER_00 in chunk_0 → SPEAKER_00_c0；chunk_1 → SPEAKER_00_c1
                     "_chunk_idx": chunk_idx,
                     "content_raw": seg.get("text", ""),
                     "content_polished": None,
                 })
                 order_counter += 1
+            # Collect embeddings if returned by GPU service
+            embs = result.get("speaker_embeddings")
+            if embs:
+                chunk_speaker_embeddings[chunk_idx] = embs
 
-        # 重新編碼 speaker IDs 以反映「跨 chunk 不連貫」(Phase A fallback)
-        for seg in all_segments:
-            spk = seg["speaker"]
-            cidx = seg["_chunk_idx"]
-            if spk:
-                seg["speaker"] = f"{spk}_c{cidx}"
-            del seg["_chunk_idx"]
+        # Phase B: Cross-chunk speaker linking via embedding clustering
+        # Falls back to Phase A suffix encoding if embeddings unavailable
+        skip_global_diar = os.getenv("SKIP_GLOBAL_DIARIZATION", "false").lower() == "true"
+
+        if skip_global_diar and chunk_speaker_embeddings:
+            # Phase B: Use embeddings to link speakers across chunks
+            speaker_mapping = _link_speakers_across_chunks(chunk_speaker_embeddings)
+            if speaker_mapping:
+                logger.info(
+                    f"[ParallelASR] {meeting_id}: Phase B speaker linking — "
+                    f"mapped {sum(len(v) for v in speaker_mapping.values())} chunk-speakers "
+                    f"→ {len(speaker_mapping)} global speakers"
+                )
+                # Apply mapping: (chunk_idx, local_speaker) → global_speaker
+                for seg in all_segments:
+                    spk = seg["speaker"]
+                    cidx = seg["_chunk_idx"]
+                    if spk:
+                        key = f"{spk}_c{cidx}"
+                        seg["speaker"] = speaker_mapping.get(key, key)
+                    del seg["_chunk_idx"]
+            else:
+                # Fallback: Phase A suffix encoding
+                logger.warning(f"[ParallelASR] {meeting_id}: Phase B linking failed, falling back to Phase A suffixes")
+                for seg in all_segments:
+                    spk = seg["speaker"]
+                    cidx = seg["_chunk_idx"]
+                    if spk:
+                        seg["speaker"] = f"{spk}_c{cidx}"
+                    del seg["_chunk_idx"]
+        elif skip_global_diar:
+            # No embeddings available, use Phase A suffix encoding
+            logger.info(f"[ParallelASR] {meeting_id}: skipping global diarization, no embeddings available (Phase A fallback)")
+            for seg in all_segments:
+                spk = seg["speaker"]
+                cidx = seg["_chunk_idx"]
+                if spk:
+                    seg["speaker"] = f"{spk}_c{cidx}"
+                del seg["_chunk_idx"]
+        else:
+            # Global diarization mode: suffix first, then override with global labels
+            for seg in all_segments:
+                spk = seg["speaker"]
+                cidx = seg["_chunk_idx"]
+                if spk:
+                    seg["speaker"] = f"{spk}_c{cidx}"
+                del seg["_chunk_idx"]
 
         # Sort by start_time then by chunk_idx (stable)
         all_segments.sort(key=lambda s: s["start_time"])
@@ -418,7 +586,6 @@ def _process_split_audio_sync(
         # 3.5 Global diarization: re-assign speakers using full-audio pyannote
         # This replaces per-chunk SPEAKER_XX_cN labels with consistent global IDs
         # Can be skipped via env var for faster processing (uses per-chunk labels instead)
-        skip_global_diar = os.getenv("SKIP_GLOBAL_DIARIZATION", "false").lower() == "true"
         if skip_global_diar:
             logger.info(f"[ParallelASR] {meeting_id}: skipping global diarization (SKIP_GLOBAL_DIARIZATION=true)")
         else:

@@ -159,7 +159,9 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
 
         # --- Step 3: Community-1 Diarization ---
         if self.config.enable_diarization:
-            asr_segments = self._try_diarization_community1(audio_path, asr_segments)
+            asr_segments, speaker_embeddings = self._try_diarization_community1(audio_path, asr_segments)
+        else:
+            speaker_embeddings = {}
 
         num_speakers = len(set(s.speaker for s in asr_segments if s.speaker))
 
@@ -168,6 +170,7 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
             language=language,
             duration=info.duration,
             num_speakers=num_speakers,
+            speaker_embeddings=speaker_embeddings,
         )
 
     def _try_whisperx_alignment(
@@ -374,14 +377,20 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
 
     def _try_diarization_community1(
         self, audio_path: str, segments: List[ASRSegment]
-    ) -> List[ASRSegment]:
-        """Run pyannote community-1 diarization + custom speaker assignment."""
+    ) -> tuple:
+        """Run pyannote community-1 diarization + custom speaker assignment.
+
+        Returns:
+            (segments, speaker_embeddings) where speaker_embeddings is a dict
+            mapping speaker label → centroid embedding (list of floats).
+            If diarization fails, returns (segments, {}).
+        """
         if not self.config.hf_token:
             logger.warning(
                 "[Community1] HF_TOKEN not set, skipping diarization. "
                 "Set HF_AUTH_TOKEN env var."
             )
-            return segments
+            return segments, {}
 
         try:
             device = self._resolve_device()
@@ -419,14 +428,147 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
                 f"[Community1] Speaker assignment done: "
                 f"{num_assigned}/{len(segments)} segments assigned"
             )
-            return segments
+
+            # Phase B: Extract per-speaker centroid embeddings for cross-chunk linking
+            speaker_embeddings = self._extract_speaker_embeddings(
+                pipeline, waveform, sample_rate, main_annotation, speakers_found
+            )
+
+            return segments, speaker_embeddings
 
         except ImportError as e:
             logger.warning(f"[Community1] Import error, skipping diarization: {e}")
         except Exception as e:
             logger.error(f"[Community1] Diarization failed: {e}", exc_info=True)
 
-        return segments
+        return segments, {}
+
+    def _extract_speaker_embeddings(
+        self,
+        pipeline,
+        waveform,
+        sample_rate: int,
+        annotation,
+        speakers: set,
+    ) -> Dict[str, List[float]]:
+        """Extract per-speaker centroid embeddings using pyannote's internal embedding model.
+
+        Strategy:
+          1. Access the pipeline's embedding model (wespeaker/speechbrain)
+          2. For each speaker, collect their longest segments (up to 30s total)
+          3. Extract embeddings from those segments
+          4. Average to get centroid embedding per speaker
+
+        Returns:
+            {"SPEAKER_00": [float, ...], "SPEAKER_01": [float, ...]}
+        """
+        import torch
+        import numpy as np
+
+        embeddings_dict: Dict[str, List[float]] = {}
+
+        try:
+            # Access pyannote's internal embedding model
+            # Pipeline structure: pipeline._embedding (or pipeline.embedding)
+            embedding_model = getattr(pipeline, "_embedding", None)
+            if embedding_model is None:
+                embedding_model = getattr(pipeline, "embedding", None)
+            if embedding_model is None:
+                # Try accessing via klass attribute (pyannote 4.x internals)
+                for attr_name in dir(pipeline):
+                    attr = getattr(pipeline, attr_name, None)
+                    if hasattr(attr, "__call__") and "embed" in attr_name.lower():
+                        embedding_model = attr
+                        break
+
+            if embedding_model is None:
+                logger.warning("[Community1] Cannot find embedding model in pipeline, skipping embedding extraction")
+                return {}
+
+            logger.info(f"[Community1] Extracting speaker embeddings for {len(speakers)} speakers")
+
+            # Resample to 16kHz if needed (standard for speaker embeddings)
+            if sample_rate != 16000:
+                import torchaudio.transforms as T
+                resampler = T.Resample(sample_rate, 16000)
+                waveform_16k = resampler(waveform)
+                sr = 16000
+            else:
+                waveform_16k = waveform
+                sr = sample_rate
+
+            # Ensure mono
+            if waveform_16k.shape[0] > 1:
+                waveform_16k = waveform_16k.mean(dim=0, keepdim=True)
+
+            for speaker in speakers:
+                # Collect segments for this speaker (sorted by duration, longest first)
+                speaker_turns = []
+                for turn, _, spk in annotation.itertracks(yield_label=True):
+                    if spk == speaker:
+                        speaker_turns.append((turn.start, turn.end, turn.end - turn.start))
+                speaker_turns.sort(key=lambda x: x[2], reverse=True)
+
+                # Take up to 30s of audio from longest segments
+                total_dur = 0.0
+                selected_segments = []
+                for start, end, dur in speaker_turns:
+                    if total_dur >= 30.0:
+                        break
+                    selected_segments.append((start, end))
+                    total_dur += dur
+
+                if not selected_segments:
+                    continue
+
+                # Extract audio clips and compute embeddings
+                chunk_embeddings = []
+                for seg_start, seg_end in selected_segments:
+                    start_sample = int(seg_start * sr)
+                    end_sample = int(seg_end * sr)
+                    # Clamp to waveform bounds
+                    end_sample = min(end_sample, waveform_16k.shape[1])
+                    if end_sample <= start_sample:
+                        continue
+
+                    clip = waveform_16k[:, start_sample:end_sample]
+
+                    # Minimum 0.5s for meaningful embedding
+                    if clip.shape[1] < sr * 0.5:
+                        continue
+
+                    try:
+                        # pyannote embedding model expects {"waveform": tensor, "sample_rate": int}
+                        with torch.no_grad():
+                            emb = embedding_model({"waveform": clip.unsqueeze(0), "sample_rate": sr})
+                            # emb shape: (1, embedding_dim) or (batch, 1, embedding_dim)
+                            if emb.dim() == 3:
+                                emb = emb.squeeze(1)
+                            emb = emb.squeeze(0).cpu().numpy()
+                            chunk_embeddings.append(emb)
+                    except Exception as e:
+                        logger.debug(f"[Community1] Embedding extraction failed for {speaker} segment: {e}")
+                        continue
+
+                if chunk_embeddings:
+                    # Average embeddings to get centroid
+                    centroid = np.mean(chunk_embeddings, axis=0)
+                    # L2-normalize for cosine similarity
+                    norm = np.linalg.norm(centroid)
+                    if norm > 0:
+                        centroid = centroid / norm
+                    embeddings_dict[speaker] = centroid.tolist()
+
+            logger.info(
+                f"[Community1] Speaker embeddings extracted: "
+                f"{len(embeddings_dict)}/{len(speakers)} speakers "
+                f"(dim={len(next(iter(embeddings_dict.values()), []))})"
+            )
+
+        except Exception as e:
+            logger.warning(f"[Community1] Speaker embedding extraction failed (non-fatal): {e}")
+
+        return embeddings_dict
 
     async def transcribe_with_diarization(
         self,

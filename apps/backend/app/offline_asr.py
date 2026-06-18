@@ -49,6 +49,9 @@ class ASRResult:
     language: str = "zh"
     duration: float = 0.0
     num_speakers: int = 0
+    # Phase B: per-speaker centroid embeddings for cross-chunk speaker linking
+    # Format: {"SPEAKER_00": [float, ...], "SPEAKER_01": [float, ...]}
+    speaker_embeddings: Dict[str, List[float]] = field(default_factory=dict)
 
     def to_transcript_text(self, include_speaker: bool = True) -> str:
         """Format segments into readable transcript text."""

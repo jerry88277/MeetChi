@@ -73,6 +73,8 @@ class ASRRefineResponse(BaseModel):
     speakers_count: int = 0
     duration: float = 0.0
     error: Optional[str] = None
+    # Phase B: per-speaker centroid embeddings for cross-chunk speaker linking
+    speaker_embeddings: dict[str, list[float]] = {}
 
 
 class DiarizeRequest(BaseModel):
@@ -325,6 +327,7 @@ async def _run_asr_processing(request: ASRRefineRequest, start_time: float) -> A
             segments=response_segments,
             speakers_count=result.num_speakers,
             duration=elapsed,
+            speaker_embeddings=result.speaker_embeddings,
         )
 
     except Exception as e:
