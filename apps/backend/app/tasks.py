@@ -339,18 +339,25 @@ def _process_split_audio_sync(
                 return data
 
         async def call_gpu_with_retry(sem: asyncio.Semaphore, chunk_url: str, offset: float, idx: int) -> dict:
-            """Semaphore-guarded POST + 一次 retry."""
+            """Semaphore-guarded POST + up to 3 retries with exponential backoff."""
+            max_attempts = 3
             async with sem:
-                try:
-                    return await call_gpu_once(chunk_url, offset, idx, attempt=1)
-                except Exception as e:
-                    logger.warning(
-                        f"[ParallelASR] chunk {idx+1}/{n_chunks} attempt 1 failed "
-                        f"({type(e).__name__}: {e}); retrying once"
-                    )
-                    # 短暫退避避免 retry 撞同一個 in-flight；retry 仍佔 sem 額度
-                    await asyncio.sleep(2.0)
-                    return await call_gpu_once(chunk_url, offset, idx, attempt=2)
+                for attempt in range(1, max_attempts + 1):
+                    try:
+                        return await call_gpu_once(chunk_url, offset, idx, attempt=attempt)
+                    except Exception as e:
+                        if attempt == max_attempts:
+                            logger.error(
+                                f"[ParallelASR] chunk {idx+1}/{n_chunks} failed after {max_attempts} attempts "
+                                f"({type(e).__name__}: {e})"
+                            )
+                            raise
+                        backoff = 2 ** attempt  # 2s, 4s, 8s
+                        logger.warning(
+                            f"[ParallelASR] chunk {idx+1}/{n_chunks} attempt {attempt} failed "
+                            f"({type(e).__name__}: {e}); retrying in {backoff}s"
+                        )
+                        await asyncio.sleep(backoff)
 
         async def run_all_chunks():
             sem = asyncio.Semaphore(GPU_PARALLELISM)
