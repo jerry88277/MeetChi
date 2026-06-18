@@ -454,9 +454,9 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
         """Extract per-speaker centroid embeddings using pyannote's internal embedding model.
 
         Strategy:
-          1. Access the pipeline's embedding model (wespeaker/speechbrain)
+          1. Access the pipeline's embedding model (via pipeline.embedding)
           2. For each speaker, collect their longest segments (up to 30s total)
-          3. Extract embeddings from those segments
+          3. Extract embeddings from those segments via Inference
           4. Average to get centroid embedding per speaker
 
         Returns:
@@ -469,23 +469,15 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
 
         try:
             # Access pyannote's internal embedding model
-            # Pipeline structure: pipeline._embedding (or pipeline.embedding)
-            embedding_model = getattr(pipeline, "_embedding", None)
+            embedding_model = getattr(pipeline, "embedding", None)
             if embedding_model is None:
-                embedding_model = getattr(pipeline, "embedding", None)
-            if embedding_model is None:
-                # Try accessing via klass attribute (pyannote 4.x internals)
-                for attr_name in dir(pipeline):
-                    attr = getattr(pipeline, attr_name, None)
-                    if hasattr(attr, "__call__") and "embed" in attr_name.lower():
-                        embedding_model = attr
-                        break
+                embedding_model = getattr(pipeline, "_embedding", None)
 
             if embedding_model is None:
                 logger.warning("[Community1] Cannot find embedding model in pipeline, skipping embedding extraction")
                 return {}
 
-            logger.info(f"[Community1] Extracting speaker embeddings for {len(speakers)} speakers")
+            logger.info(f"[Community1] Extracting speaker embeddings for {len(speakers)} speakers using {type(embedding_model).__name__}")
 
             # Resample to 16kHz if needed (standard for speaker embeddings)
             if sample_rate != 16000:
@@ -526,7 +518,6 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
                 for seg_start, seg_end in selected_segments:
                     start_sample = int(seg_start * sr)
                     end_sample = int(seg_end * sr)
-                    # Clamp to waveform bounds
                     end_sample = min(end_sample, waveform_16k.shape[1])
                     if end_sample <= start_sample:
                         continue
@@ -538,13 +529,30 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
                         continue
 
                     try:
-                        # pyannote embedding model expects {"waveform": tensor, "sample_rate": int}
                         with torch.no_grad():
-                            emb = embedding_model({"waveform": clip.unsqueeze(0), "sample_rate": sr})
-                            # emb shape: (1, embedding_dim) or (batch, 1, embedding_dim)
+                            # pyannote 4.x Model.forward() expects (batch, channel, samples)
+                            # clip shape is (1, samples), need (1, 1, samples)
+                            model_input = clip.unsqueeze(0)  # (1, 1, samples)
+                            try:
+                                emb = embedding_model(model_input)
+                            except (TypeError, RuntimeError) as e1:
+                                # Some models may need different input format
+                                logger.debug(f"[Community1] Direct call failed: {e1}, trying dict format")
+                                audio_input = {"waveform": model_input, "sample_rate": sr}
+                                emb = embedding_model(audio_input)
+
+                            # Handle various output shapes
+                            if hasattr(emb, 'data') and not isinstance(emb, torch.Tensor):
+                                # SlidingWindowFeature or similar
+                                emb = torch.tensor(emb.data)
+                            elif isinstance(emb, np.ndarray):
+                                emb = torch.tensor(emb)
+
                             if emb.dim() == 3:
                                 emb = emb.squeeze(1)
-                            emb = emb.squeeze(0).cpu().numpy()
+                            if emb.dim() == 2:
+                                emb = emb.mean(dim=0)  # Average over time if multiple frames
+                            emb = emb.cpu().numpy().flatten()
                             chunk_embeddings.append(emb)
                     except Exception as e:
                         logger.debug(f"[Community1] Embedding extraction failed for {speaker} segment: {e}")
@@ -566,7 +574,7 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
             )
 
         except Exception as e:
-            logger.warning(f"[Community1] Speaker embedding extraction failed (non-fatal): {e}")
+            logger.warning(f"[Community1] Speaker embedding extraction failed (non-fatal): {e}", exc_info=True)
 
         return embeddings_dict
 
