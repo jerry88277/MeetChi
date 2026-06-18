@@ -150,6 +150,12 @@ class Meeting(Base):
     # 不只顯示 generic "處理失敗"。
     failure_reason = Column(Text, nullable=True)
 
+    # 2026-06-18：Fine-grained processing stage for frontend progress display
+    # Values: "queued" | "transcribing" | "summarizing" | null (completed/idle)
+    # Distinct from `status` (PROCESSING/COMPLETED/FAILED) — this tracks WHERE
+    # in the pipeline the meeting currently sits.
+    processing_stage = Column(String(20), nullable=True)
+
     # pgvector embedding for future semantic search
     summary_embedding = Column(Vector(768), nullable=True)
     

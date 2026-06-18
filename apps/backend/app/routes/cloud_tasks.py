@@ -214,7 +214,7 @@ def enqueue_transcription(request: EnqueueTranscriptionRequest):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    # Verify meeting exists before enqueuing
+    # Verify meeting exists and set processing_stage = "queued"
     db = SessionLocal()
     try:
         meeting = db.query(Meeting).filter(Meeting.id == request.meeting_id).first()
@@ -222,6 +222,8 @@ def enqueue_transcription(request: EnqueueTranscriptionRequest):
             raise HTTPException(status_code=404, detail=f"Meeting {request.meeting_id} not found")
         if not meeting.audio_url:
             raise HTTPException(status_code=400, detail="Meeting has no audio to transcribe")
+        meeting.processing_stage = "queued"
+        db.commit()
     finally:
         db.close()
 

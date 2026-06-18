@@ -487,12 +487,44 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                     </div>
                                 </div>
                                 <div>
-                                    <h4 className="text-lg font-bold text-foreground">AI 正在轉錄與生成摘要中...</h4>
+                                    <h4 className="text-lg font-bold text-foreground">
+                                        {meeting.processingStage === 'queued' && '排隊中...'}
+                                        {meeting.processingStage === 'transcribing' && 'AI 正在轉錄語音...'}
+                                        {meeting.processingStage === 'summarizing' && 'AI 正在生成摘要...'}
+                                        {!meeting.processingStage && 'AI 正在處理中...'}
+                                    </h4>
                                     <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
                                         <span className="w-2 h-2 rounded-full bg-status-warning animate-pulse"></span>
-                                        <span>依音檔長度可能需要 1~10 分鐘，請稍候。</span>
+                                        <span>
+                                            {meeting.processingStage === 'queued'
+                                                ? '前方有其他會議正在處理，請稍候。'
+                                                : '依音檔長度可能需要 1~10 分鐘，請稍候。'}
+                                        </span>
                                     </p>
                                 </div>
+                            </div>
+                            {/* Stage progress steps */}
+                            <div className="flex items-center gap-2 mb-4">
+                                {(['queued', 'transcribing', 'summarizing'] as const).map((s, i) => {
+                                    const stages = ['queued', 'transcribing', 'summarizing'];
+                                    const currentIdx = stages.indexOf(meeting.processingStage ?? '');
+                                    const isActive = s === meeting.processingStage;
+                                    const isDone = currentIdx >= 0 && i < currentIdx;
+                                    const labels = { queued: '排隊', transcribing: '轉錄', summarizing: '摘要' };
+                                    return (
+                                        <React.Fragment key={s}>
+                                            {i > 0 && <div className={`flex-1 h-0.5 ${isDone || isActive ? 'bg-brand-cta' : 'bg-muted'}`} />}
+                                            <div className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
+                                                isActive ? 'bg-brand-cta/15 text-brand-cta' :
+                                                isDone ? 'bg-status-success/15 text-status-success' :
+                                                'bg-muted text-muted-foreground'
+                                            }`}>
+                                                {isDone ? '✓' : isActive ? <Loader2 size={10} className="animate-spin" /> : `${i + 1}`}
+                                                <span className="ml-0.5">{labels[s]}</span>
+                                            </div>
+                                        </React.Fragment>
+                                    );
+                                })}
                             </div>
                             <div className="space-y-3">
                                 <div className="h-4 bg-muted/80 rounded-md animate-pulse w-3/4"></div>

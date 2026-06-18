@@ -468,6 +468,8 @@ def _process_split_audio_sync(
         )
 
         logger.info(f"[ParallelASR] {meeting_id}: invoking summary generation (skip_asr=True)")
+        meeting.processing_stage = "summarizing"
+        db.commit()
         return generate_summary_core(
             meeting_id,
             template_type=meeting.template_name or "general",
@@ -489,6 +491,7 @@ def _process_split_audio_sync(
                 if meeting:
                     meeting.status = MeetingStatus.FAILED
                     meeting.failure_reason = _fail_reason
+                    meeting.processing_stage = None
                     db.commit()
             except Exception:
                 pass
@@ -552,6 +555,7 @@ def run_offline_asr_refinement(meeting_id: str, audio_path: str, language: str =
             logger.warning(f"[Offline ASR] Empty result for {meeting_id}, keeping Gemini transcript")
             meeting.status = MeetingStatus.COMPLETED
             meeting.completed_at = datetime.utcnow()
+            meeting.processing_stage = None
             db.commit()
             _update_task_status(db, meeting_id, "offline_asr", "COMPLETED", "Empty result, kept Gemini transcript")
             return {"status": "completed", "note": "empty_result_kept_gemini"}
@@ -579,6 +583,7 @@ def run_offline_asr_refinement(meeting_id: str, audio_path: str, language: str =
         meeting.transcript_raw = result.to_transcript_text(include_speaker=True)
         meeting.status = MeetingStatus.COMPLETED
         meeting.completed_at = datetime.utcnow()
+        meeting.processing_stage = None
         db.commit()
 
         # C1: Apply glossary-based post-correction
@@ -607,6 +612,7 @@ def run_offline_asr_refinement(meeting_id: str, audio_path: str, language: str =
             if meeting:
                 meeting.status = MeetingStatus.COMPLETED  # Fallback: keep Gemini transcript
                 meeting.completed_at = meeting.completed_at or datetime.utcnow()
+                meeting.processing_stage = None
                 db.commit()
             _update_task_status(db, meeting_id, "offline_asr", "FAILED", str(e))
         except Exception:
@@ -652,10 +658,11 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
             if gpu_asr_url:
                 logger.info(f"GPU_ASR_SERVICE_URL is set ({gpu_asr_url}). Triggering remote GPU ASR refinement...")
 
-                # Set status to PROCESSING immediately so frontend can track
+                # Set status to PROCESSING and stage to transcribing
                 meeting.status = MeetingStatus.PROCESSING
+                meeting.processing_stage = "transcribing"
                 db.commit()
-                logger.info(f"Set meeting {meeting_id} status to PROCESSING")
+                logger.info(f"Set meeting {meeting_id} status to PROCESSING, stage=transcribing")
 
                 # 2026-05-11 Phase A：duration > 20 min 走 parallel split path
                 from app.audio_split import should_use_parallel_split
@@ -701,6 +708,7 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
                     logger.error(f"Remote GPU ASR trigger failed for meeting {meeting_id}: {e}")
                     if not suppress_fail_notification:
                         meeting.status = MeetingStatus.FAILED
+                        meeting.processing_stage = None
                         db.commit()
                     _update_task_status(db, meeting_id, "offline_asr", "FAILED", f"Remote trigger error: {str(e)}")
                     # Return 'failed' so the cloud task handler will return 500 and trigger a retry
@@ -753,6 +761,11 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
             logger.warning("No audio file found. Skipping offline ASR refinement.")
 
         # 2. Generate Summary (using whatever segments are in DB now)
+        # Set processing_stage to "summarizing"
+        meeting.processing_stage = "summarizing"
+        db.commit()
+        logger.info(f"Set meeting {meeting_id} processing_stage=summarizing")
+
         # Re-query meeting to get updated segments
         db.refresh(meeting)
         segments = db.query(TranscriptSegment).filter(
@@ -866,6 +879,7 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
 
             meeting.status = MeetingStatus.COMPLETED
             meeting.completed_at = datetime.utcnow()
+            meeting.processing_stage = None
             
             db.commit()
 
@@ -941,6 +955,7 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
                  else:
                      meeting.status = MeetingStatus.FAILED
                  meeting.failure_reason = fail_reason
+                 meeting.processing_stage = None
                  db.commit()
                  send_completion_notification(meeting, "failed")
              else:

@@ -227,6 +227,7 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
         isConfidential: apiMeeting.is_confidential ?? false,
         failureReason: apiMeeting.failure_reason ?? null,
         durationSeconds: apiMeeting.duration ?? null,
+        processingStage: apiMeeting.processing_stage ?? null,
         // Summary V2
         chapters,
         speakerContributions,

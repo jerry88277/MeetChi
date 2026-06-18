@@ -71,6 +71,55 @@ const STATUS_CONFIG = {
     },
 };
 
+/** Processing stage labels and progress for the pipeline indicator */
+const STAGE_CONFIG: Record<string, { label: string; desc: string; progress: string }> = {
+    queued:       { label: '排隊中',    desc: '等待前方會議處理完畢',                    progress: '15%' },
+    transcribing: { label: '轉錄中',    desc: '正在將語音轉換為逐字稿',                  progress: '50%' },
+    summarizing:  { label: '生成摘要中', desc: '正在整理決策、待辦與風險',                  progress: '85%' },
+};
+
+function stageLabel(stage?: string | null): string {
+    return STAGE_CONFIG[stage ?? '']?.label ?? 'AI 處理中';
+}
+
+function stageProgress(stage?: string | null): string {
+    return STAGE_CONFIG[stage ?? '']?.progress ?? '60%';
+}
+
+function ProcessingStageIndicator({ stage }: { stage?: string | null }) {
+    const config = STAGE_CONFIG[stage ?? ''];
+    const steps = ['queued', 'transcribing', 'summarizing'] as const;
+
+    return (
+        <div className="space-y-1.5">
+            <p className="text-sm text-foreground/70 flex items-center gap-1.5 font-medium">
+                <Loader2 size={14} className="animate-spin text-brand-chimei-orange" />
+                {config?.desc ?? '正在處理中'}
+            </p>
+            <div className="flex items-center gap-1.5">
+                {steps.map((s) => {
+                    const isActive = s === stage;
+                    const isDone = steps.indexOf(s) < steps.indexOf(stage as typeof steps[number]);
+                    return (
+                        <span
+                            key={s}
+                            className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                isActive
+                                    ? 'bg-brand-chimei-orange/20 text-brand-chimei-orange font-semibold'
+                                    : isDone
+                                        ? 'bg-status-success/15 text-status-success'
+                                        : 'bg-muted text-muted-foreground'
+                            }`}
+                        >
+                            {isDone ? '✓ ' : ''}{STAGE_CONFIG[s].label}
+                        </span>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
 /** 講者 dot 用 speakerMappings.color；最多顯示 5 點 + 「+N」溢出 */
 function SpeakerDots({ meeting }: { meeting: Meeting }) {
     const count = meeting.speakerCount ?? 0;
@@ -244,7 +293,7 @@ export const MeetingCard = ({ meeting, onClick, onRename }: MeetingCardProps) =>
                 </div>
                 <span className={`text-xs font-medium px-2.5 py-1 rounded-full flex-shrink-0 ${config.color}`}>
                     {meeting.status === 'processing' && <Loader2 size={12} className="inline mr-1 animate-spin" />}
-                    {config.label}
+                    {meeting.status === 'processing' ? stageLabel(meeting.processingStage) : config.label}
                 </span>
             </div>
 
@@ -267,15 +316,12 @@ export const MeetingCard = ({ meeting, onClick, onRename }: MeetingCardProps) =>
             )}
             {meeting.status === 'processing' && (
                 <div className="px-5 mt-3 space-y-2">
-                    <p className="text-sm text-foreground/70 flex items-center gap-1.5 font-medium">
-                        <Loader2 size={14} className="animate-spin text-brand-chimei-orange" />
-                        正在整理這場會議的決策、待辦與風險
-                    </p>
+                    <ProcessingStageIndicator stage={meeting.processingStage} />
                     <ProcessingEta meeting={meeting} />
                     <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
                         <div
                             className="h-full bg-brand-chimei-orange/60 rounded-full animate-pulse"
-                            style={{ width: '60%' }}
+                            style={{ width: stageProgress(meeting.processingStage) }}
                         />
                     </div>
                 </div>

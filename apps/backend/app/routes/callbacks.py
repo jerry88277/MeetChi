@@ -86,16 +86,22 @@ async def handle_asr_done(payload: ASRDonePayload, background_tasks: BackgroundT
         logger.error(f"[Callback] Remote GPU ASR failed: {payload.error}")
         _update_task_status(db, meeting_id, "offline_asr", "FAILED", f"Remote error: {payload.error}")
         meeting.status = MeetingStatus.FAILED  # ASR failed → FAILED (not COMPLETED)
+        meeting.processing_stage = None
         db.commit()
     elif payload.status == "skipped":
         logger.warning(f"[Callback] Remote GPU ASR skipped")
         _update_task_status(db, meeting_id, "offline_asr", "SKIPPED", "Remote GPU ASR skipped")
         meeting.status = MeetingStatus.COMPLETED
+        meeting.processing_stage = None
         db.commit()
         
     # Only trigger summarization when ASR completed successfully with segments.
     # Failed/skipped status should NOT enqueue a summary task.
     if payload.status == "completed" and payload.segments:
+        # Set processing_stage to summarizing before enqueueing summary task
+        meeting.processing_stage = "summarizing"
+        db.commit()
+
         # Use Cloud Tasks instead of BackgroundTasks to avoid CPU throttling
         # on the Cloud Run instance that just returned an HTTP 202.
         project = os.getenv("GCP_PROJECT")
