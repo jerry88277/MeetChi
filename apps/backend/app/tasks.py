@@ -339,8 +339,8 @@ def _process_split_audio_sync(
                 return data
 
         async def call_gpu_with_retry(sem: asyncio.Semaphore, chunk_url: str, offset: float, idx: int) -> dict:
-            """Semaphore-guarded POST + up to 3 retries with exponential backoff."""
-            max_attempts = 3
+            """Semaphore-guarded POST + up to 5 retries with longer backoff for 429/503."""
+            max_attempts = 5
             async with sem:
                 for attempt in range(1, max_attempts + 1):
                     try:
@@ -352,7 +352,12 @@ def _process_split_audio_sync(
                                 f"({type(e).__name__}: {e})"
                             )
                             raise
-                        backoff = 2 ** attempt  # 2s, 4s, 8s
+                        err_str = str(e)
+                        # 429/503 = GPU scaling up, need longer backoff
+                        if "429" in err_str or "503" in err_str:
+                            backoff = 30 * attempt  # 30s, 60s, 90s, 120s
+                        else:
+                            backoff = 5 * attempt  # 5s, 10s, 15s, 20s
                         logger.warning(
                             f"[ParallelASR] chunk {idx+1}/{n_chunks} attempt {attempt} failed "
                             f"({type(e).__name__}: {e}); retrying in {backoff}s"
