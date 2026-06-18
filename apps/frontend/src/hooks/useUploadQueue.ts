@@ -17,6 +17,7 @@ export interface UploadTask {
     templateName: string;
     context: string;
     isConfidential: boolean;
+    language: string;
     // Internal — not exposed to UI
     _file?: File;
 }
@@ -64,7 +65,7 @@ export function useUploadQueue() {
             // Launch uploads outside setState
             toStart.forEach(task => {
                 activeCountRef.current++;
-                executeUpload(task.id, task._file!, task.templateName, task.context, task.isConfidential);
+                executeUpload(task.id, task._file!, task.templateName, task.context, task.isConfidential, task.language);
             });
 
             return updated;
@@ -77,6 +78,7 @@ export function useUploadQueue() {
         templateName: string,
         context: string,
         isConfidential: boolean,
+        language: string = 'zh',
     ) => {
         let createdMeetingId: string | undefined;
         try {
@@ -105,6 +107,7 @@ export function useUploadQueue() {
                 custom_context: context,
                 user_upn: upn,
                 is_confidential: isConfidential,
+                language,
             });
             createdMeetingId = meeting.id;
             updateTask(taskId, { meetingId: meeting.id });
@@ -178,6 +181,7 @@ export function useUploadQueue() {
         templateName = 'general',
         context = '',
         isConfidential = false,
+        language = 'zh',
     ) => {
         const newTasks: UploadTask[] = files.map(file => ({
             id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -188,6 +192,7 @@ export function useUploadQueue() {
             templateName,
             context,
             isConfidential,
+            language,
             _file: file,
         }));
 

@@ -139,6 +139,136 @@ async def health():
     }
 
 
+# ============================================
+# Plan B: Taiwanese Re-transcription for Low-Confidence Segments
+# ============================================
+
+# Confidence threshold — segments below this are likely non-Mandarin
+RETRANSCRIBE_CONFIDENCE_THRESHOLD = float(os.getenv("RETRANSCRIBE_CONFIDENCE_THRESHOLD", "-0.7"))
+# Breeze-ASR-26 model ID (faster-whisper CTranslate2 format)
+ASR26_MODEL_ID = os.getenv("ASR26_MODEL_ID", "paulpengtw/faster-whisper-Breeze-ASR-26")
+
+_asr26_model = None
+
+def _load_asr26_model():
+    """Lazy-load Breeze-ASR-26 (Taiwanese) model."""
+    global _asr26_model
+    if _asr26_model is not None:
+        return _asr26_model
+
+    from faster_whisper import WhisperModel
+    import torch
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    compute_type = "float16" if device == "cuda" else "int8"
+
+    logger.info(f"[ASR-26] Loading Taiwanese model: {ASR26_MODEL_ID} (device={device})")
+    _asr26_model = WhisperModel(ASR26_MODEL_ID, device=device, compute_type=compute_type)
+    logger.info("[ASR-26] Taiwanese model loaded successfully")
+    return _asr26_model
+
+
+async def _retranscribe_low_confidence(result, audio_path: str):
+    """
+    Post-processing step for zh-nan (國台英混合) mode.
+    
+    Identifies segments where ASR-25 had low confidence (likely Taiwanese speech),
+    extracts those audio clips, and re-transcribes with Breeze-ASR-26 (Taiwanese ASR).
+    Replaces the original segments with ASR-26 results if they're better.
+    """
+    import subprocess
+    from app.offline_asr import ASRResult, ASRSegment
+
+    # Find low-confidence segments
+    low_conf_indices = []
+    for i, seg in enumerate(result.segments):
+        # faster-whisper returns avg_logprob as confidence (negative, closer to 0 = better)
+        if seg.confidence < RETRANSCRIBE_CONFIDENCE_THRESHOLD:
+            low_conf_indices.append(i)
+
+    if not low_conf_indices:
+        logger.info("[ASR-26] No low-confidence segments found, skipping re-transcription")
+        return result
+
+    logger.info(
+        f"[ASR-26] Found {len(low_conf_indices)}/{len(result.segments)} low-confidence segments "
+        f"(threshold={RETRANSCRIBE_CONFIDENCE_THRESHOLD}), re-transcribing with Breeze-ASR-26"
+    )
+
+    # Load ASR-26 model
+    try:
+        model = await asyncio.to_thread(_load_asr26_model)
+    except Exception as e:
+        logger.warning(f"[ASR-26] Failed to load model, skipping re-transcription: {e}")
+        return result
+
+    replaced_count = 0
+    for idx in low_conf_indices:
+        seg = result.segments[idx]
+        try:
+            # Extract audio clip for this segment using ffmpeg
+            clip_path = f"/tmp/asr26_clip_{idx}.wav"
+            duration = seg.end - seg.start
+            if duration < 0.5:
+                continue
+
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-i", audio_path,
+                    "-ss", str(seg.start), "-t", str(duration),
+                    "-ar", "16000", "-ac", "1",
+                    clip_path,
+                ],
+                capture_output=True, check=True, timeout=30,
+            )
+
+            # Transcribe with ASR-26
+            segments_iter, info = await asyncio.to_thread(
+                lambda: model.transcribe(
+                    clip_path,
+                    language="zh",
+                    beam_size=5,
+                    vad_filter=False,
+                    word_timestamps=True,
+                )
+            )
+            asr26_segments = list(segments_iter)
+
+            if asr26_segments:
+                # Combine all ASR-26 segment texts
+                new_text = " ".join(s.text.strip() for s in asr26_segments if s.text.strip())
+                new_confidence = sum(getattr(s, 'avg_logprob', 0) for s in asr26_segments) / len(asr26_segments)
+
+                # Only replace if ASR-26 produced meaningful text and better confidence
+                if new_text and new_confidence > seg.confidence:
+                    result.segments[idx] = ASRSegment(
+                        start=seg.start,
+                        end=seg.end,
+                        text=new_text,
+                        speaker=seg.speaker,
+                        confidence=new_confidence,
+                        language="nan",
+                        words=seg.words,
+                    )
+                    replaced_count += 1
+                    logger.debug(
+                        f"[ASR-26] Replaced segment {idx}: "
+                        f"conf {seg.confidence:.2f}→{new_confidence:.2f}, "
+                        f"'{seg.text[:30]}' → '{new_text[:30]}'"
+                    )
+
+            # Cleanup clip
+            if os.path.exists(clip_path):
+                os.remove(clip_path)
+
+        except Exception as e:
+            logger.warning(f"[ASR-26] Failed to re-transcribe segment {idx}: {e}")
+            continue
+
+    logger.info(f"[ASR-26] Re-transcription complete: replaced {replaced_count}/{len(low_conf_indices)} segments")
+    return result
+
+
 async def _run_asr_processing(request: ASRRefineRequest, start_time: float) -> ASRRefineResponse:
     """Run ASR processing synchronously and return result."""
     meeting_id = request.meeting_id
@@ -160,6 +290,11 @@ async def _run_asr_processing(request: ASRRefineRequest, start_time: float) -> A
 
         # Run ASR synchronously
         result = await provider.transcribe_with_diarization(audio_path, language=request.language)
+
+        # Plan B: Low-confidence re-transcription with Breeze-ASR-26 (Taiwanese)
+        # Only when language="zh-nan" (國台英混合 mode selected by user)
+        if request.language == "zh-nan" and result.segments:
+            result = await _retranscribe_low_confidence(result, audio_path)
 
         if not result.segments:
             logger.warning(f"[ASR Refine] Empty result for {meeting_id}")

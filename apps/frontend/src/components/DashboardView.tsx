@@ -14,6 +14,7 @@ import {
     Shield,
     Trash2,
     X,
+    Languages,
 } from 'lucide-react';
 import type { Meeting } from '@/types/meeting';
 import type { UploadState } from '@/hooks/useRecording';
@@ -43,6 +44,9 @@ interface DashboardViewProps {
     // Sprint 2e Phase 1 (2026-05-11): 機密會議旗標
     uploadConfidential?: boolean;
     onUploadConfidentialChange?: (confidential: boolean) => void;
+    // Plan B: 國台英語言選擇
+    uploadLanguage?: 'zh' | 'zh-nan';
+    onUploadLanguageChange?: (language: 'zh' | 'zh-nan') => void;
     // 2026-05-24 (request #1)：拖曳框選後批次刪除
     onBulkDelete?: (meetingIds: string[]) => void;
     onRename?: (meetingId: string, newTitle: string) => void;
@@ -50,7 +54,7 @@ interface DashboardViewProps {
     onServerFilter?: (params: { keyword?: string; dateFrom?: string; dateTo?: string }) => void;
 }
 
-export const DashboardView = ({ meetings, isLoading, isUploading = false, uploadState = 'idle', error, successMessage, onSelectMeeting, onCreateMeeting, onUploadClick, onRefresh, availableTemplates = [], selectedTemplateName = 'general', onTemplateChange, uploadContext = '', onUploadContextChange, uploadConfidential = false, onUploadConfidentialChange, onBulkDelete, onRename, onServerFilter }: DashboardViewProps) => {
+export const DashboardView = ({ meetings, isLoading, isUploading = false, uploadState = 'idle', error, successMessage, onSelectMeeting, onCreateMeeting, onUploadClick, onRefresh, availableTemplates = [], selectedTemplateName = 'general', onTemplateChange, uploadContext = '', onUploadContextChange, uploadConfidential = false, onUploadConfidentialChange, uploadLanguage = 'zh', onUploadLanguageChange, onBulkDelete, onRename, onServerFilter }: DashboardViewProps) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [showDateFilter, setShowDateFilter] = useState(false);
@@ -134,6 +138,20 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                     {/* P0 Fix: Split CTA — primary = upload directly, secondary = record audio.
                         Dropdown removed; template/confidential/context stay in upload modal (step 2). */}
                     <div className="flex items-center gap-2">
+                        {/* Language selector for upload */}
+                        <div className="flex items-center gap-1 text-xs">
+                            <Languages size={14} className="text-muted-foreground" />
+                            <select
+                                value={uploadLanguage}
+                                onChange={(e) => onUploadLanguageChange?.(e.target.value as 'zh' | 'zh-nan')}
+                                className="px-2 py-2 border border-border bg-card text-foreground rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-cta/30"
+                                title="選擇會議語言"
+                            >
+                                <option value="zh">國英</option>
+                                <option value="zh-nan">國台英</option>
+                            </select>
+                        </div>
+
                         {/* Secondary: record audio */}
                         <button
                             onClick={onCreateMeeting}

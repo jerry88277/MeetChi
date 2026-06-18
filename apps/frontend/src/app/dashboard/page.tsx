@@ -125,6 +125,8 @@ export default function DashboardPage() {
     const [uploadContext, setUploadContext] = useState('');
     // Sprint 2e Phase 1 (2026-05-11): 機密會議旗標，上傳/錄音時 user 切換
     const [uploadConfidential, setUploadConfidential] = useState(false);
+    // 國台英語言選擇 (Plan B)：預設「國英」，可選「國台英混合」
+    const [uploadLanguage, setUploadLanguage] = useState<'zh' | 'zh-nan'>('zh');
     const [availableTemplates, setAvailableTemplates] = useState<import('@/lib/api').TemplateDTO[]>([]);
 
     // 2026-05-24 (request #2)：初始化字體大小 hook（從 localStorage 還原），
@@ -431,7 +433,7 @@ export default function DashboardPage() {
         }
 
         if (filesToQueue.length > 0) {
-            uploadQueue.enqueueFiles(filesToQueue, uploadTemplateName, uploadContext, uploadConfidential);
+            uploadQueue.enqueueFiles(filesToQueue, uploadTemplateName, uploadContext, uploadConfidential, uploadLanguage);
             // Refresh meeting list after a delay to pick up new PENDING meetings
             setTimeout(() => fetchMeetings(), 2000);
         }
@@ -847,6 +849,8 @@ export default function DashboardPage() {
                                 onUploadContextChange={setUploadContext}
                                 uploadConfidential={uploadConfidential}
                                 onUploadConfidentialChange={setUploadConfidential}
+                                uploadLanguage={uploadLanguage}
+                                onUploadLanguageChange={setUploadLanguage}
                                 onBulkDelete={(ids) => setPendingBulkDelete({ meetingIds: ids })}
                                 onRename={handleRenameMeeting}
                                 onServerFilter={fetchMeetingsWithFilter}
