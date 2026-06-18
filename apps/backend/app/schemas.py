@@ -52,8 +52,8 @@ class MeetingRead(BaseModel):
     updated_at: datetime
     duration: Optional[float]
     audio_url: Optional[str]
-    language: str
-    template_name: str
+    language: str = "zh"
+    template_name: str = "general"
     transcript_raw: Optional[str]
     transcript_polished: Optional[str]
     summary_json: Optional[str]
@@ -81,8 +81,8 @@ class MeetingListItem(BaseModel):
     updated_at: datetime
     duration: Optional[float]
     audio_url: Optional[str]
-    language: str
-    template_name: str
+    language: str = "zh"
+    template_name: str = "general"
     summary_json: Optional[str]
     speaker_mappings: Optional[str] = None
     is_confidential: bool = False  # Sprint 2e Phase 1：list 也要看得到 badge
