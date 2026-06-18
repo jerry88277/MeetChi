@@ -3,8 +3,9 @@
 ## Issue #1: GPU ASR ReadError on Long-Running Parallel Chunks
 
 **Severity**: High  
-**Status**: Open — workaround available, root fix planned  
+**Status**: ✅ RESOLVED — concurrency=2 + maxScale=15 + 3-retry (壓測6 驗證通過)  
 **Discovered**: 2026-06-18 壓測5（4.4hr 長影片壓力測試）  
+**Resolved**: 2026-06-18 壓測6 — 18/18 chunks 完成，26 分鐘處理 4.4hr 會議  
 **Affected Component**: `apps/backend/app/tasks.py` → `_process_split_audio_sync()`
 
 ---
