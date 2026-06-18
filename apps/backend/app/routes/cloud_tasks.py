@@ -237,6 +237,13 @@ def enqueue_transcription(request: EnqueueTranscriptionRequest):
             raise HTTPException(status_code=404, detail=f"Meeting {request.meeting_id} not found")
         if not meeting.audio_url:
             raise HTTPException(status_code=400, detail="Meeting has no audio to transcribe")
+        # Idempotency: reject if already processing or completed
+        if meeting.status in ("PROCESSING", "COMPLETED", "TRANSCRIBED"):
+            return EnqueueResponse(
+                status="skipped",
+                meeting_id=request.meeting_id,
+                message=f"Meeting already in {meeting.status} state, not re-enqueuing",
+            )
         meeting.processing_stage = "queued"
         db.commit()
     finally:
