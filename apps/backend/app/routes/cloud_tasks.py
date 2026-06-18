@@ -97,16 +97,18 @@ def handle_transcription_task(
     logger.info(f"Cloud Tasks headers: queue={x_cloudtasks_queuename}, task={x_cloudtasks_taskname}, retry={retry_count}")
 
     # Idempotency guard: skip if meeting is already COMPLETED or currently PROCESSING
-    # This prevents Cloud Tasks retries from overwriting successful results
+    # This prevents Cloud Tasks retries AND duplicate tasks from overwriting results
     db = SessionLocal()
     try:
         meeting = db.query(Meeting).filter(Meeting.id == request.meeting_id).first()
         if meeting and meeting.status == "COMPLETED":
-            logger.info(f"Meeting {request.meeting_id} already COMPLETED, skipping retry (idempotent)")
+            logger.info(f"Meeting {request.meeting_id} already COMPLETED, skipping (idempotent)")
             return {"status": "completed", "meeting_id": request.meeting_id, "message": "Already completed, skipped"}
-        if meeting and meeting.status == "PROCESSING" and retry_count > 0:
-            logger.warning(f"Meeting {request.meeting_id} still PROCESSING on retry #{retry_count}, skipping to avoid conflict")
-            return {"status": "skipped", "meeting_id": request.meeting_id, "message": "Already processing, skipped retry"}
+        if meeting and meeting.status in ("PROCESSING", "TRANSCRIBED"):
+            logger.warning(f"Meeting {request.meeting_id} already {meeting.status}, skipping to avoid conflict")
+            return {"status": "skipped", "meeting_id": request.meeting_id, "message": f"Already {meeting.status}, skipped"}
+        if meeting and meeting.status == "FAILED":
+            logger.info(f"Meeting {request.meeting_id} is FAILED, allowing re-processing")
     finally:
         db.close()
 
