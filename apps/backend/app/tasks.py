@@ -412,9 +412,14 @@ def _process_split_audio_sync(
 
         # 3.5 Global diarization: re-assign speakers using full-audio pyannote
         # This replaces per-chunk SPEAKER_XX_cN labels with consistent global IDs
-        all_segments = _try_global_diarization(
-            all_segments, audio_url, meeting_id, gpu_asr_url
-        )
+        # Can be skipped via env var for faster processing (uses per-chunk labels instead)
+        skip_global_diar = os.getenv("SKIP_GLOBAL_DIARIZATION", "false").lower() == "true"
+        if skip_global_diar:
+            logger.info(f"[ParallelASR] {meeting_id}: skipping global diarization (SKIP_GLOBAL_DIARIZATION=true)")
+        else:
+            all_segments = _try_global_diarization(
+                all_segments, audio_url, meeting_id, gpu_asr_url
+            )
 
         # 3.6 Merge consecutive short segments from same speaker for readability
         all_segments = _merge_short_segments(all_segments)
