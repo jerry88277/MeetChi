@@ -10,6 +10,7 @@ import json
 import logging
 import os
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.database import SessionLocal
 from app.models import Meeting
 from app.tasks import generate_meeting_minutes
@@ -96,19 +97,35 @@ def handle_transcription_task(
     logger.info(f"Received transcription task for meeting {request.meeting_id}")
     logger.info(f"Cloud Tasks headers: queue={x_cloudtasks_queuename}, task={x_cloudtasks_taskname}, retry={retry_count}")
 
-    # Idempotency guard: skip if meeting is already COMPLETED or currently PROCESSING
-    # This prevents Cloud Tasks retries AND duplicate tasks from overwriting results
+    # Idempotency guard: atomic claim via UPDATE ... WHERE to prevent duplicate processing.
+    # Only ONE concurrent dispatch can win; losers get rowcount=0 and are skipped.
     db = SessionLocal()
     try:
         meeting = db.query(Meeting).filter(Meeting.id == request.meeting_id).first()
-        if meeting and meeting.status == "COMPLETED":
+        if not meeting:
+            logger.error(f"Meeting {request.meeting_id} not found")
+            return {"status": "error", "meeting_id": request.meeting_id, "message": "Meeting not found"}
+        if meeting.status == "COMPLETED":
             logger.info(f"Meeting {request.meeting_id} already COMPLETED, skipping (idempotent)")
             return {"status": "completed", "meeting_id": request.meeting_id, "message": "Already completed, skipped"}
-        if meeting and meeting.status in ("PROCESSING", "TRANSCRIBED"):
+        if meeting.status in ("PROCESSING", "TRANSCRIBED"):
             logger.warning(f"Meeting {request.meeting_id} already {meeting.status}, skipping to avoid conflict")
             return {"status": "skipped", "meeting_id": request.meeting_id, "message": f"Already {meeting.status}, skipped"}
-        if meeting and meeting.status == "FAILED":
-            logger.info(f"Meeting {request.meeting_id} is FAILED, allowing re-processing")
+        # Atomic claim: only one dispatch wins
+        result = db.execute(
+            text("""
+                UPDATE meetings
+                SET status = 'PROCESSING', processing_stage = 'transcribing', updated_at = NOW()
+                WHERE id = :mid
+                  AND status::text IN ('PENDING', 'FAILED')
+            """),
+            {"mid": request.meeting_id},
+        )
+        db.commit()
+        if result.rowcount == 0:
+            logger.warning(f"Meeting {request.meeting_id} atomic claim failed (race condition prevented), skipping")
+            return {"status": "skipped", "meeting_id": request.meeting_id, "message": "Claimed by another dispatch"}
+        logger.info(f"Meeting {request.meeting_id} atomically claimed for processing")
     finally:
         db.close()
 
@@ -231,7 +248,9 @@ def enqueue_transcription(request: EnqueueTranscriptionRequest):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    # Verify meeting exists and set processing_stage = "queued"
+    # Atomic claim: UPDATE ... WHERE status allows enqueue, preventing race conditions.
+    # Two simultaneous requests will both try UPDATE, but only one succeeds due to
+    # PostgreSQL row-level locking (the second sees processing_stage='queued' and gets 0 rows).
     db = SessionLocal()
     try:
         meeting = db.query(Meeting).filter(Meeting.id == request.meeting_id).first()
@@ -239,15 +258,30 @@ def enqueue_transcription(request: EnqueueTranscriptionRequest):
             raise HTTPException(status_code=404, detail=f"Meeting {request.meeting_id} not found")
         if not meeting.audio_url:
             raise HTTPException(status_code=400, detail="Meeting has no audio to transcribe")
-        # Idempotency: reject if already processing or completed
-        if meeting.status in ("PROCESSING", "COMPLETED", "TRANSCRIBED"):
+
+        # Atomic compare-and-swap: only claim if status is enqueueable AND not already queued
+        result = db.execute(
+            text("""
+                UPDATE meetings
+                SET processing_stage = 'queued', updated_at = NOW()
+                WHERE id = :mid
+                  AND status::text NOT IN ('PROCESSING', 'COMPLETED', 'TRANSCRIBED')
+                  AND (processing_stage IS NULL OR processing_stage != 'queued')
+            """),
+            {"mid": request.meeting_id},
+        )
+        db.commit()
+
+        if result.rowcount == 0:
+            logger.info(
+                f"[Enqueue] Skipped meeting {request.meeting_id}: "
+                f"status={meeting.status}, stage={meeting.processing_stage} (already claimed or not enqueueable)"
+            )
             return EnqueueResponse(
                 status="skipped",
                 meeting_id=request.meeting_id,
-                message=f"Meeting already in {meeting.status} state, not re-enqueuing",
+                message=f"Meeting already in {meeting.status}/{meeting.processing_stage} state, not re-enqueuing",
             )
-        meeting.processing_stage = "queued"
-        db.commit()
     finally:
         db.close()
 
