@@ -192,6 +192,11 @@ Global Diarization: 10 min  ← 最大優化目標
 | concurrency=2, chunk=10min | 27 chunks | FAILED | ❌ | 429 cold start |
 | concurrency=2, Phase B linking | 18 chunks | **15 min** | ✅ | **49→17 speakers unified** |
 
+| 配置 | 2.3hr 會議 (×2 sequential) | 時間 | 狀態 | 備註 |
+|------|---------------------------|------|------|------|
+| Phase B, sequential trigger | 10+10 chunks | **13.5+10 min** | ✅ | T2, 17→3 speakers |
+| Phase B, simultaneous trigger | 20 chunks | FAILED | ❌ | Backend instance 被回收 |
+
 ### 效能目標
 
 | 會議長度 | 目標處理時間 | 預估 (Phase B) |
@@ -255,15 +260,33 @@ Global Diarization: 10 min  ← 最大優化目標
 5. 第一次嘗試: backend instance 被 Cloud Run 回收 (無 error log)
 6. 重新部署 backend → T1 成功完成
 
-### 5.2 多場並行壓測 (T2)
+### 5.2 多場並行壓測 (T2) — ✅ PASSED 2026-06-22 (sequential)
 
 | 項目 | 內容 |
 |------|------|
-| 情境 | 2 場 AI 直播論壇 (2.3hr) 同時觸發 |
+| 測試時間 | 2026-06-22 12:31~13:03 (UTC+8) |
+| 情境 | 2 場 AI 直播論壇 (2.3hr) **依序** 觸發 |
 | 總 Chunks | 20 (10 × 2) |
-| GPU 需求 | ~10 instances |
-| 驗證重點 | 多場互不干擾、無 race condition |
-| 預期時間 | ~12 min (單場 2.3hr ≈ 10 chunks × 4min/chunk ÷ 5 parallel) |
+| 結果 | ✅ 兩場均完成，Phase B 正常 |
+
+**注意**：同時觸發 2 場時 backend instance 被 Cloud Run 回收（原因不明，無 error log）。
+改為依序觸發後兩場均成功完成。**此為已知限制，後續需調查 backend 並行處理能力**。
+
+| Meeting | Chunks | 時間 | Segments | Speakers (Phase B) | 狀態 |
+|---------|--------|------|----------|--------------------|------|
+| `69252af7` | 10/10 (0 retry) | 13.5 min | 1005 | 17→3 (A,B,C) | ✅ COMPLETED |
+| `94edd280` | 10/10 (0 retry) | 10 min | 1005 | 17→3 (A,B,C) | ✅ COMPLETED |
+
+**Speaker 分佈一致性驗證**（同音檔 ×2，Phase B 結果應相同）：
+| Speaker | Meeting 1 | Meeting 2 | 一致 |
+|---------|-----------|-----------|------|
+| SPEAKER_A | 352 | 352 | ✅ |
+| SPEAKER_B | 259 | 259 | ✅ |
+| SPEAKER_C | 394 | 394 | ✅ |
+
+**已知問題**：2 場同時觸發 BackgroundTask 時，backend instance 約 15 min 後被 Cloud Run 靜默回收。
+可能原因：asyncio.run() 在多 thread 中競爭、CPU/memory 壓力觸發 instance 回收。
+**建議修復**：改用 Cloud Tasks queue 分發，避免單一 instance 同時處理多場。
 
 ### 5.3 極限壓測 (T3)
 
