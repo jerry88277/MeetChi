@@ -451,13 +451,12 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
         annotation,
         speakers: set,
     ) -> Dict[str, List[float]]:
-        """Extract per-speaker centroid embeddings using pyannote's internal embedding model.
+        """Extract per-speaker centroid embeddings using pyannote's embedding model.
 
         Strategy:
-          1. Access the pipeline's embedding model (via pipeline.embedding)
-          2. For each speaker, collect their longest segments (up to 30s total)
-          3. Extract embeddings from those segments via Inference
-          4. Average to get centroid embedding per speaker
+          1. Load embedding model from local PYANNOTE_MODEL_PATH/embedding/ directory
+          2. Use pyannote Inference to extract embeddings from speaker segments
+          3. Average to get centroid embedding per speaker
 
         Returns:
             {"SPEAKER_00": [float, ...], "SPEAKER_01": [float, ...]}
@@ -468,32 +467,30 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
         embeddings_dict: Dict[str, List[float]] = {}
 
         try:
-            # Access pyannote's internal embedding model
-            embedding_model = getattr(pipeline, "embedding", None)
-            if embedding_model is None:
-                embedding_model = getattr(pipeline, "_embedding", None)
+            from pyannote.audio import Model, Inference
+            from pyannote.core import Segment
 
-            if embedding_model is None:
-                logger.warning("[Community1] Cannot find embedding model in pipeline, skipping embedding extraction")
+            # Load embedding model from local baked path
+            model_path = os.getenv("PYANNOTE_MODEL_PATH", "")
+            emb_model_path = os.path.join(model_path, "embedding") if model_path else ""
+
+            if not emb_model_path or not os.path.isdir(emb_model_path):
+                logger.warning(f"[Community1] Embedding model not found at {emb_model_path}, skipping")
                 return {}
 
-            logger.info(f"[Community1] Extracting speaker embeddings for {len(speakers)} speakers using {type(embedding_model).__name__}")
+            logger.info(f"[Community1] Loading embedding model from {emb_model_path}")
+            embedding_model = Model.from_pretrained(emb_model_path)
+            embedding_model.to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
-            # Resample to 16kHz if needed (standard for speaker embeddings)
-            if sample_rate != 16000:
-                import torchaudio.transforms as T
-                resampler = T.Resample(sample_rate, 16000)
-                waveform_16k = resampler(waveform)
-                sr = 16000
-            else:
-                waveform_16k = waveform
-                sr = sample_rate
+            # Use Inference with "whole" window to get one embedding per segment
+            inference = Inference(embedding_model, window="whole")
 
-            # Ensure mono
-            if waveform_16k.shape[0] > 1:
-                waveform_16k = waveform_16k.mean(dim=0, keepdim=True)
+            logger.info(f"[Community1] Extracting speaker embeddings for {len(speakers)} speakers")
 
-            for speaker in speakers:
+            # Build in-memory audio dict for pyannote Inference
+            audio_dict = {"waveform": waveform, "sample_rate": sample_rate}
+
+            for speaker in sorted(speakers):
                 # Collect segments for this speaker (sorted by duration, longest first)
                 speaker_turns = []
                 for turn, _, spk in annotation.itertracks(yield_label=True):
@@ -507,60 +504,36 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
                 for start, end, dur in speaker_turns:
                     if total_dur >= 30.0:
                         break
-                    selected_segments.append((start, end))
-                    total_dur += dur
+                    # Minimum 0.5s for meaningful embedding
+                    if dur >= 0.5:
+                        selected_segments.append(Segment(start, end))
+                        total_dur += dur
 
                 if not selected_segments:
                     continue
 
-                # Extract audio clips and compute embeddings
-                chunk_embeddings = []
-                for seg_start, seg_end in selected_segments:
-                    start_sample = int(seg_start * sr)
-                    end_sample = int(seg_end * sr)
-                    end_sample = min(end_sample, waveform_16k.shape[1])
-                    if end_sample <= start_sample:
-                        continue
-
-                    clip = waveform_16k[:, start_sample:end_sample]
-
-                    # Minimum 0.5s for meaningful embedding
-                    if clip.shape[1] < sr * 0.5:
-                        continue
-
+                # Extract embeddings using pyannote Inference
+                seg_embeddings = []
+                for segment in selected_segments:
                     try:
-                        with torch.no_grad():
-                            # pyannote 4.x Model.forward() expects (batch, channel, samples)
-                            # clip shape is (1, samples), need (1, 1, samples)
-                            model_input = clip.unsqueeze(0)  # (1, 1, samples)
-                            try:
-                                emb = embedding_model(model_input)
-                            except (TypeError, RuntimeError) as e1:
-                                # Some models may need different input format
-                                logger.debug(f"[Community1] Direct call failed: {e1}, trying dict format")
-                                audio_input = {"waveform": model_input, "sample_rate": sr}
-                                emb = embedding_model(audio_input)
+                        emb = inference.crop(audio_dict, segment)
+                        # emb is typically (1, dim) numpy array
+                        if isinstance(emb, np.ndarray):
+                            emb = emb.flatten()
+                        elif hasattr(emb, 'data'):
+                            emb = np.array(emb.data).flatten()
+                        else:
+                            emb = np.array(emb).flatten()
 
-                            # Handle various output shapes
-                            if hasattr(emb, 'data') and not isinstance(emb, torch.Tensor):
-                                # SlidingWindowFeature or similar
-                                emb = torch.tensor(emb.data)
-                            elif isinstance(emb, np.ndarray):
-                                emb = torch.tensor(emb)
-
-                            if emb.dim() == 3:
-                                emb = emb.squeeze(1)
-                            if emb.dim() == 2:
-                                emb = emb.mean(dim=0)  # Average over time if multiple frames
-                            emb = emb.cpu().numpy().flatten()
-                            chunk_embeddings.append(emb)
+                        if emb.size > 0:
+                            seg_embeddings.append(emb)
                     except Exception as e:
-                        logger.debug(f"[Community1] Embedding extraction failed for {speaker} segment: {e}")
+                        logger.debug(f"[Community1] Embedding failed for {speaker} segment {segment}: {e}")
                         continue
 
-                if chunk_embeddings:
+                if seg_embeddings:
                     # Average embeddings to get centroid
-                    centroid = np.mean(chunk_embeddings, axis=0)
+                    centroid = np.mean(seg_embeddings, axis=0)
                     # L2-normalize for cosine similarity
                     norm = np.linalg.norm(centroid)
                     if norm > 0:
