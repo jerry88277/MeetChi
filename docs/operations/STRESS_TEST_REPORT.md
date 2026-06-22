@@ -190,7 +190,7 @@ Global Diarization: 10 min  ← 最大優化目標
 | concurrency=2, global diar ON | 18 chunks | **26 min** | ✅ | **Baseline** |
 | concurrency=2, global diar OFF | 18 chunks | **18 min** | ✅ | -31%, Phase A labels |
 | concurrency=2, chunk=10min | 27 chunks | FAILED | ❌ | 429 cold start |
-| concurrency=2, Phase B linking | 18 chunks | **15.5 min** | ⚠️ | Linking 未生效 |
+| concurrency=2, Phase B linking | 18 chunks | **15 min** | ✅ | **49→17 speakers unified** |
 
 ### 效能目標
 
@@ -211,20 +211,49 @@ Global Diarization: 10 min  ← 最大優化目標
 | 3 | ReadError (GFE timeout) | concurrency=8 排隊太久 | concurrency=2 | infra 調整 |
 | 4 | 429 cold start 失敗 | Backoff 太短 (2s/4s/8s) | 429-aware 30s×attempt | `e848ea2` |
 | 5 | 27 chunks 超載 | 同時 cold start 14 instances | 維持 15min chunk | 設計決策 |
-| 6 | Phase B embedding 未生效 | Image digest mismatch | 待重新 build+deploy | pending |
+| 6 | Phase B embedding 未生效 | Image digest mismatch + Dockerfile缺檔 | 修正Dockerfile, 用cloudbuild-community1 | `d079c96`, `c4d48d8` |
 
 ---
 
 ## 五、未完成壓測計畫
 
-### 5.1 Phase B Speaker Linking 驗證 (T1)
+### 5.1 Phase B Speaker Linking 驗證 (T1) — ✅ PASSED 2026-06-22
 
 | 項目 | 內容 |
 |------|------|
-| 前置作業 | 重新 build GPU image (含 embedding fix commit `3df6358`) |
+| 測試時間 | 2026-06-22 11:34:14 → 11:49:12 (UTC+8) |
 | 測試音檔 | 精準醫學研討會 4.3hr (`9a69a4f4`) |
-| 驗證重點 | speaker_embeddings 是否回傳、跨 chunk 是否正確合併 |
-| 預期時間 | ~18 min |
+| GPU Revision | `meetchi-gpu-asr-phaseb-emb` (含 baked pyannote model) |
+| Backend Revision | `meetchi-backend-phaseb-v2` |
+| 結果 | ✅ 18/18 chunks, 1742 segments, 15 min |
+
+**Phase B 驗證結果**：
+
+| 指標 | Phase A (壓測6) | Phase B (T1) | 改善 |
+|------|----------------|--------------|------|
+| 處理時間 | 18 min | 15 min | -17% |
+| Segments | 1726 | 1742 | +16 |
+| Speaker labels | 49+ (SPEAKER_XX_cN) | 17 (SPEAKER_A~U) | 跨 chunk 統一 |
+| Embedding dim | — | 256 | pyannote wespeaker |
+| Clustering | — | 49 entries → 21 clusters (threshold=0.65) | ✅ |
+
+**Speaker 分佈**（前 6）：
+| Speaker | Segments | 佔比 |
+|---------|----------|------|
+| SPEAKER_B | 357 | 20.5% |
+| SPEAKER_T | 300 | 17.2% |
+| SPEAKER_U | 267 | 15.3% |
+| SPEAKER_F | 229 | 13.1% |
+| SPEAKER_K | 219 | 12.6% |
+| SPEAKER_O | 185 | 10.6% |
+
+**修復歷程**（6/22 當日）：
+1. `d079c96` — Dockerfile 加入 `offline_asr_community1.py`
+2. 發現 pyannote 無法下載 → 改用 `cloudbuild-community1.yaml` (model baked into image)
+3. `c4d48d8` — 修正 embedding 抽取: 改用 `Model.from_pretrained` + `Inference.crop()`
+4. `3d6aaaf` — Phase B try/except graceful fallback
+5. 第一次嘗試: backend instance 被 Cloud Run 回收 (無 error log)
+6. 重新部署 backend → T1 成功完成
 
 ### 5.2 多場並行壓測 (T2)
 
