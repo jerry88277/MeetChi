@@ -288,15 +288,40 @@ Global Diarization: 10 min  ← 最大優化目標
 可能原因：asyncio.run() 在多 thread 中競爭、CPU/memory 壓力觸發 instance 回收。
 **建議修復**：改用 Cloud Tasks queue 分發，避免單一 instance 同時處理多場。
 
-### 5.3 極限壓測 (T3)
+### 5.3 極限壓測 (T3) — ⚠️ PARTIAL 2026-06-22
 
 | 項目 | 內容 |
 |------|------|
-| 情境 | 4 場 AI 直播論壇 (2.3hr) 同時觸發 |
+| 測試時間 | 2026-06-22 13:06~15:13 (UTC+8) |
+| 情境 | 4 場 AI 直播論壇 (2.3hr) |
 | 總 Chunks | 40 (10 × 4) |
-| GPU 需求 | ~20 instances (超過 maxScale=15) |
-| 驗證重點 | maxScale=15 飽和行為、429 retry 最終全成功 |
-| 預期時間 | ~25 min (queue + retry overhead) |
+| 結果 | ✅ 4/4 完成，但需 sequential 處理 |
+
+**測試過程**：
+
+| 嘗試 | 方式 | 結果 |
+|------|------|------|
+| #1 同時觸發 4 場 (30s 間隔) | 4 BackgroundTask 並行 | ❌ M1 完成，M2-4 失敗 (instance 回收) |
+| #2 M2 solo | 單場 | ✅ 10/10, 1005 segs, 3 speakers |
+| #3 M3+M4 (60s 間隔) | 2 BackgroundTask 並行 | ⚠️ M3 完成，M4 失敗 (instance 回收) |
+| #4 M4 solo retry | 單場 | ✅ 10/10, 1005 segs, 3 speakers |
+
+**GPU 飽和觀察**：
+- 同時觸發 4 場時出現 **503 Service Unavailable** → 30s retry 成功處理
+- GPU maxScale=15 在 40 chunks 場景下觸發 autoscaling，503 retry 機制運作正常
+
+**Backend 並行限制** (已知問題，需修復)：
+- 單一 instance 同時處理 2+ 場 BackgroundTask 時，約 15 min 後 instance 被 Cloud Run 靜默回收
+- 無 error/OOM log，推測為 asyncio.run() 多 thread 競爭或 Cloud Run 內部超時
+- **建議修復**：改用 Cloud Tasks queue (maxConcurrentDispatches=1) 確保單一 instance 一次只處理一場
+
+**最終結果** (4 場均完成)：
+| Meeting | Segments | Speakers | Phase B | 狀態 |
+|---------|----------|----------|---------|------|
+| `69252af7` | 1005 | 3 | 17→3 | ✅ COMPLETED |
+| `94edd280` | 1005 | 3 | 17→3 | ✅ COMPLETED |
+| `b4d5503e` | 1005 | 3 | 17→3 | ✅ COMPLETED |
+| `e4b3f84c` | 1005 | 3 | 17→3 | ✅ COMPLETED |
 
 ### 5.4 混合負載尖峰 (T4)
 
