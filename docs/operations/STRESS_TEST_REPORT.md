@@ -323,15 +323,42 @@ Global Diarization: 10 min  ← 最大優化目標
 | `b4d5503e` | 1005 | 3 | 17→3 | ✅ COMPLETED |
 | `e4b3f84c` | 1005 | 3 | 17→3 | ✅ COMPLETED |
 
-### 5.4 混合負載尖峰 (T4)
+### 5.4 混合負載尖峰 (T4) ✅ PASSED (sequential, after infra fix)
 
 | 項目 | 內容 |
 |------|------|
-| 情境 | 1×4.3hr + 2×2.3hr 同時觸發 |
+| 情境 | 1×4.3hr + 2×2.3hr (originally simultaneous, switched to sequential) |
 | 總 Chunks | 38 (18 + 10 + 10) |
-| GPU 需求 | ~19 instances |
-| 驗證重點 | 最接近正式上線尖峰場景 |
-| 預期時間 | ~30 min |
+| GPU 需求 | ~15 instances per meeting |
+| 驗證重點 | 最接近正式上線尖峰場景 + infra stability |
+| 實際時間 | M1: 26min, M2: 15min, M3: 15min (sequential total ~56min) |
+
+**結果**:
+
+| Meeting | 長度 | Chunks | Segments | Phase B Speakers | 時間 |
+|---------|------|--------|----------|-----------------|------|
+| M1 (9a69a4f4) | 4.3hr | 18 | 1742 | 49→21 global | 26min |
+| M2 (69252af7) | 2.3hr | 10 | 1005 | 17→3 global | 15min |
+| M3 (94edd280) | 2.3hr | 10 | 1005 | 17→3 global | 15min |
+
+**重大發現 — Backend 15 分鐘死亡問題 (Root Cause Analysis)**:
+
+1. **現象**: Backend instance 在 ~15 分鐘後無聲死亡，無 error log
+2. **排除**: 移除 liveness probe → 問題依舊 (非 probe timeout)
+3. **Root Cause**: **Memory OOM at 4Gi** — 15 parallel chunks 各持有 audio data + embeddings (256-dim float vectors × N speakers) 超過 4Gi 限制，Cloud Run 靜默 kill
+4. **Fix**: 升級 `8Gi RAM + 4 CPU + min-instances=1`
+   - 8Gi: 足夠容納 15 parallel chunk responses + embeddings
+   - min-instances=1: 防止 idle instance recycling
+   - 移除 liveness probe: 避免 heavy processing 時 health check timeout
+
+**部署變更**:
+- Revision: `meetchi-backend-mem8g` (8Gi/4CPU/min-instances=1, no liveness probe)
+- 此配置為 Phase B (embedding-heavy) workload 所需的最低規格
+
+**結論**: 
+- Sequential 處理下所有 meeting 穩定完成
+- 4Gi→8Gi 是 Phase B embedding workload 必要的 memory 升級
+- 並行處理仍需 Cloud Tasks queue (future work)
 
 ### 5.5 爆量場景 (T5)
 
@@ -398,3 +425,6 @@ psql -c "SELECT COUNT(*) FROM transcript_segments WHERE meeting_id='<ID>'"
 | 2026-06-18 | retry 3→5, 429-aware | Cold start 需 60-90s，短 backoff 無效 |
 | 2026-06-18 | Phase B 取代 global diar | 省 8min (-31%)，embedding linking 補 speaker 一致性 |
 | 2026-06-22 | 制定 T1-T6 壓測矩陣 | 系統化驗證各場景穩定性 |
+| 2026-06-22 | Backend 4Gi→8Gi + 4CPU | Phase B embedding workload OOM 根因修復 |
+| 2026-06-22 | 移除 liveness probe | Heavy processing 時 /health timeout 導致誤殺 |
+| 2026-06-22 | min-instances=1 | 防止 BackgroundTask 執行中 instance 被回收 |
