@@ -538,24 +538,32 @@ def _process_split_audio_sync(
 
         if skip_global_diar and chunk_speaker_embeddings:
             # Phase B: Use embeddings to link speakers across chunks
-            speaker_mapping = _link_speakers_across_chunks(chunk_speaker_embeddings)
-            if speaker_mapping:
+            try:
                 logger.info(
-                    f"[ParallelASR] {meeting_id}: Phase B speaker linking — "
-                    f"mapped {sum(len(v) for v in speaker_mapping.values())} chunk-speakers "
-                    f"→ {len(speaker_mapping)} global speakers"
+                    f"[ParallelASR] {meeting_id}: Phase B starting — "
+                    f"{len(chunk_speaker_embeddings)} chunks with embeddings"
                 )
-                # Apply mapping: (chunk_idx, local_speaker) → global_speaker
-                for seg in all_segments:
-                    spk = seg["speaker"]
-                    cidx = seg["_chunk_idx"]
-                    if spk:
-                        key = f"{spk}_c{cidx}"
-                        seg["speaker"] = speaker_mapping.get(key, key)
-                    del seg["_chunk_idx"]
-            else:
+                speaker_mapping = _link_speakers_across_chunks(chunk_speaker_embeddings)
+                if speaker_mapping:
+                    n_global = len(set(speaker_mapping.values()))
+                    logger.info(
+                        f"[ParallelASR] {meeting_id}: Phase B speaker linking — "
+                        f"mapped {len(speaker_mapping)} chunk-speakers "
+                        f"→ {n_global} global speakers"
+                    )
+                    # Apply mapping: (chunk_idx, local_speaker) → global_speaker
+                    for seg in all_segments:
+                        spk = seg["speaker"]
+                        cidx = seg["_chunk_idx"]
+                        if spk:
+                            key = f"{spk}_c{cidx}"
+                            seg["speaker"] = speaker_mapping.get(key, key)
+                        del seg["_chunk_idx"]
+                else:
+                    raise ValueError("Empty speaker mapping returned")
+            except Exception as e:
                 # Fallback: Phase A suffix encoding
-                logger.warning(f"[ParallelASR] {meeting_id}: Phase B linking failed, falling back to Phase A suffixes")
+                logger.warning(f"[ParallelASR] {meeting_id}: Phase B linking failed ({e}), falling back to Phase A suffixes", exc_info=True)
                 for seg in all_segments:
                     spk = seg["speaker"]
                     cidx = seg["_chunk_idx"]
