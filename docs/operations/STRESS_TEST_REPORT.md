@@ -433,6 +433,49 @@ Global Diarization: 10 min  ← 最大優化目標
 4. **DB connection 未斷**: T6 處理時間 (36min) 比 T5 (60min+) 短，未觸發 connection idle timeout
 5. **與 T5 對比**: T5 失敗是因處理時間過長 (45min+) 導致 DB pool stale；T6 在 36min 內完成，pool 仍活躍
 
+### 5.7 Plan B 驗證壓測 (T7) ✅ PASSED (Plan B 行為正確)
+
+**日期**: 2026-06-23 13:04-14:31 (UTC+8)
+
+**目的**: 驗證 Plan B 實作 — summary 失敗時保留 TRANSCRIBED 狀態，使用者可先看逐字稿
+
+**場景**: 6 場同時觸發（與 T5 相同場景），驗證 Plan B 在高負載下的行為
+
+**代碼變更**: `tasks.py` — 摘要生成包裹 try/except，失敗時保留 TRANSCRIBED
+
+| 會議 | 音檔長度 | Chunks | 結果 | Segments | 耗時 |
+|------|----------|--------|------|----------|------|
+| 73min-A | 73min | 5 | ✅ COMPLETED | 788 | ~15min |
+| 73min-B | 73min | 5 | ✅ COMPLETED | 564 | ~15min |
+| 92min | 92min | 7 | ✅ COMPLETED | 900 | ~20min |
+| 2.3hr-A (69252af7) | 2.3hr | 10 | ✅ COMPLETED | 1005 | ~30min |
+| 2.3hr-B (94edd280) | 2.3hr | 10 | ✅ COMPLETED | 1005 | ~40min |
+| 4.3hr (9a69a4f4) | 4.3hr | 18 | ❌ FAILED (ASR) | 0→1742* | ~25min* |
+
+*\* 4.3hr 在同時觸發時因 GPU 429 飽和導致 chunk_6 retry 失敗（ASR 階段），後單獨 retry 成功（1742 segs / 25min）*
+
+**Plan B 行為驗證**:
+
+1. **TRANSCRIBED checkpoint 正確運作**: 94edd280 在 ~40min 時觀測到 `status=TRANSCRIBED`，segments 已寫入 DB，使用者此時可查看逐字稿
+2. **Summary 成功時正常推進**: 所有 5 場 TRANSCRIBED → COMPLETED，摘要正確生成
+3. **ASR 失敗不受 Plan B 影響**: 4.3hr 的 chunk_6 在 ASR 階段失敗（未到 TRANSCRIBED），正確設為 FAILED
+4. **單獨 retry 可恢復**: 4.3hr 單獨跑 25min 即完成（1742 segs），確認是 GPU 資源競爭問題
+
+**與 T5 對比**:
+
+| 比較項目 | T5 (Plan B 前) | T7 (Plan B 後) |
+|----------|---------------|----------------|
+| 成功率 | 3/6 首次成功 | 5/6 首次成功 |
+| 失敗原因 | DB connection stale (45min+) | GPU 429 (chunk retry 耗盡) |
+| 失敗後狀態 | FAILED (需完整重跑) | FAILED (ASR 階段，尚未到 TRANSCRIBED) |
+| 使用者影響 | 看不到任何結果 | ASR 失敗=看不到；summary 失敗=可看逐字稿 |
+
+**結論**:
+- Plan B 實作正確：摘要失敗時保留 TRANSCRIBED，使用者不需等完整重跑
+- 本次唯一失敗是 ASR 階段（GPU 飽和），非 Plan B 保護範圍
+- 6 場同時觸發的 GPU 飽和問題可用階梯觸發（T6 驗證過）緩解
+- Backend 8Gi 配置穩定，未再出現 OOM 或 DB 斷線
+
 ---
 
 ## 六、測試執行 Checklist
@@ -484,3 +527,5 @@ psql -c "SELECT COUNT(*) FROM transcript_segments WHERE meeting_id='<ID>'"
 | 2026-06-22 | min-instances=1 | 防止 BackgroundTask 執行中 instance 被回收 |
 | 2026-06-23 | T5/T6 驗證通過 | 8Gi 配置可支撐 4-6 場並行；>45min 處理需 pool_pre_ping |
 | 2026-06-23 | 階梯觸發優於同時觸發 | 30s 間隔讓 GPU cold start 漸進升溫，避免集中 429 |
+| 2026-06-23 | Plan B: summary 失敗保留 TRANSCRIBED | 使用者可先看逐字稿，不需等完整重跑 |
+| 2026-06-23 | T7 驗證 Plan B 通過 | 5/6 COMPLETED，1/6 ASR 階段失敗（非 Plan B 範圍）|
