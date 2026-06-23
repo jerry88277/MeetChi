@@ -360,7 +360,7 @@ Global Diarization: 10 min  ← 最大優化目標
 - 4Gi→8Gi 是 Phase B embedding workload 必要的 memory 升級
 - 並行處理仍需 Cloud Tasks queue (future work)
 
-### 5.5 爆量場景 (T5)
+### 5.5 爆量場景 (T5) ✅ PASSED (with recovery)
 
 | 項目 | 內容 |
 |------|------|
@@ -368,16 +368,70 @@ Global Diarization: 10 min  ← 最大優化目標
 | 總 Chunks | 55 (18 + 10 + 10 + 7 + 5 + 5) |
 | GPU 需求 | ~28 instances (遠超 maxScale=15) |
 | 驗證重點 | 系統降級行為、所有場次最終是否 COMPLETED |
-| 預期時間 | ~45-60 min (大量 retry) |
+| 觸發時間 | 2026-06-23 08:12 (UTC+8) |
 
-### 5.6 冷啟動壓力 (T6)
+**結果**:
+
+| Meeting | Label | Chunks | Segments | Phase B | 完成時間 (UTC+8) | 備註 |
+|---------|-------|--------|----------|---------|-----------------|------|
+| ff052a1f | 73min-A | 5 | 788 | 15→3 | ~08:27 | 首批完成 |
+| e249ed8c | 73min-B | 5 | 564 | ? | ~08:27 | 首批完成 |
+| e961f65e | 92min | 7 | 900 | 39→10 | ~08:42 | 第二批 |
+| 69252af7 | 2.3hr | 10 | 1005 | 17→3 | 08:58* → retry 09:33 | DB write fail |
+| 94edd280 | 2.3hr | 10 | 1005 | 17→3 | 08:58* → retry 09:48 | DB write fail |
+| 9a69a4f4 | 4.3hr | 18 | 1742 | 49→21 | stuck → retry 10:13 | instance died |
+
+*Phase B 計算成功但 DB write 時 psycopg2 connection 已斷
+
+**第一階段 (6場同時)**:
+- 短會議 (73min×2, 92min) 在 15-30min 內完成 ✅
+- 2.3hr×2: Phase B 完成但 DB 寫入失敗 (psycopg2.OperationalError: server closed connection)
+- 4.3hr: GPU 重度 429/503 retry，chunk 進度緩慢，instance 最終停止回應
+- GPU 大量 429 (rate limit) 是預期行為 — 55 chunks 競爭 maxScale=15
+
+**第二階段 (sequential recovery)**:
+- 3 場失敗 meeting 依序 retry，全部 COMPLETED ✅
+- 驗證了系統的可恢復性
+
+**關鍵發現**:
+1. **GPU 降級行為正確**: 429 Too Many Requests 正確觸發 retry，所有 chunk 最終完成
+2. **DB connection pool 問題**: 長時間 (45min+) 處理導致 Cloud SQL 連線 idle timeout
+   - 6 個 BackgroundTask 共享同一 connection pool
+   - 後完成的 task 嘗試 DB write 時，pool 中的 connection 已被 Cloud SQL proxy 關閉
+3. **建議修復**: SQLAlchemy pool_pre_ping=True 或 pool_recycle=300
+
+### 5.6 冷啟動壓力 (T6) ✅ PASSED (全部一次通過)
 
 | 項目 | 內容 |
 |------|------|
-| 情境 | 4 場間隔 30s 連發 |
-| 總 Chunks | 40 |
+| 情境 | 4 場間隔 30s 連發 (10:14:15 ~ 10:15:46 UTC+8) |
+| 總 Chunks | 40 (18 + 10 + 7 + 5) |
+| GPU 需求 | ~20 instances (超過 maxScale=15) |
 | 驗證重點 | 階梯式 cold start + retry 機制穩定性 |
-| 預期時間 | ~25-30 min |
+| 實際時間 | 36 min (10:14 → 10:51 UTC+8) |
+
+**結果**:
+
+| Meeting | Label | Chunks | Segments | Phase B | 完成時間 (UTC+8) |
+|---------|-------|--------|----------|---------|-----------------|
+| 69252af7 | 2.3hr | 10 | 1005 | 17→3 | ~10:32 |
+| e961f65e | 92min | 7 | 900 | 39→10 | ~10:33 |
+| ff052a1f | 73min | 5 | 788 | 15→3 | ~10:43 |
+| 9a69a4f4 | 4.3hr | 18 | 1742 | 49→21 | ~10:42 |
+
+**全部 4 場一次通過 — 無需 retry！** 🎉
+
+**GPU Retry 統計** (T6 期間):
+- 429 Too Many Requests: ~1161 次
+- 503 Service Unavailable: ~1308 次
+- 全部透過 retry 機制自動恢復，最終 COMPLETED
+
+**關鍵發現**:
+1. **階梯式觸發有效**: 30s 間隔讓 GPU cold start 逐步升溫，比 T5 全同時觸發更穩定
+2. **Retry 機制極為可靠**: 即使 2400+ 次 retry，系統仍在 36min 內完成所有工作
+3. **Backend 8Gi 配置穩定**: 4 個 BackgroundTask 並行 36 分鐘無 OOM
+4. **DB connection 未斷**: T6 處理時間 (36min) 比 T5 (60min+) 短，未觸發 connection idle timeout
+5. **與 T5 對比**: T5 失敗是因處理時間過長 (45min+) 導致 DB pool stale；T6 在 36min 內完成，pool 仍活躍
 
 ---
 
@@ -428,3 +482,5 @@ psql -c "SELECT COUNT(*) FROM transcript_segments WHERE meeting_id='<ID>'"
 | 2026-06-22 | Backend 4Gi→8Gi + 4CPU | Phase B embedding workload OOM 根因修復 |
 | 2026-06-22 | 移除 liveness probe | Heavy processing 時 /health timeout 導致誤殺 |
 | 2026-06-22 | min-instances=1 | 防止 BackgroundTask 執行中 instance 被回收 |
+| 2026-06-23 | T5/T6 驗證通過 | 8Gi 配置可支撐 4-6 場並行；>45min 處理需 pool_pre_ping |
+| 2026-06-23 | 階梯觸發優於同時觸發 | 30s 間隔讓 GPU cold start 漸進升溫，避免集中 429 |
