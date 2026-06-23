@@ -39,6 +39,21 @@ def _check_admin(x_admin_token: str = Header(default="")) -> None:
         )
 
 
+@router.get("/gpu-queue-stats")
+async def gpu_queue_stats(_: None = Depends(_check_admin)):
+    """GPU 全局排隊機制即時統計。"""
+    from app.gpu_semaphore import get_stats
+    return get_stats()
+
+
+@router.post("/gpu-queue-reset-stats")
+async def gpu_queue_reset_stats(_: None = Depends(_check_admin)):
+    """重置 GPU queue 統計（壓測前清零用）。"""
+    from app.gpu_semaphore import reset_stats
+    reset_stats()
+    return {"message": "GPU queue stats reset"}
+
+
 @router.post("/backfill-participants")
 async def backfill_participants(
     user_upn: str,

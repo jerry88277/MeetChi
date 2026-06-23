@@ -393,25 +393,19 @@ def _process_split_audio_sync(
 
     流程：
       1. 拆 audio_url → N 個 chunks 上 GCS (audio_split.split_audio_to_chunks)
-      2. Semaphore(GPU_PARALLELISM) 限流 POST 給 GPU service（不掛 callback）
-      3. 各 chunk 失敗 → 一次獨立 retry（fresh connection）
+      2. 全局 GPU Semaphore 限流 POST 給 GPU service（跨會議共享）
+      3. 各 chunk 失敗 → 最多 5 次 retry（defensive，semaphore 已大幅降低 429）
       4. 各 chunk segments 套 offset 合併
       5. 全部寫進 TranscriptSegment table
       6. 觸發 generate_summary_core(skip_asr=True) 跑 summary
       7. 所有 chunk 都拿到 final 結果（成功或重試後失敗）後才 cleanup GCS chunks
 
-    與 Phase A 原版差異（修正 5/11 失敗）：
-      - 原 `asyncio.gather` 一次發 N 個 → GPU concurrency=1 + max-instances=2
-        導致 5+ 個 request 在 Cloud Run queue 排 19 分鐘 → GFE TCP idle timeout
-        砍連線 → ReadError → backend 標 FAILED → 提早 cleanup → 排隊中的
-        chunk 後來才 download 但 404
-      - Phase A.1：Semaphore(GPU_PARALLELISM=2) 對齊 max-instances，
-        永遠只有 2 個 in-flight，無排隊 → 不會被 GFE 砍
-      - cleanup 改在所有 chunk 都「最終 settled」之後執行，避免 race
-
-    可調參數：
-      GPU_PARALLELISM (env: ASR_PARALLELISM, default=2) 跟 GPU max-instances 對齊。
-      若日後 Google 開 max=4 quota，把這個 env 同步調大即可。
+    全局排隊機制 (2026-06-23):
+      - 取代舊的 per-meeting asyncio.Semaphore(ASR_PARALLELISM)
+      - 使用 threading.Semaphore 實現跨 BackgroundTask thread 的全局限流
+      - GPU_GLOBAL_CONCURRENCY=25 (env)：全局最多 25 concurrent GPU requests
+      - GPU_PER_MEETING_MAX=10 (env)：單場最多佔 10 slots，防止大會議餓死小會議
+      - 排隊取代 429 retry：chunk 等前面完成後立刻送出，零浪費
 
     Returns dict {status, meeting_id, ...}; 與 single-audio path 同格式
     """
@@ -419,8 +413,13 @@ def _process_split_audio_sync(
     from app.audio_split import split_audio_to_chunks, cleanup_chunks
     from app.models import TranscriptSegment
 
-    # Semaphore 上限：對齊 Cloud Run GPU concurrency=3
-    GPU_PARALLELISM = int(os.getenv("ASR_PARALLELISM", "3"))
+    # 全局 GPU semaphore（跨會議共享，取代舊的 per-meeting semaphore）
+    from app.gpu_semaphore import (
+        acquire_gpu_slot_async,
+        release_gpu_slot,
+        cleanup_meeting,
+        get_stats as get_gpu_stats,
+    )
 
     chunks: list = []  # for finally cleanup
     cleanup_done = False
@@ -431,14 +430,15 @@ def _process_split_audio_sync(
         n_chunks = len(chunks)
         logger.info(
             f"[ParallelASR] {meeting_id} split into {n_chunks} chunks "
-            f"(parallelism={GPU_PARALLELISM})"
+            f"(global GPU queue)"
         )
 
         # 2. Semaphore-limited POST：每個 chunk 一次 retry on failure
         async def call_gpu_once(chunk_url: str, offset: float, idx: int, attempt: int) -> dict:
-            """單次 POST，timeout 對齊 Cloud Run service timeout (3600s)。"""
+            """單次 POST，connect timeout 90s (cold start), read timeout 3600s。"""
             import httpx
-            async with httpx.AsyncClient(timeout=3600.0) as client:
+            timeout = httpx.Timeout(connect=90.0, read=3600.0, write=30.0, pool=90.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 logger.info(
                     f"[ParallelASR] chunk {idx+1}/{n_chunks} → GPU "
                     f"(offset={offset:.0f}s, attempt={attempt})"
@@ -462,41 +462,71 @@ def _process_split_audio_sync(
                 )
                 return data
 
-        async def call_gpu_with_retry(sem: asyncio.Semaphore, chunk_url: str, offset: float, idx: int) -> dict:
-            """Semaphore-guarded POST + up to 5 retries with longer backoff for 429/503."""
-            max_attempts = 5
-            async with sem:
-                for attempt in range(1, max_attempts + 1):
-                    try:
-                        return await call_gpu_once(chunk_url, offset, idx, attempt=attempt)
-                    except Exception as e:
-                        if attempt == max_attempts:
-                            logger.error(
-                                f"[ParallelASR] chunk {idx+1}/{n_chunks} failed after {max_attempts} attempts "
-                                f"({type(e).__name__}: {e})"
-                            )
-                            raise
-                        err_str = str(e)
-                        # 429/503 = GPU scaling up, need longer backoff
-                        if "429" in err_str or "503" in err_str:
-                            backoff = 30 * attempt  # 30s, 60s, 90s, 120s
-                        else:
-                            backoff = 5 * attempt  # 5s, 10s, 15s, 20s
-                        logger.warning(
-                            f"[ParallelASR] chunk {idx+1}/{n_chunks} attempt {attempt} failed "
-                            f"({type(e).__name__}: {e}); retrying in {backoff}s"
+        async def call_gpu_with_retry(chunk_url: str, offset: float, idx: int) -> dict:
+            """Global semaphore-guarded POST + up to 7 retries.
+            
+            每次 attempt 獨立 acquire/release slot：
+            - 成功：acquire → GPU call → release
+            - 失敗：acquire → GPU call (429) → release → backoff → next attempt
+            釋放 slot 讓其他 chunks 有機會通過（提高整體 throughput）。
+            """
+            max_attempts = 7
+            for attempt in range(1, max_attempts + 1):
+                # 排隊等 GPU slot（全局限流）
+                wait_time = await acquire_gpu_slot_async(meeting_id)
+                if wait_time > 1.0:
+                    logger.info(
+                        f"[ParallelASR] chunk {idx+1}/{n_chunks} queued {wait_time:.1f}s for GPU slot"
+                    )
+                try:
+                    result = await call_gpu_once(chunk_url, offset, idx, attempt=attempt)
+                    return result
+                except Exception as e:
+                    if attempt == max_attempts:
+                        logger.error(
+                            f"[ParallelASR] chunk {idx+1}/{n_chunks} failed after {max_attempts} attempts "
+                            f"({type(e).__name__}: {e})"
                         )
-                        await asyncio.sleep(backoff)
+                        raise
+                    err_str = str(e)
+                    # 429/503 = GPU cold start (60-90s) or overload
+                    if "429" in err_str or "503" in err_str:
+                        backoff = 30 * attempt  # 30s, 60s, 90s, 120s, 150s, 180s
+                    else:
+                        backoff = 5 * attempt
+                    logger.warning(
+                        f"[ParallelASR] chunk {idx+1}/{n_chunks} attempt {attempt} failed "
+                        f"({type(e).__name__}: {e}); retrying in {backoff}s"
+                    )
+                    await asyncio.sleep(backoff)
+                finally:
+                    release_gpu_slot(meeting_id)
 
         async def run_all_chunks():
-            sem = asyncio.Semaphore(GPU_PARALLELISM)
+            # 設定足夠大的 executor 避免 asyncio.to_thread starvation
+            # 需要 >= per_meeting_max 的 threads 來避免 deadlock
+            import concurrent.futures
+            loop = asyncio.get_event_loop()
+            loop.set_default_executor(
+                concurrent.futures.ThreadPoolExecutor(max_workers=max(20, n_chunks + 2))
+            )
             tasks = [
-                call_gpu_with_retry(sem, url, off, i)
+                call_gpu_with_retry(url, off, i)
                 for i, (url, off) in enumerate(chunks)
             ]
             return await asyncio.gather(*tasks, return_exceptions=True)
 
         results = asyncio.run(run_all_chunks())
+
+        # Log GPU queue stats after all chunks processed
+        gpu_stats = get_gpu_stats()
+        logger.info(
+            f"[ParallelASR] {meeting_id} GPU queue stats: "
+            f"concurrent={gpu_stats['current_concurrent']}, "
+            f"peak={gpu_stats['peak_concurrent']}, "
+            f"queued={gpu_stats['total_queued']}, "
+            f"avg_wait={gpu_stats['avg_queue_wait_sec']}s"
+        )
 
         # Check for chunk-level failures (after retry)
         failed_chunks = [i for i, r in enumerate(results) if isinstance(r, Exception)]
@@ -645,6 +675,7 @@ def _process_split_audio_sync(
         # 與 Cloud Run queue 中仍在等的 chunk race，造成 404 連鎖失敗）
         cleanup_chunks(audio_url, meeting_id)
         cleanup_done = True
+        cleanup_meeting(meeting_id)  # 釋放 per-meeting semaphore 記憶體
 
         # 5.5 Checkpoint: ASR 完成，設為 TRANSCRIBED 讓前端可顯示逐字稿。
         # 即使後續摘要失敗，使用者仍能看到轉錄結果，不需重新上傳。
@@ -721,6 +752,7 @@ def _process_split_audio_sync(
                 cleanup_chunks(audio_url, meeting_id)
             except Exception:
                 pass
+        cleanup_meeting(meeting_id)  # 釋放 per-meeting semaphore 記憶體
         return {"status": "failed", "error": f"Parallel ASR failed: {str(e)}"}
 
 

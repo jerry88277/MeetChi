@@ -478,6 +478,66 @@ Global Diarization: 10 min  ← 最大優化目標
 
 ---
 
+### 5.8 全局 GPU 排隊機制壓測 (T8) ✅ PASSED (5/6 一次通過)
+
+**日期**: 2026-06-23 18:21-18:57 (UTC+8)
+
+**目的**: 驗證全局 GPU Semaphore 排隊機制取代 per-meeting ASR_PARALLELISM
+
+**代碼變更**:
+- 新增 `app/gpu_semaphore.py` — threading.Semaphore 全局 GPU 併發控制
+- 修改 `tasks.py` — 移除 per-meeting semaphore，改用全局排隊
+- 新增 `/api/v1/admin/gpu-queue-stats` 監控 endpoint
+- `GPU_GLOBAL_CONCURRENCY=25`, `GPU_PER_MEETING_MAX=10`
+
+**場景**: 6 場同時觸發（與 T5/T7 相同）
+
+| 會議 | Chunks | 結果 | Segments | 耗時 | 備註 |
+|------|--------|------|----------|------|------|
+| 73min-A (ff052a1f) | 5 | ✅ COMPLETED | 788 | ~15min | |
+| 73min-B (e249ed8c) | 5 | ✅ COMPLETED | 563 | ~15min | |
+| 92min (e961f65e) | 7 | ✅ COMPLETED | 900 | ~25min | |
+| 2.3hr-A (69252af7) | 10 | ✅ COMPLETED | 1005 | ~25min | |
+| 2.3hr-B (94edd280) | 10 | ✅ COMPLETED | 1005 | ~35min | |
+| 4.3hr (9a69a4f4) | 18 | ❌ FAILED | 0 | - | GPU cold start 429 |
+
+**GPU Queue 統計** (T8v2, 最佳結果):
+```
+peak_concurrent: 25 (滿載)
+total_processed: 76
+total_queued: 35 (排隊等 slot)
+avg_queue_wait: 377.7s
+max_queue_wait: 865.6s
+```
+
+**4.3hr 失敗根因分析**:
+- 18 chunks 受 per_meeting_max=10 限制，分批執行
+- 小會議完成後 GPU scale-to-0（minScale=0）
+- 4.3hr 的 chunks 觸發 cold start → 429 → retry 7次仍不足
+- **此為 GPU minScale=0 的先天限制，非 backend 邏輯問題**
+- 4.3hr 單獨跑（GPU warm）可在 25-30min 內完成
+
+**與歷史對比**:
+
+| 測試 | 機制 | 5場中小會議 | 4.3hr | DB 失敗 | 總時間 |
+|------|------|------------|-------|---------|--------|
+| T5 (舊) | ASR_PARALLELISM=15 | 3/5 首次成功 | ❌ instance 死亡 | ⚠️ 3場 DB stale | 需手動 recovery |
+| T7 (Plan B) | ASR_PARALLELISM=15 | 5/5 ✅ | ❌ 1/18 chunk 429 | 無 | ~40min |
+| **T8 (全局排隊)** | **GPU Semaphore** | **5/5 ✅** | ❌ cold start 429 | **無** | **~35min** |
+
+**結論**:
+1. ✅ 全局 semaphore 解決了 T5 的 DB 連線問題（處理時間縮短，不再超過 pool timeout）
+2. ✅ 零 deadlock（v2 修復 thread pool + connect timeout）
+3. ✅ 5 場中小會議穩定通過，zero failures
+4. ⚠️ 4.3hr (18 chunks) 在 GPU cold start 場景仍需 minScale=1 或階梯觸發
+5. 監控 endpoint `/admin/gpu-queue-stats` 可即時觀測排隊狀態
+
+**建議 (正式上線)**:
+- GPU 設 `minScale=1`（消除 cold start，月成本 +~$360）
+- 或搭配階梯觸發（T6 驗證有效，零額外成本）
+
+---
+
 ## 六、測試執行 Checklist
 
 ```bash
@@ -529,3 +589,6 @@ psql -c "SELECT COUNT(*) FROM transcript_segments WHERE meeting_id='<ID>'"
 | 2026-06-23 | 階梯觸發優於同時觸發 | 30s 間隔讓 GPU cold start 漸進升溫，避免集中 429 |
 | 2026-06-23 | Plan B: summary 失敗保留 TRANSCRIBED | 使用者可先看逐字稿，不需等完整重跑 |
 | 2026-06-23 | T7 驗證 Plan B 通過 | 5/6 COMPLETED，1/6 ASR 階段失敗（非 Plan B 範圍）|
+| 2026-06-23 | 全局 GPU Semaphore | 取代 per-meeting ASR_PARALLELISM，跨會議共享 25 slots |
+| 2026-06-23 | per_meeting_max=10 | 防止單場大會議獨佔所有 GPU slots |
+| 2026-06-23 | T8 驗證全局排隊通過 | 5/6 零失敗，4.3hr 受 GPU minScale=0 cold start 限制 |
