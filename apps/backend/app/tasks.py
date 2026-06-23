@@ -654,6 +654,7 @@ def _process_split_audio_sync(
         logger.info(f"[ParallelASR] {meeting_id}: set status=TRANSCRIBED (checkpoint)")
 
         # 6. Trigger summary generation (synchronously continue)
+        # 方案 B: 摘要失敗不覆蓋 TRANSCRIBED，使用者可立即看逐字稿
         _update_task_status(
             db, meeting_id, "offline_asr", "COMPLETED",
             f"Parallel ASR complete ({n_chunks} chunks)"
@@ -662,16 +663,34 @@ def _process_split_audio_sync(
         logger.info(f"[ParallelASR] {meeting_id}: invoking summary generation (skip_asr=True)")
         meeting.processing_stage = "summarizing"
         db.commit()
-        return generate_summary_core(
-            meeting_id,
-            template_type=meeting.template_name or "general",
-            skip_asr=True,
-            suppress_fail_notification=suppress_fail_notification,
-        )
+        try:
+            return generate_summary_core(
+                meeting_id,
+                template_type=meeting.template_name or "general",
+                skip_asr=True,
+                suppress_fail_notification=suppress_fail_notification,
+            )
+        except Exception as summary_err:
+            # 摘要失敗：保留 TRANSCRIBED 狀態，使用者仍可查看逐字稿
+            logger.error(f"[ParallelASR] {meeting_id}: summary generation failed (transcript preserved): {summary_err}")
+            try:
+                meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+                if meeting:
+                    meeting.status = MeetingStatus.TRANSCRIBED
+                    meeting.failure_reason = (
+                        f"摘要生成失敗 ({type(summary_err).__name__})：{str(summary_err)[:200]}\n\n"
+                        "逐字稿已完成，可直接查看。點「僅重新生成摘要」即可重試，無需重跑轉錄。"
+                    )
+                    meeting.processing_stage = None
+                    db.commit()
+            except Exception:
+                pass
+            return {"status": "transcribed", "meeting_id": meeting_id, "message": "ASR done, summary failed but transcript preserved"}
 
     except Exception as e:
         logger.error(f"[ParallelASR] {meeting_id} failed: {e}", exc_info=True)
         # 2026-05-25 (Y7): 寫 failure_reason 給 user 看，分類 ASR 階段失敗
+        # 注意：如果已經通過 TRANSCRIBED checkpoint，不要覆蓋為 FAILED
         _fail_reason = (
             f"平行 ASR 處理失敗 ({type(e).__name__})：{str(e)[:200]}\n\n"
             "可能原因：GPU service 繁忙、network 中斷、或 audio 切片問題。"
@@ -681,8 +700,15 @@ def _process_split_audio_sync(
             try:
                 meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
                 if meeting:
-                    meeting.status = MeetingStatus.FAILED
-                    meeting.failure_reason = _fail_reason
+                    # 如果逐字稿已完成 (TRANSCRIBED)，保留該狀態
+                    if meeting.status == MeetingStatus.TRANSCRIBED:
+                        meeting.failure_reason = (
+                            f"摘要生成階段失敗 ({type(e).__name__})：{str(e)[:200]}\n\n"
+                            "逐字稿已完成，可直接查看。點「僅重新生成摘要」即可重試。"
+                        )
+                    else:
+                        meeting.status = MeetingStatus.FAILED
+                        meeting.failure_reason = _fail_reason
                     meeting.processing_stage = None
                     db.commit()
             except Exception:
