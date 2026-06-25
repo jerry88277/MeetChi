@@ -328,16 +328,31 @@ export default function DashboardPage() {
     useEffect(() => {
         if (!needsSafetyNet) return;
 
-        // Immediate fetch on activation, then every 60s
+        // Immediate fetch on activation, then every 10s (P0 fix: heartbeat feedback)
         fetchMeetings();
         const id = setInterval(() => {
             if (!document.hidden) {
                 fetchMeetings();
             }
-        }, 60_000); // 60s interval — pure safety net, not primary mechanism
+        }, 10_000); // 10s interval — frequent polling for processing state updates
 
         return () => clearInterval(id);
     }, [needsSafetyNet, fetchMeetings]);
+
+    // F2 (P0): Tab title notification — show completion count when processing
+    const completedCount = meetings.filter(m => m.status === 'completed').length;
+    const processingCount = meetings.filter(m => m.status === 'processing' || m.status === 'pending').length;
+    useEffect(() => {
+        if (processingCount > 0) {
+            document.title = `(${completedCount} 完成 / ${processingCount} 處理中) MeetChi`;
+        } else if (completedCount > 0 && document.title.includes('處理中')) {
+            // All done — flash completion
+            document.title = `(✓ 全部完成) MeetChi`;
+            setTimeout(() => { document.title = 'MeetChi'; }, 5000);
+        } else {
+            document.title = 'MeetChi';
+        }
+    }, [completedCount, processingCount]);
 
     // D3-3: selectedMeeting sync — update detail view when meetings list refreshes
     //

@@ -75,6 +75,7 @@ const STATUS_CONFIG = {
 const STAGE_CONFIG: Record<string, { label: string; desc: string; progress: string }> = {
     queued:       { label: '排隊中',    desc: '等待前方會議處理完畢',                    progress: '15%' },
     transcribing: { label: '轉錄中',    desc: '正在將語音轉換為逐字稿',                  progress: '50%' },
+    diarizing:    { label: '辨識講者',  desc: '正在辨識不同講者身份',                    progress: '65%' },
     summarizing:  { label: '生成摘要中', desc: '正在整理決策、待辦與風險',                  progress: '85%' },
 };
 
@@ -88,7 +89,7 @@ function stageProgress(stage?: string | null): string {
 
 function ProcessingStageIndicator({ stage }: { stage?: string | null }) {
     const config = STAGE_CONFIG[stage ?? ''];
-    const steps = ['queued', 'transcribing', 'summarizing'] as const;
+    const steps = ['queued', 'transcribing', 'diarizing', 'summarizing'] as const;
 
     return (
         <div className="space-y-1.5">
@@ -155,7 +156,7 @@ function SpeakerDots({ meeting }: { meeting: Meeting }) {
     );
 }
 
-/** Compute and display ETA for processing meetings */
+/** Compute and display ETA for processing meetings — recalculates on each render (10s polling) */
 function ProcessingEta({ meeting }: { meeting: Meeting }) {
     const dur = meeting.durationSeconds;
     if (!dur || dur <= 0) return null;
@@ -182,7 +183,30 @@ function ProcessingEta({ meeting }: { meeting: Meeting }) {
 
     return (
         <p className="text-[11px] text-muted-foreground">
-            預計完成時間 {formatEta(remainingSec)}
+            預計剩餘 {formatEta(remainingSec)}
+        </p>
+    );
+}
+
+/** F1 heartbeat: show elapsed time since processing started — proves system is alive */
+function ProcessingHeartbeat({ meeting }: { meeting: Meeting }) {
+    const [elapsed, setElapsed] = useState(0);
+
+    useEffect(() => {
+        const startTime = new Date(meeting.createdAt).getTime();
+        const update = () => setElapsed(Math.round((Date.now() - startTime) / 1000));
+        update();
+        const id = setInterval(update, 1000);
+        return () => clearInterval(id);
+    }, [meeting.createdAt]);
+
+    const min = Math.floor(elapsed / 60);
+    const sec = elapsed % 60;
+
+    return (
+        <p className="text-[10px] text-muted-foreground/60 tabular-nums">
+            已處理 {min > 0 ? `${min} 分 ` : ''}{sec.toString().padStart(2, '0')} 秒
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-chimei-orange animate-pulse ml-1.5 align-middle" />
         </p>
     );
 }
@@ -324,19 +348,37 @@ export const MeetingCard = ({ meeting, onClick, onRename }: MeetingCardProps) =>
                             style={{ width: stageProgress(meeting.processingStage) }}
                         />
                     </div>
+                    <ProcessingHeartbeat meeting={meeting} />
                 </div>
             )}
             {meeting.status === 'failed' && (
-                <p className="px-5 mt-3 text-sm text-status-error flex items-center gap-1.5">
-                    <AlertCircle size={14} />
-                    這次整理沒有完成，打開詳情可查看原因並重新產生
-                </p>
+                <div className="px-5 mt-3 space-y-1">
+                    <p className="text-sm text-status-error flex items-center gap-1.5">
+                        <AlertCircle size={14} />
+                        處理未完成 — 點擊查看詳情
+                    </p>
+                    {meeting.failureReason && (
+                        <p className="text-[11px] text-status-error/70 pl-5 line-clamp-1">
+                            原因：{meeting.failureReason}
+                        </p>
+                    )}
+                    {meeting.processingStage && (
+                        <p className="text-[11px] text-muted-foreground pl-5">
+                            失敗階段：{STAGE_CONFIG[meeting.processingStage]?.label ?? meeting.processingStage}
+                        </p>
+                    )}
+                </div>
             )}
             {meeting.status === 'transcribed' && (
-                <p className="px-5 mt-3 text-sm text-brand-azure flex items-center gap-1.5">
-                    <CheckCircle2 size={14} />
-                    逐字稿已完成，摘要尚未生成 — 點擊查看並重試
-                </p>
+                <div className="px-5 mt-3 space-y-1">
+                    <p className="text-sm text-brand-azure font-medium flex items-center gap-1.5 animate-pulse">
+                        <CheckCircle2 size={14} className="text-status-success" />
+                        📄 逐字稿已可查看
+                    </p>
+                    <p className="text-[11px] text-muted-foreground pl-5">
+                        摘要生成中，您可以先點擊查看逐字稿內容
+                    </p>
+                </div>
             )}
             </div>
 
