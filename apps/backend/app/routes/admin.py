@@ -54,6 +54,19 @@ async def gpu_queue_reset_stats(_: None = Depends(_check_admin)):
     return {"message": "GPU queue stats reset"}
 
 
+@router.post("/send-test-email")
+async def send_test_email_endpoint(
+    to_email: str,
+    _: None = Depends(_check_admin),
+):
+    """發送測試信件，驗證 SMTP 通知功能。"""
+    from app.notifications import send_test_email
+    success = send_test_email(to_email)
+    if success:
+        return {"message": f"Test email sent to {to_email}", "success": True}
+    return {"message": "Failed to send test email (check logs)", "success": False}
+
+
 @router.post("/backfill-participants")
 async def backfill_participants(
     user_upn: str,
