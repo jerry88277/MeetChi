@@ -419,18 +419,26 @@ def _process_split_audio_sync(
         release_gpu_slot,
         cleanup_meeting,
         get_stats as get_gpu_stats,
+        stagger_wait,
     )
 
     chunks: list = []  # for finally cleanup
     cleanup_done = False
     try:
+        # 0. 階梯觸發：多場會議同時觸發時，間隔 30s 讓 GPU autoscaler 漸進升溫
+        stagger_elapsed = stagger_wait(meeting_id)
+        if stagger_elapsed > 0:
+            logger.info(
+                f"[ParallelASR] {meeting_id[:8]} stagger wait done ({stagger_elapsed:.1f}s)"
+            )
+
         # 1. Split audio → upload chunks
         logger.info(f"[ParallelASR] splitting audio for {meeting_id}")
         chunks = split_audio_to_chunks(audio_url, meeting_id)
         n_chunks = len(chunks)
         logger.info(
             f"[ParallelASR] {meeting_id} split into {n_chunks} chunks "
-            f"(global GPU queue)"
+            f"(global GPU queue, stagger={stagger_elapsed:.0f}s)"
         )
 
         # 2. Semaphore-limited POST：每個 chunk 一次 retry on failure

@@ -524,6 +524,7 @@ max_queue_wait: 865.6s
 | T5 (舊) | ASR_PARALLELISM=15 | 3/5 首次成功 | ❌ instance 死亡 | ⚠️ 3場 DB stale | 需手動 recovery |
 | T7 (Plan B) | ASR_PARALLELISM=15 | 5/5 ✅ | ❌ 1/18 chunk 429 | 無 | ~40min |
 | **T8 (全局排隊)** | **GPU Semaphore** | **5/5 ✅** | ❌ cold start 429 | **無** | **~35min** |
+| **T9 (階梯+排隊)** | **Stagger 30s + Semaphore** | **6/6 ✅** | **零失敗** | **無** | **~31min** |
 
 **結論**:
 1. ✅ 全局 semaphore 解決了 T5 的 DB 連線問題（處理時間縮短，不再超過 pool timeout）
@@ -535,6 +536,60 @@ max_queue_wait: 865.6s
 **建議 (正式上線)**:
 - GPU 設 `minScale=1`（消除 cold start，月成本 +~$360）
 - 或搭配階梯觸發（T6 驗證有效，零額外成本）
+
+### 5.9 階梯觸發 + 全局排隊壓測 (T9) ✅ PASSED (6/6 全數通過)
+
+**日期**: 2026-06-25  
+**目標**: 結合 30s 階梯觸發與全局 GPU Semaphore，驗證包含 4.3hr 的 6 場全通過
+
+**配置變更** (相對 T8):
+- 新增 `GPU_STAGGER_INTERVAL=30` — 每場會議 GPU 處理間隔 30s
+- `GPU_PER_MEETING_MAX`: 10 → **15** — 讓 18-chunk 會議不被嚴重限制
+- Semaphore timeout: 900s → **1800s** — 高競爭時留足等待時間
+- Image: `backend:gpu-stagger-v2`
+
+**T9a** (stagger=30, per_meeting=10, timeout=900s):
+| Meeting | Audio | Elapsed | Status |
+|---------|-------|---------|--------|
+| e249ed8c (婉婷) | 73min | ~10min | ✅ COMPLETED |
+| 69252af7 (AI直播A) | 136min | ~23min | ✅ COMPLETED |
+| e961f65e (INFRA) | 92min | ~26min | ✅ COMPLETED |
+| 94edd280 (AI直播B) | 136min | ~32min | ✅ COMPLETED |
+| ff052a1f (嬌還) | 73min | ~33min | ✅ COMPLETED |
+| 9a69a4f4 (精準醫學) | 260min | 33min | ❌ FAILED (semaphore timeout) |
+
+**失敗分析**: 18 chunks 中 5 chunks 等 per_meeting slot 超時 (avg_wait=371.7s > 900s timeout)
+
+**T9b** (stagger=30, per_meeting=**15**, timeout=**1800s**):
+| Meeting | Audio | Transcribed at (UTC) | Elapsed | Status |
+|---------|-------|---------------------|---------|--------|
+| ff052a1f (嬌還) | 73min | ~02:19 | ~6min | ✅ COMPLETED |
+| e249ed8c (婉婷) | 73min | ~02:20 | ~7min | ✅ COMPLETED |
+| 94edd280 (AI直播B) | 136min | 02:36:30 | ~23min | ✅ COMPLETED |
+| 69252af7 (AI直播A) | 136min | 02:39:36 | ~26min | ✅ COMPLETED |
+| 9a69a4f4 (精準醫學) | 260min | 02:41:45 | **~28min** | ✅ COMPLETED |
+| e961f65e (INFRA) | 92min | 02:43:24 | ~30min | ✅ COMPLETED |
+
+**GPU Queue 統計** (T9b):
+```
+peak_concurrent: 25/25
+total_processed: 70
+total_queued: 33 (waited > 0.5s for slot)
+stagger_waits: 4 (meetings that waited for stagger gate)
+```
+
+**結論**:
+1. 🎉 **首次 6/6 全數完成**，包含 4.3hr (260min) 會議
+2. ✅ 階梯觸發有效避免 GPU cold start 集中 429
+3. ✅ per_meeting_max=15 讓 18-chunk 會議不再被 semaphore timeout 卡住
+4. ✅ 所有會議 31min 內完成（含 stagger wait + 排隊 + 轉錄 + 摘要）
+5. ✅ 零 429/503 retry 失敗，GPU autoscaler 漸進升溫成功
+
+**最終架構** (belt + suspenders):
+- **Stagger gate** (30s interval): 避免 GPU cold start
+- **Global semaphore** (25 slots): 防止 GPU 過載
+- **Per-meeting cap** (15 slots): 防止單場獨佔
+- **Retry** (7×, 30s×attempt backoff): 容錯 sporadic 429
 
 ---
 
@@ -592,3 +647,7 @@ psql -c "SELECT COUNT(*) FROM transcript_segments WHERE meeting_id='<ID>'"
 | 2026-06-23 | 全局 GPU Semaphore | 取代 per-meeting ASR_PARALLELISM，跨會議共享 25 slots |
 | 2026-06-23 | per_meeting_max=10 | 防止單場大會議獨佔所有 GPU slots |
 | 2026-06-23 | T8 驗證全局排隊通過 | 5/6 零失敗，4.3hr 受 GPU minScale=0 cold start 限制 |
+| 2026-06-25 | 30s 階梯觸發 (stagger) | 會議開始 GPU 處理前間隔 30s，避免 cold start 集中 429 |
+| 2026-06-25 | per_meeting_max 10→15 | 4.3hr 有 18 chunks，限 10 導致 batch 2 等待超時 |
+| 2026-06-25 | semaphore timeout 900→1800s | 高競爭時 avg_wait=371s，900s 不夠第二批 chunks 等待 |
+| 2026-06-25 | **T9b: 6/6 全數完成 ✅** | 首次包含 4.3hr 的 6 場全通過，31min 完成 |
