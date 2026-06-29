@@ -39,6 +39,9 @@ export const TemplateGallery = ({ onBack }: TemplateGalleryProps) => {
     const [previewTemplate, setPreviewTemplate] = useState<TemplateDTO | null>(null);
     const [editingTemplate, setEditingTemplate] = useState<TemplateDTO | null>(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+    const [deleteWarning, setDeleteWarning] = useState<{ id: string; message: string } | null>(null);
+    const [forkTarget, setForkTarget] = useState<TemplateDTO | null>(null);
+    const [forkName, setForkName] = useState('');
 
     const fetchTemplates = useCallback(async () => {
         setIsLoading(true);
@@ -65,29 +68,43 @@ export const TemplateGallery = ({ onBack }: TemplateGalleryProps) => {
     });
 
     const handleFork = async (template: TemplateDTO) => {
+        // Show naming dialog instead of immediately forking
+        setForkTarget(template);
+        setForkName(`${template.display_name} (我的版本)`);
+    };
+
+    const executeFork = async () => {
+        if (!forkTarget || !forkName.trim()) return;
         try {
             const forked = await api.createTemplate({
-                name: `${template.name}_custom_${Date.now()}`,
-                display_name: `${template.display_name} (自訂)`,
-                description: template.description,
+                display_name: forkName.trim(),
+                description: forkTarget.description,
                 category: 'custom',
-                icon: template.icon,
-                color: template.color,
-                tags: [...template.tags],
-                fork_from: template.name,
+                icon: forkTarget.icon,
+                color: forkTarget.color,
+                tags: [...forkTarget.tags],
+                fork_from: forkTarget.name,
             });
             setTemplates(prev => [...prev, forked]);
-            setEditingTemplate(forked);
+            setForkTarget(null);
+            setForkName('');
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Fork 失敗');
+            setError(e instanceof Error ? e.message : '複製失敗');
         }
     };
 
-    const handleDelete = async (id: string) => {
+    const handleDelete = async (id: string, force = false) => {
         try {
-            await api.deleteTemplate(id);
+            const result = await api.deleteTemplate(id, force);
+            if (result && result.warning) {
+                // Backend returned a usage warning — show confirm
+                setDeleteWarning({ id, message: result.message || '此模板正在使用中' });
+                setShowDeleteConfirm(null);
+                return;
+            }
             setTemplates(prev => prev.filter(t => t.id !== id));
             setShowDeleteConfirm(null);
+            setDeleteWarning(null);
         } catch (e) {
             setError(e instanceof Error ? e.message : '刪除失敗');
         }
@@ -135,7 +152,7 @@ export const TemplateGallery = ({ onBack }: TemplateGalleryProps) => {
                     )}
                     <h1 className="text-2xl font-bold text-foreground">模板管理</h1>
                 </div>
-                <p className="text-muted-foreground">選擇適合會議類型的摘要模板，或 Fork 建立客製版本</p>
+                <p className="text-muted-foreground">不同類型的會議，AI 會用不同的框架整理摘要。選擇適合的模板，或複製後自訂調整。</p>
             </div>
 
             {/* Search */}
@@ -206,9 +223,14 @@ export const TemplateGallery = ({ onBack }: TemplateGalleryProps) => {
                                             {tpl.tags.map(tag => (
                                                 <span key={tag} className="px-2 py-0.5 text-xs bg-muted text-muted-foreground rounded">{tag}</span>
                                             ))}
+                                            {(tpl as any).usage_count > 0 && (
+                                                <span className="px-2 py-0.5 text-xs bg-brand-cta/10 text-brand-cta rounded">
+                                                    已用於 {(tpl as any).usage_count} 場會議
+                                                </span>
+                                            )}
                                         </div>
-                                        {/* Actions — opacity-0 群組改 group-hover/group-focus-within 才能鍵盤可達 */}
-                                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                                        {/* Actions — always visible for touch accessibility */}
+                                        <div className="flex gap-2 mt-auto pt-2">
                                             <button
                                                 onClick={() => setPreviewTemplate(tpl)}
                                                 aria-label={`預覽模板：${tpl.display_name}`}
@@ -218,10 +240,10 @@ export const TemplateGallery = ({ onBack }: TemplateGalleryProps) => {
                                             </button>
                                             <button
                                                 onClick={() => handleFork(tpl)}
-                                                aria-label={`Fork 模板：${tpl.display_name}`}
+                                                aria-label={`複製模板：${tpl.display_name}`}
                                                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-brand-cta/10 rounded-lg hover:bg-brand-cta/20 text-brand-cta transition-colors"
                                             >
-                                                <Copy size={14} /> Fork
+                                                <Copy size={14} /> 複製為我的版本
                                             </button>
                                             {!tpl.is_system && (
                                                 <>
@@ -268,16 +290,15 @@ export const TemplateGallery = ({ onBack }: TemplateGalleryProps) => {
                             </button>
                         </div>
                         <p className="text-sm text-muted-foreground mb-4">{previewTemplate.description}</p>
-                        <h3 className="text-sm font-semibold text-foreground mb-3">輸出段落結構</h3>
+                        <h3 className="text-sm font-semibold text-foreground mb-3">這個模板會產出</h3>
                         <div className="space-y-3">
                             {previewTemplate.sections.map((s, i) => (
                                 <div key={i} className="bg-muted/50 rounded-lg p-3">
                                     <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-brand-cta font-medium">✓</span>
                                         <span className="text-sm font-medium text-foreground">{s.title}</span>
-                                        <span className="px-1.5 py-0.5 text-xs bg-card border border-border rounded text-muted-foreground font-mono">{s.output_key}</span>
-                                        <span className="px-1.5 py-0.5 text-xs bg-brand-violet/10 text-brand-violet rounded">{s.output_type}</span>
                                     </div>
-                                    <p className="text-xs text-muted-foreground">{s.instruction}</p>
+                                    <p className="text-xs text-muted-foreground pl-5">{s.instruction.length > 100 ? s.instruction.slice(0, 100) + '...' : s.instruction}</p>
                                 </div>
                             ))}
                         </div>
@@ -290,10 +311,49 @@ export const TemplateGallery = ({ onBack }: TemplateGalleryProps) => {
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowDeleteConfirm(null)}>
                     <div className="bg-card rounded-2xl border border-border max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
                         <h2 className="text-lg font-bold text-foreground mb-2">確認刪除</h2>
-                        <p className="text-sm text-muted-foreground mb-4">此操作無法復原。確定要刪除此模板？</p>
+                        <p className="text-sm text-muted-foreground mb-4">確定要刪除此模板？刪除後可聯繫管理員還原。</p>
                         <div className="flex justify-end gap-3">
                             <button onClick={() => setShowDeleteConfirm(null)} className="px-4 py-2 text-sm bg-muted rounded-lg hover:bg-muted/80 text-muted-foreground">取消</button>
                             <button onClick={() => handleDelete(showDeleteConfirm)} className="px-4 py-2 text-sm bg-status-error text-white rounded-lg hover:bg-status-error/90">刪除</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Usage Warning Dialog */}
+            {deleteWarning && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setDeleteWarning(null)}>
+                    <div className="bg-card rounded-2xl border border-status-warning/30 max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+                        <h2 className="text-lg font-bold text-foreground mb-2">⚠️ 模板使用中</h2>
+                        <p className="text-sm text-muted-foreground mb-4">{deleteWarning.message}</p>
+                        <div className="flex justify-end gap-3">
+                            <button onClick={() => setDeleteWarning(null)} className="px-4 py-2 text-sm bg-muted rounded-lg hover:bg-muted/80 text-muted-foreground">取消</button>
+                            <button onClick={() => handleDelete(deleteWarning.id, true)} className="px-4 py-2 text-sm bg-status-error text-white rounded-lg hover:bg-status-error/90">仍要刪除</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Fork Naming Dialog */}
+            {forkTarget && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setForkTarget(null)}>
+                    <div className="bg-card rounded-2xl border border-border max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+                        <h2 className="text-lg font-bold text-foreground mb-2">📋 複製模板</h2>
+                        <p className="text-sm text-muted-foreground mb-4">
+                            以「{forkTarget.display_name}」為基礎，建立您自己的版本。
+                        </p>
+                        <label className="block text-sm font-medium text-foreground mb-1">模板名稱</label>
+                        <input
+                            value={forkName}
+                            onChange={e => setForkName(e.target.value)}
+                            className="w-full px-3 py-2 bg-card border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-cta text-sm mb-4"
+                            placeholder="例如：我的業務會議模板"
+                            autoFocus
+                            onKeyDown={e => { if (e.key === 'Enter') executeFork(); }}
+                        />
+                        <div className="flex justify-end gap-3">
+                            <button onClick={() => setForkTarget(null)} className="px-4 py-2 text-sm bg-muted rounded-lg hover:bg-muted/80 text-muted-foreground">取消</button>
+                            <button onClick={executeFork} disabled={!forkName.trim()} className="px-4 py-2 text-sm bg-brand-cta text-white rounded-lg hover:bg-brand-cta/90 disabled:opacity-50">建立</button>
                         </div>
                     </div>
                 </div>

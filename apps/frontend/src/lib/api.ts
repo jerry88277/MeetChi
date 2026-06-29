@@ -700,8 +700,9 @@ class ApiClient {
         });
     }
 
-    async deleteTemplate(id: string): Promise<void> {
-        await this.fetch(`/api/v1/templates/${id}`, { method: 'DELETE' });
+    async deleteTemplate(id: string, force = false): Promise<{ deleted?: boolean; warning?: boolean; message?: string }> {
+        const query = force ? '?force=true' : '';
+        return this.fetch(`/api/v1/templates/${id}${query}`, { method: 'DELETE' });
     }
 
     // --- Phase 8.1.3: Speaker Mapping Edit ---
@@ -919,10 +920,12 @@ export interface TemplateDTO {
     tags: string[];
     is_system: boolean;
     is_active: boolean;
+    owner_upn?: string;
+    usage_count?: number;
 }
 
 export interface CreateTemplateDTO {
-    name: string;
+    name?: string;
     display_name: string;
     description?: string;
     category?: string;
