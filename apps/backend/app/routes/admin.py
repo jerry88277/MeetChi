@@ -18,6 +18,7 @@ from app.models import (
     AccessSource,
     Meeting,
     MeetingParticipant,
+    MeetingStatus,
     ParticipantRole,
     User,
 )
@@ -65,6 +66,24 @@ async def send_test_email_endpoint(
     if success:
         return {"message": f"Test email sent to {to_email}", "success": True}
     return {"message": "Failed to send test email (check logs)", "success": False}
+
+
+@router.post("/fix-stale-failure-reasons")
+async def fix_stale_failure_reasons(
+    db: Session = Depends(get_db),
+    _: None = Depends(_check_admin),
+):
+    """清除已 COMPLETED 會議的殘留 failure_reason（一次性資料修復）。"""
+    stale = db.query(Meeting).filter(
+        Meeting.status == MeetingStatus.COMPLETED,
+        Meeting.failure_reason.isnot(None),
+    ).all()
+    count = 0
+    for m in stale:
+        m.failure_reason = None
+        count += 1
+    db.commit()
+    return {"fixed": count, "message": f"Cleared failure_reason from {count} COMPLETED meetings"}
 
 
 @router.post("/backfill-participants")

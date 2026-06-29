@@ -40,7 +40,7 @@ export interface Meeting {
     transcript_segments: TranscriptSegment[];
     is_confidential?: boolean;  // Sprint 2e Phase 1 (2026-05-11)
     failure_reason?: string | null;  // 2026-05-25 Y7
-    processing_stage?: "queued" | "transcribing" | "summarizing" | null;  // 2026-06-18
+    processing_stage?: "queued" | "transcribing" | "diarizing" | "summarizing" | null;  // 2026-06-18
 }
 
 // Sprint 2c (PR21) extended: backend summary_json 加新欄位後，frontend 對齊。

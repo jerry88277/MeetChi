@@ -490,6 +490,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                     <h4 className="text-lg font-bold text-foreground">
                                         {meeting.processingStage === 'queued' && '排隊中...'}
                                         {meeting.processingStage === 'transcribing' && 'AI 正在轉錄語音...'}
+                                        {meeting.processingStage === 'diarizing' && 'AI 正在辨識講者...'}
                                         {meeting.processingStage === 'summarizing' && 'AI 正在生成摘要...'}
                                         {!meeting.processingStage && 'AI 正在處理中...'}
                                     </h4>
@@ -505,12 +506,12 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                             </div>
                             {/* Stage progress steps */}
                             <div className="flex items-center gap-2 mb-4">
-                                {(['queued', 'transcribing', 'summarizing'] as const).map((s, i) => {
-                                    const stages = ['queued', 'transcribing', 'summarizing'];
+                                {(['queued', 'transcribing', 'diarizing', 'summarizing'] as const).map((s, i) => {
+                                    const stages = ['queued', 'transcribing', 'diarizing', 'summarizing'];
                                     const currentIdx = stages.indexOf(meeting.processingStage ?? '');
                                     const isActive = s === meeting.processingStage;
                                     const isDone = currentIdx >= 0 && i < currentIdx;
-                                    const labels = { queued: '排隊', transcribing: '轉錄', summarizing: '摘要' };
+                                    const labels = { queued: '排隊', transcribing: '轉錄', diarizing: '辨識講者', summarizing: '摘要' };
                                     return (
                                         <React.Fragment key={s}>
                                             {i > 0 && <div className={`flex-1 h-0.5 ${isDone || isActive ? 'bg-brand-cta' : 'bg-muted'}`} />}

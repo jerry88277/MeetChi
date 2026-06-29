@@ -814,6 +814,7 @@ def run_offline_asr_refinement(meeting_id: str, audio_path: str, language: str =
             meeting.status = MeetingStatus.COMPLETED
             meeting.completed_at = datetime.utcnow()
             meeting.processing_stage = None
+            meeting.failure_reason = None  # Clear stale failure_reason from prior attempts
             db.commit()
             _update_task_status(db, meeting_id, "offline_asr", "COMPLETED", "Empty result, kept Gemini transcript")
             return {"status": "completed", "note": "empty_result_kept_gemini"}
@@ -842,6 +843,7 @@ def run_offline_asr_refinement(meeting_id: str, audio_path: str, language: str =
         meeting.status = MeetingStatus.COMPLETED
         meeting.completed_at = datetime.utcnow()
         meeting.processing_stage = None
+        meeting.failure_reason = None  # Clear stale failure_reason from prior attempts
         db.commit()
 
         # C1: Apply glossary-based post-correction
@@ -871,6 +873,7 @@ def run_offline_asr_refinement(meeting_id: str, audio_path: str, language: str =
                 meeting.status = MeetingStatus.COMPLETED  # Fallback: keep Gemini transcript
                 meeting.completed_at = meeting.completed_at or datetime.utcnow()
                 meeting.processing_stage = None
+                meeting.failure_reason = None  # Clear stale failure_reason
                 db.commit()
             _update_task_status(db, meeting_id, "offline_asr", "FAILED", str(e))
         except Exception:
@@ -1138,7 +1141,8 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
             meeting.status = MeetingStatus.COMPLETED
             meeting.completed_at = datetime.utcnow()
             meeting.processing_stage = None
-            
+            meeting.failure_reason = None  # Clear stale failure_reason from prior attempts
+
             db.commit()
 
             try:
