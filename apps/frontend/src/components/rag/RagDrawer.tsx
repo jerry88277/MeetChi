@@ -62,9 +62,9 @@ export function RagDrawer({ isOpen, onClose, onExpand }: RagDrawerProps) {
             <MessageSquare className="w-5 h-5 text-brand-cta shrink-0" />
             <div className="min-w-0">
               <h2 id="rag-drawer-title" className="font-semibold text-foreground text-sm leading-tight">
-                智能助理
+                ChiMemo
               </h2>
-              <p className="text-xs text-muted-foreground leading-tight">跨會議檢索</p>
+              <p className="text-xs text-muted-foreground leading-tight">跨會議 AI 知識搜尋</p>
             </div>
           </div>
 

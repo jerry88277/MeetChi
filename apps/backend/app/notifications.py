@@ -7,33 +7,39 @@ Sends notifications to users when meeting processing stages complete:
 - FAILED: 處理失敗通知
 
 Configuration via environment variables:
-- SMTP_HOST: SMTP server hostname
-- SMTP_PORT: SMTP server port (default: 587)
-- SMTP_USER: SMTP authentication username (optional for relay)
-- SMTP_PASSWORD: SMTP authentication password (optional for relay)
-- SMTP_USE_TLS: Whether to use STARTTLS (default: true)
-- SMTP_FROM_EMAIL: Sender email address
+- SMTP_HOST: SMTP server hostname (default: mail.chimei.com.tw)
+- SMTP_PORT: SMTP server port (default: 25 for internal relay)
+- SMTP_USER: SMTP authentication username (optional for internal relay)
+- SMTP_PASSWORD: SMTP authentication password (optional for internal relay)
+- SMTP_USE_TLS: Whether to use STARTTLS (default: false for internal relay)
+- SMTP_FROM_EMAIL: Sender email address (default: MeetChi_notify@mail.chimei.com.tw)
 - SMTP_FROM_NAME: Sender display name (default: MeetChi 會議助理)
+- SMTP_TIMEOUT: Connection timeout in seconds (default: 60)
 - NOTIFICATION_ENABLED: Enable/disable email notifications (default: false)
 """
 
 import logging
 import os
+import re
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Optional
+from email.header import Header
+from email.utils import formatdate, make_msgid
+from typing import Optional, List
 
 logger = logging.getLogger(__name__)
 
-# Configuration
-SMTP_HOST = os.getenv("SMTP_HOST", "")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+# Configuration — 預設值對齊奇美內部 SMTP relay（inbound1.mail.chimei.com.tw:25, no auth）
+# 注意：mail.chimei.com.tw 從外部 (GCP) 不可達，需用 inbound1 MX 入口
+SMTP_HOST = os.getenv("SMTP_HOST", "inbound1.mail.chimei.com.tw")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "25"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() in ("true", "1", "yes")
-SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "meetchi-noreply@meetchi.ai")
+SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "false").lower() in ("true", "1", "yes")
+SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "MeetChi_notify@mail.chimei.com.tw")
 SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "MeetChi 會議助理")
+SMTP_TIMEOUT = int(os.getenv("SMTP_TIMEOUT", "60"))
 NOTIFICATION_ENABLED = os.getenv("NOTIFICATION_ENABLED", "false").lower() in ("true", "1", "yes")
 
 
@@ -124,60 +130,37 @@ def _build_failed_email(meeting_title: str, meeting_url: str) -> tuple[str, str]
     return subject, html
 
 
-def _resolve_mx(domain: str) -> Optional[str]:
-    """Resolve MX record for a domain. Returns highest priority MX host."""
-    import socket
-    import struct
+def _parse_recipients(recipients) -> List[str]:
+    """穩健解析收件者：分號/逗號/頓號/空白皆可混用，去重去空白。"""
+    if isinstance(recipients, str):
+        raw = re.split(r'[;,、\s]+', recipients)
+    elif isinstance(recipients, (list, tuple, set)):
+        raw = []
+        for item in recipients:
+            raw.extend(re.split(r'[;,、\s]+', str(item)))
+    else:
+        raw = re.split(r'[;,、\s]+', str(recipients))
 
-    # Method 1: try dnspython if available
-    try:
-        import dns.resolver
-        answers = dns.resolver.resolve(domain, "MX")
-        mx_hosts = [(r.preference, str(r.exchange).rstrip(".")) for r in answers]
-        if mx_hosts:
-            mx_hosts.sort()
-            return mx_hosts[0][1]
-    except ImportError:
-        pass
-    except Exception:
-        pass
-
-    # Method 2: use subprocess nslookup
-    import subprocess
-    try:
-        result = subprocess.run(
-            ["nslookup", "-type=mx", domain],
-            capture_output=True, text=True, timeout=10
-        )
-        mx_hosts = []
-        for line in result.stdout.split("\n"):
-            if "mail exchanger" in line:
-                parts = line.strip().split()
-                priority = int(parts[-2])
-                host = parts[-1].rstrip(".")
-                mx_hosts.append((priority, host))
-        if mx_hosts:
-            mx_hosts.sort()
-            return mx_hosts[0][1]
-    except Exception:
-        pass
-
-    # Method 3: hardcoded fallback for known domains
-    known_mx = {
-        "mail.chimei.com.tw": "inbound1.mail.chimei.com.tw",
-        "gmail.com": "gmail-smtp-in.l.google.com",
-    }
-    return known_mx.get(domain)
+    seen = set()
+    cleaned = []
+    for addr in raw:
+        addr = addr.strip()
+        if addr and addr not in seen:
+            seen.add(addr)
+            cleaned.append(addr)
+    return cleaned
 
 
 def send_email(to_email: str, subject: str, html_body: str) -> bool:
     """
-    Send an HTML email via SMTP.
-    
-    Supports two modes:
-    1. SMTP relay (SMTP_HOST configured): standard authenticated SMTP
-    2. Direct MX delivery (SMTP_HOST="auto"): resolve recipient's MX and deliver directly
-    
+    Send an HTML email via internal SMTP relay.
+
+    採用奇美內部 mail.chimei.com.tw relay 模式：
+    - 預設 port 25、無需認證
+    - 支援多收件者（分號/逗號分隔）
+    - 加上 Date + Message-ID 防止被當重複信去重
+    - 含 timeout 防止卡死
+
     Returns True on success, False on failure (never raises).
     """
     if not NOTIFICATION_ENABLED:
@@ -185,49 +168,43 @@ def send_email(to_email: str, subject: str, html_body: str) -> bool:
         return False
 
     try:
+        # 解析收件者（支援多人）
+        receiver = _parse_recipients(to_email)
+        if not receiver:
+            logger.error(f"[Email] No valid recipients from: {to_email}")
+            return False
+
         msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
+        msg["Subject"] = Header(subject, "utf-8")
         msg["From"] = f"{SMTP_FROM_NAME} <{SMTP_FROM_EMAIL}>"
-        msg["To"] = to_email
+        msg["To"] = ", ".join(receiver)
+        msg["Date"] = formatdate(localtime=True)
+        msg["Message-ID"] = make_msgid()
 
         # Plain text fallback
         plain_text = f"{subject}\n\n請使用支援 HTML 的郵件客戶端查看此信件。"
         msg.attach(MIMEText(plain_text, "plain", "utf-8"))
         msg.attach(MIMEText(html_body, "html", "utf-8"))
 
-        if SMTP_HOST == "auto" or not SMTP_HOST:
-            # Direct MX delivery — resolve recipient domain's MX record
-            domain = to_email.split("@")[1]
-            mx_host = _resolve_mx(domain)
-            if not mx_host:
-                logger.error(f"[Email] Cannot resolve MX for {domain}")
-                return False
-            logger.info(f"[Email] Direct MX delivery to {mx_host}:25")
-            import socket
-            with smtplib.SMTP(mx_host, 25, timeout=30) as server:
-                server.ehlo(socket.getfqdn())
+        # 連線 SMTP（內部 relay 通常 port 25 無驗證）
+        smtp = smtplib.SMTP(timeout=SMTP_TIMEOUT)
+        try:
+            smtp.connect(SMTP_HOST, SMTP_PORT)
+            if SMTP_USE_TLS:
+                smtp.starttls()
+            if SMTP_USER and SMTP_PASSWORD:
+                smtp.login(SMTP_USER, SMTP_PASSWORD)
+            smtp.sendmail(SMTP_FROM_EMAIL, receiver, msg.as_string())
+        finally:
+            try:
+                smtp.quit()
+            except Exception:
                 try:
-                    server.starttls()
-                    server.ehlo(socket.getfqdn())
-                except (smtplib.SMTPNotSupportedError, smtplib.SMTPException):
+                    smtp.close()
+                except Exception:
                     pass
-                server.sendmail(SMTP_FROM_EMAIL, to_email, msg.as_string())
-        elif SMTP_USE_TLS and SMTP_PORT == 465:
-            # SSL mode
-            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=30) as server:
-                if SMTP_USER and SMTP_PASSWORD:
-                    server.login(SMTP_USER, SMTP_PASSWORD)
-                server.sendmail(SMTP_FROM_EMAIL, to_email, msg.as_string())
-        else:
-            # STARTTLS or plain mode
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as server:
-                if SMTP_USE_TLS:
-                    server.starttls()
-                if SMTP_USER and SMTP_PASSWORD:
-                    server.login(SMTP_USER, SMTP_PASSWORD)
-                server.sendmail(SMTP_FROM_EMAIL, to_email, msg.as_string())
 
-        logger.info(f"[Email] Sent successfully to {to_email}: {subject}")
+        logger.info(f"[Email] Sent successfully to {receiver}: {subject}")
         return True
 
     except Exception as e:

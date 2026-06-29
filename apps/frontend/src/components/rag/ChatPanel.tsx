@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { Send, FileText, Loader2, History, ChevronDown, X, Sparkles } from "lucide-react";
 import { useSession } from "next-auth/react";
+import ReactMarkdown from "react-markdown";
 import { api, RagCitation, RagHistoryItem, RagGreetingResponse } from "@/lib/api";
 import { RAG_INACTIVITY_MS } from "@/lib/config";
 
@@ -211,17 +212,36 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
   };
 
   const renderMessageTextWithCitations = (text: string, citations: RagCitation[]) => {
-    if (!citations || citations.length === 0) return <span className="whitespace-pre-wrap">{text}</span>;
+    if (!citations || citations.length === 0) {
+      return (
+        <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-1.5 prose-li:my-0.5 prose-headings:my-2">
+          <ReactMarkdown
+            components={{
+              a: ({ href, children }) => (
+                <a href={href} target="_blank" rel="noopener noreferrer" className="text-brand-cta underline">{children}</a>
+              ),
+            }}
+          >
+            {text}
+          </ReactMarkdown>
+        </div>
+      );
+    }
 
-    // Regex to match formats like [來源3], [來源 3], [來源:3]
+    // Split text by citation markers [來源N], render each segment as Markdown
     const regex = /\[來源\s*:?\s*(\d+)\]/g;
-    const parts = [];
+    const parts: React.ReactNode[] = [];
     let lastIndex = 0;
     let match;
 
     while ((match = regex.exec(text)) !== null) {
       if (match.index > lastIndex) {
-        parts.push(<span key={`text-${lastIndex}`} className="whitespace-pre-wrap">{text.substring(lastIndex, match.index)}</span>);
+        const segment = text.substring(lastIndex, match.index);
+        parts.push(
+          <span key={`md-${lastIndex}`} className="inline">
+            <ReactMarkdown>{segment}</ReactMarkdown>
+          </span>
+        );
       }
 
       const citationIndex = parseInt(match[1], 10) - 1;
@@ -243,16 +263,35 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
     }
 
     if (lastIndex < text.length) {
-      parts.push(<span key={`text-${lastIndex}`} className="whitespace-pre-wrap">{text.substring(lastIndex)}</span>);
+      const segment = text.substring(lastIndex);
+      parts.push(
+        <span key={`md-${lastIndex}`} className="inline">
+          <ReactMarkdown>{segment}</ReactMarkdown>
+        </span>
+      );
     }
 
-    return <>{parts}</>;
+    return <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-1.5 prose-li:my-0.5">{parts}</div>;
   };
 
   return (
     <div className="flex flex-col h-full bg-surface relative">
       {/* 2026-05-25 Y5：歷史 dropdown 觸發 + 浮動列表 */}
-      <div className="sticky top-0 z-20 bg-surface/95 backdrop-blur-sm border-b border-border px-4 py-2 flex items-center justify-end">
+      <div className="sticky top-0 z-20 bg-surface/95 backdrop-blur-sm border-b border-border px-4 py-2 flex items-center justify-end gap-1">
+        {messages.length > 1 && (
+          <button
+            type="button"
+            onClick={() => {
+              setMessages([WELCOME_MESSAGE]);
+              if (storageKey) sessionStorage.removeItem(storageKey);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground hover:text-status-error hover:bg-status-error/10 rounded-lg transition-colors"
+            title="清除對話，開始新主題"
+          >
+            <X size={12} />
+            <span>清除對話</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setIsHistoryOpen(v => !v)}
@@ -383,12 +422,14 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
                 {greeting.top_topics.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 pt-3">
                     {greeting.top_topics.map(topic => (
-                      <span
+                      <button
                         key={topic}
-                        className="text-xs px-2.5 py-1 rounded-full bg-brand-cta/10 text-brand-cta border border-brand-cta/20"
+                        type="button"
+                        onClick={() => handleSuggestedClick(`彙整所有提到「${topic}」的會議討論`)}
+                        className="text-xs px-2.5 py-1 rounded-full bg-brand-cta/10 text-brand-cta border border-brand-cta/20 hover:bg-brand-cta hover:text-white transition-colors cursor-pointer"
                       >
                         {topic}
-                      </span>
+                      </button>
                     ))}
                   </div>
                 )}

@@ -2,6 +2,7 @@
 
 import React from "react";
 import { X, ExternalLink, Calendar, Users, FileType, Quote } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { RagCitation } from "@/lib/api";
 
 interface ReferencePanelProps {
@@ -17,6 +18,13 @@ const formatTime = (seconds?: number | null) => {
 };
 
 export function ReferencePanel({ citation, onClose }: ReferencePanelProps) {
+  const router = useRouter();
+
+  const handleOpenInNewTab = () => {
+    const t = citation.start_time != null ? `?t=${citation.start_time}` : "";
+    router.push(`/dashboard/meetings/${citation.meeting_id}${t}`);
+  };
+
   return (
     <div className="flex flex-col h-full bg-card">
       <div className="p-4 border-b border-border flex items-center justify-between sticky top-0 bg-card/95 backdrop-blur-sm z-10">
@@ -25,9 +33,10 @@ export function ReferencePanel({ citation, onClose }: ReferencePanelProps) {
         </h3>
         <div className="flex items-center gap-1">
           <button
+            onClick={handleOpenInNewTab}
             className="p-1.5 text-muted-foreground hover:bg-muted rounded-md transition-colors"
-            title="此功能即將推出"
-            aria-label="開啟新分頁"
+            title="前往會議詳情"
+            aria-label="前往會議詳情"
           >
             <ExternalLink size={16} />
           </button>
