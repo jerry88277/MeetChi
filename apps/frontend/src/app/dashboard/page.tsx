@@ -769,6 +769,7 @@ export default function DashboardPage() {
                 onToggle={() => uploadQueue.setIsTrayOpen(v => !v)}
                 onRetry={uploadQueue.retryTask}
                 onRemove={uploadQueue.removeTask}
+                onCancel={uploadQueue.cancelTask}
                 onClearCompleted={uploadQueue.clearCompleted}
             />
             {/* State-driven confirm dialog (replaces window.confirm) */}
@@ -1010,7 +1011,7 @@ export default function DashboardPage() {
             <ConfirmDialog
                 open={!!pendingDelete}
                 title="確定要刪除這個會議記錄嗎？"
-                description="此操作將同時移除音檔、逐字稿與摘要，且無法復原。"
+                description="此操作將移除音檔、逐字稿與摘要。資料保留 30 天供 IT 還原，期間可與 IT 聯絡恢復。"
                 confirmText="刪除"
                 cancelText="取消"
                 variant="destructive"

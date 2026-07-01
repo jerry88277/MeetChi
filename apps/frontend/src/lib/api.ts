@@ -395,11 +395,17 @@ class ApiClient {
         uploadUrl: string,
         file: File,
         onProgress?: (percent: number, loaded: number, total: number) => void,
+        signal?: AbortSignal,
     ): Promise<void> {
         return new Promise<void>((resolve, reject) => {
+            if (signal?.aborted) {
+                reject(new DOMException('Upload aborted', 'AbortError'));
+                return;
+            }
             const xhr = new XMLHttpRequest();
             xhr.open('PUT', uploadUrl, true);
             xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+            if (signal) signal.addEventListener('abort', () => xhr.abort(), { once: true });
 
             if (onProgress) {
                 xhr.upload.onprogress = (e: ProgressEvent) => {
@@ -445,12 +451,14 @@ class ApiClient {
         sessionUri: string,
         file: File,
         onProgress?: (percent: number, loaded: number, total: number) => void,
+        signal?: AbortSignal,
     ): Promise<void> {
         const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB chunks (GCS minimum is 256KB)
         const totalSize = file.size;
         let offset = 0;
 
         while (offset < totalSize) {
+            if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError');
             const end = Math.min(offset + CHUNK_SIZE, totalSize);
             const chunk = file.slice(offset, end);
             const isLast = end === totalSize;
@@ -464,6 +472,7 @@ class ApiClient {
                     'Content-Range': contentRange,
                 },
                 body: chunk,
+                signal,
             });
 
             if (isLast && response.status === 200) {
@@ -546,6 +555,7 @@ class ApiClient {
         meetingId: string,
         file: File,
         onProgress?: (percent: number, loaded: number, total: number) => void,
+        signal?: AbortSignal,
     ): Promise<void> {
         const CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB per chunk (was 2MB)
         const CONCURRENCY = 4;              // 4 parallel (was 2)
@@ -562,9 +572,14 @@ class ApiClient {
 
         const uploadChunkOnce = (i: number, chunk: Blob, url: string): Promise<void> =>
             new Promise<void>((resolve, reject) => {
+                if (signal?.aborted) {
+                    reject(new DOMException('Upload aborted', 'AbortError'));
+                    return;
+                }
                 const xhr = new XMLHttpRequest();
                 xhr.open('POST', url, true);
                 xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+                if (signal) signal.addEventListener('abort', () => xhr.abort(), { once: true });
 
                 xhr.upload.onprogress = (e: ProgressEvent) => {
                     if (e.lengthComputable && e.total > 0) {
@@ -597,6 +612,7 @@ class ApiClient {
 
             let lastErr: Error | null = null;
             for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+                if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError');
                 if (attempt > 0) {
                     // Exponential back-off: 1s, 2s
                     await new Promise(r => setTimeout(r, 1000 * attempt));

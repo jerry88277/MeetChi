@@ -43,6 +43,8 @@ export function useUploadQueue() {
     const [isTrayOpen, setIsTrayOpen] = useState(true);
     const activeCountRef = useRef(0);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    // Per-task AbortController for cancelling in-flight uploads (U-B2)
+    const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
 
     // Helpers to update a single task
     const updateTask = useCallback((taskId: string, patch: Partial<UploadTask>) => {
@@ -82,6 +84,9 @@ export function useUploadQueue() {
         language: string = 'zh',
     ) => {
         let createdMeetingId: string | undefined;
+        // Register an AbortController so the user can cancel this in-flight upload (U-B2)
+        const controller = new AbortController();
+        abortControllersRef.current.set(taskId, controller);
         try {
             // Get duration
             const duration = await new Promise<number>((resolve) => {
@@ -124,9 +129,10 @@ export function useUploadQueue() {
             // Strategy 1: GCS Resumable Upload (8MB chunks, direct to GCS)
             try {
                 const { session_uri } = await api.getResumableUploadSession(meeting.id, file.name, contentType);
-                await api.resumableUpload(session_uri, file, progressCb);
+                await api.resumableUpload(session_uri, file, progressCb, controller.signal);
                 uploaded = true;
             } catch (resumableErr) {
+                if (controller.signal.aborted) throw resumableErr;
                 console.warn('[MeetChi] Resumable upload failed, trying signed PUT:', resumableErr);
             }
 
@@ -134,16 +140,17 @@ export function useUploadQueue() {
             if (!uploaded) {
                 try {
                     const { uploadUrl } = await api.getUploadUrl(meeting.id, file.name, contentType);
-                    await api.uploadToGcs(uploadUrl, file, progressCb);
+                    await api.uploadToGcs(uploadUrl, file, progressCb, controller.signal);
                     uploaded = true;
                 } catch (directErr) {
+                    if (controller.signal.aborted) throw directErr;
                     console.warn('[MeetChi] Signed PUT failed, trying chunked:', directErr);
                 }
             }
 
             // Strategy 3: Chunked via backend (most compatible, slowest)
             if (!uploaded) {
-                await api.chunkedUpload(meeting.id, file, progressCb);
+                await api.chunkedUpload(meeting.id, file, progressCb, controller.signal);
             }
 
             // Upload done → trigger transcription (fire-and-forget)
@@ -158,6 +165,16 @@ export function useUploadQueue() {
             });
 
         } catch (err) {
+            const wasCancelled = controller.signal.aborted;
+            // Clean up orphan meeting on both cancel and real failure
+            if (createdMeetingId) {
+                api.deleteMeeting(createdMeetingId, sessionUpnRef.current).catch(() => {});
+            }
+            if (wasCancelled) {
+                // User cancelled — remove the task silently, no error toast
+                setTasks(prev => prev.filter(t => t.id !== taskId));
+                return;
+            }
             console.error(`Upload ${taskId} failed:`, err);
             const rawMsg = err instanceof Error ? err.message : '';
             const isInfraError = /gcs|bucket|googleapis|storage\.cloud|signed.url|cors|access denied/i.test(rawMsg);
@@ -168,11 +185,8 @@ export function useUploadQueue() {
                     ? '上傳失敗，請確認網路連線後重試。'
                     : (rawMsg || '上傳檔案失敗'),
             });
-            // Clean up orphan
-            if (createdMeetingId) {
-                api.deleteMeeting(createdMeetingId, sessionUpnRef.current).catch(() => {});
-            }
         } finally {
+            abortControllersRef.current.delete(taskId);
             activeCountRef.current--;
             // Process next in queue
             setTimeout(() => processQueue(), 0);
@@ -233,6 +247,20 @@ export function useUploadQueue() {
     }, []);
 
     /**
+     * Cancel a task. Aborts in-flight uploads (U-B2); removes queued tasks.
+     * The abort triggers executeUpload's catch → orphan meeting cleanup + task removal.
+     */
+    const cancelTask = useCallback((taskId: string) => {
+        const controller = abortControllersRef.current.get(taskId);
+        if (controller) {
+            controller.abort();
+        } else {
+            // Not started yet (queued) — just drop it
+            setTasks(prev => prev.filter(t => t.id !== taskId));
+        }
+    }, []);
+
+    /**
      * Clear all completed/error tasks from the tray.
      */
     const clearCompleted = useCallback(() => {
@@ -255,6 +283,7 @@ export function useUploadQueue() {
         enqueueFiles,
         retryTask,
         removeTask,
+        cancelTask,
         clearCompleted,
         triggerFileInput,
         fileInputRef,

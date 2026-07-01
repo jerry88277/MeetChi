@@ -83,10 +83,6 @@ function stageLabel(stage?: string | null): string {
     return STAGE_CONFIG[stage ?? '']?.label ?? 'AI 處理中';
 }
 
-function stageProgress(stage?: string | null): string {
-    return STAGE_CONFIG[stage ?? '']?.progress ?? '60%';
-}
-
 function ProcessingStageIndicator({ stage }: { stage?: string | null }) {
     const config = STAGE_CONFIG[stage ?? ''];
     const steps = ['queued', 'transcribing', 'diarizing', 'summarizing'] as const;
@@ -182,8 +178,8 @@ function ProcessingEta({ meeting }: { meeting: Meeting }) {
     };
 
     return (
-        <p className="text-[11px] text-muted-foreground">
-            預計剩餘 {formatEta(remainingSec)}
+        <p className="text-[11px] text-muted-foreground" title="依歷史平均推估，實際時間可能因排隊與音檔長度而不同">
+            預計剩餘 {formatEta(remainingSec)}（預估）
         </p>
     );
 }
@@ -342,11 +338,10 @@ export const MeetingCard = ({ meeting, onClick, onRename }: MeetingCardProps) =>
                 <div className="px-5 mt-3 space-y-2">
                     <ProcessingStageIndicator stage={meeting.processingStage} />
                     <ProcessingEta meeting={meeting} />
+                    {/* U-A5: indeterminate activity bar — no fake percentage.
+                        Real progress lives in the stage pills + heartbeat above/below. */}
                     <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div
-                            className="h-full bg-brand-chimei-orange/60 rounded-full animate-pulse"
-                            style={{ width: stageProgress(meeting.processingStage) }}
-                        />
+                        <div className="h-full w-1/3 bg-brand-chimei-orange/60 rounded-full animate-indeterminate" />
                     </div>
                     <ProcessingHeartbeat meeting={meeting} />
                 </div>

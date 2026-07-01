@@ -107,11 +107,12 @@ export const SecurityWrapper = ({
             if (isWatermarkHidden()) setIsViolation(true);
         });
 
-        if (watermarkRef.current) {
-            observer.observe(watermarkRef.current, { attributes: true, attributeFilter: ['style', 'class'] });
-        }
-        if (watermarkRef.current.parentElement) {
-            observer.observe(watermarkRef.current.parentElement, { childList: true });
+        const watermarkNode = watermarkRef.current;
+        if (watermarkNode) {
+            observer.observe(watermarkNode, { attributes: true, attributeFilter: ['style', 'class'] });
+            if (watermarkNode.parentElement) {
+                observer.observe(watermarkNode.parentElement, { childList: true });
+            }
         }
 
         return () => observer.disconnect();

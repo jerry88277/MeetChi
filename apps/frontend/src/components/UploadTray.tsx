@@ -9,6 +9,7 @@ import {
     AlertCircle,
     UploadCloud,
     Trash2,
+    X,
 } from "lucide-react";
 import type { UploadTask } from "@/hooks/useUploadQueue";
 
@@ -18,6 +19,7 @@ interface UploadTrayProps {
     onToggle: () => void;
     onRetry: (taskId: string) => void;
     onRemove: (taskId: string) => void;
+    onCancel: (taskId: string) => void;
     onClearCompleted: () => void;
 }
 
@@ -64,7 +66,7 @@ function statusLabel(status: UploadTask["status"], progress: number, fileSize?: 
  * UploadTray — Bottom-right floating panel (Google Drive style).
  * Shows all upload tasks with progress, retries, and queue status.
  */
-export function UploadTray({ tasks, isOpen, onToggle, onRetry, onRemove, onClearCompleted }: UploadTrayProps) {
+export function UploadTray({ tasks, isOpen, onToggle, onRetry, onRemove, onCancel, onClearCompleted }: UploadTrayProps) {
     if (tasks.length === 0) return null;
 
     const activeCount = tasks.filter(t => t.status === "uploading" || t.status === "processing").length;
@@ -148,12 +150,23 @@ export function UploadTray({ tasks, isOpen, onToggle, onRetry, onRemove, onClear
                                 )}
                             </div>
                             {/* Actions */}
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center gap-1">
+                                {/* Cancel — visible during active upload (U-B2) */}
+                                {task.status === "uploading" && (
+                                    <button
+                                        onClick={() => onCancel(task.id)}
+                                        className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-status-error transition-colors"
+                                        title="取消上傳"
+                                        aria-label="取消上傳"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                )}
                                 {(task.status === "done" || task.status === "error" || task.status === "queued") && (
                                     <button
-                                        onClick={() => onRemove(task.id)}
-                                        className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-status-error transition-colors"
-                                        title="移除"
+                                        onClick={() => task.status === "queued" ? onCancel(task.id) : onRemove(task.id)}
+                                        className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-status-error transition-colors opacity-0 group-hover:opacity-100"
+                                        title={task.status === "queued" ? "取消" : "移除"}
                                     >
                                         <Trash2 size={12} />
                                     </button>
