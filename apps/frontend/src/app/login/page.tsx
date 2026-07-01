@@ -82,6 +82,10 @@ function LoginContent() {
                     </div>
                     <h1 className="text-3xl font-bold text-foreground">MeetChi</h1>
                     <p className="text-muted-foreground mt-2">把每場討論整理成下一步</p>
+                    {/* CS-3：冷啟動者一眼看懂用途的白話說明 */}
+                    <p className="text-sm text-muted-foreground/80 mt-1">
+                        會議錄音 → AI 自動轉成文字，並整理出摘要、決策與待辦
+                    </p>
                 </div>
 
                 {/* Login Card */}

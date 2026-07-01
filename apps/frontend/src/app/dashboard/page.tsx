@@ -48,7 +48,7 @@ import { useFontSize } from '@/hooks/useFontSize';
 import { installConsoleErrorHook } from '@/lib/feedback-metadata';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { TOUR_STORAGE_KEY } from '@/lib/config';
+import { TOUR_STORAGE_KEY, TOUR_DISMISSED_KEY } from '@/lib/config';
 
 // --- Main App Component ---
 export default function DashboardPage() {
@@ -81,9 +81,11 @@ export default function DashboardPage() {
     }, []);
 
     // Auto-open tour for first-time users
+    // CS-1：已完成 or 本次已略過都不自動彈；略過者改由零會議首頁常駐「觀看導覽」入口二次提示。
     React.useEffect(() => {
         const done = localStorage.getItem(TOUR_STORAGE_KEY);
-        if (!done) setTourOpen(true);
+        const dismissed = localStorage.getItem(TOUR_DISMISSED_KEY);
+        if (!done && !dismissed) setTourOpen(true);
     }, []);
 
     // Check admin status
@@ -941,6 +943,7 @@ export default function DashboardPage() {
                                 onBulkDelete={(ids) => setPendingBulkDelete({ meetingIds: ids })}
                                 onRename={handleRenameMeeting}
                                 onServerFilter={fetchMeetingsWithFilter}
+                                onStartTour={() => setTourOpen(true)}
                             />
                         </>
                     )}

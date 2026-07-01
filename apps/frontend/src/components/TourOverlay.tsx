@@ -1,45 +1,51 @@
 "use client";
 import React, { useEffect, useState, useCallback } from "react";
 import { X, ChevronRight, ChevronLeft, Map } from "lucide-react";
-import { TOUR_STORAGE_KEY } from "@/lib/config";
+import { TOUR_STORAGE_KEY, TOUR_DISMISSED_KEY } from "@/lib/config";
 
 interface TourStep {
   target: string | null;
   title: string;
   description: string;
   position: 'bottom' | 'top' | 'right' | 'center';
+  // CS-12：spotlight 目標不存在時的替代說明（例如新使用者尚無會議卡片）
+  fallbackHint?: string;
 }
 
 const STEPS: TourStep[] = [
   {
     target: null,
     title: "歡迎使用 MeetChi！",
-    description: "讓我帶您快速認識系統的核心功能，只需 1 分鐘。",
+    description: "簡單說，MeetChi 會把開會的錄音變成文字，再自動幫你整理出重點、要做的事和決定。只要 1 分鐘，帶你看看怎麼用。",
     position: 'center',
   },
   {
     target: "meetings-grid",
-    title: "會議記錄列表",
-    description: "這裡集中管理所有的會議記錄。AI 會自動整理摘要、決策、待辦事項與風險。點擊任一卡片可查看完整內容。",
+    title: "你的會議都在這裡",
+    description: "每上傳一場會議錄音，這裡就會多一張卡片。AI 會幫你整理成「摘要、決定了什麼、待辦事項、要注意的風險」。點卡片就能看完整內容。",
     position: 'top',
+    fallbackHint: "會議卡片會出現在主畫面中央。你現在還沒有會議，先上傳一場就會看到。",
   },
   {
     target: "upload-cta",
-    title: "上傳會議錄音",
-    description: "點擊上傳錄音檔（.m4a / .mp3 / .wav），AI 將在幾分鐘內完成轉錄與摘要。",
+    title: "從這裡上傳錄音",
+    description: "點這顆按鈕，選一個錄音檔（手機或錄音筆常見的 .m4a / .mp3 / .wav 都可以），AI 幾分鐘內就會把內容整理好。",
     position: 'bottom',
+    fallbackHint: "「上傳音檔」按鈕在主畫面右上角。",
   },
   {
     target: "nav-rag",
-    title: "ChiMemo",
-    description: "跨所有會議進行智慧查詢，找出多場討論的共識、分歧與尚未解決的事項。",
+    title: "ChiMemo：一次問所有會議",
+    description: "有很多場會議後，可以在這裡直接用問的，例如「上週決定的預算是多少？」，它會跨所有會議幫你找答案。",
     position: 'right',
+    fallbackHint: "「ChiMemo」在左側選單的「工作區」分組。",
   },
   {
     target: "feedback-btn",
-    title: "回報問題",
-    description: "使用中遇到問題或有建議，歡迎隨時回報，我們會持續改善系統。",
+    title: "遇到問題就回報",
+    description: "使用中卡住或有想法，點這裡告訴我們，會持續改善。",
     position: 'top',
+    fallbackHint: "「回報問題」在左側選單下方。",
   },
 ];
 
@@ -86,7 +92,7 @@ export function TourOverlay({ open, onClose }: TourOverlayProps) {
     if (!open) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        complete();
+        dismiss();
       } else if (e.key === 'Enter' || e.key === 'ArrowRight') {
         e.preventDefault();
         if (step >= STEPS.length - 1) complete();
@@ -100,8 +106,17 @@ export function TourOverlay({ open, onClose }: TourOverlayProps) {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [open, step]);
 
+  // CS-1：真正「看完」才寫永久完成旗標——之後不再自動開、零會議首頁也不再顯示常駐入口。
   const complete = () => {
     localStorage.setItem(TOUR_STORAGE_KEY, '1');
+    localStorage.removeItem(TOUR_DISMISSED_KEY);
+    onClose();
+  };
+
+  // CS-1：反射性「跳過 / 關閉 / Esc」只寫本次略過旗標（避免每次重載又跳出來），
+  // 但不算完成——零會議首頁仍常駐「觀看導覽」入口，給使用者二次機會。
+  const dismiss = () => {
+    localStorage.setItem(TOUR_DISMISSED_KEY, '1');
     onClose();
   };
 
@@ -171,7 +186,7 @@ export function TourOverlay({ open, onClose }: TourOverlayProps) {
             ))}
           </div>
           <button
-            onClick={complete}
+            onClick={dismiss}
             className="text-muted-foreground hover:text-foreground p-1 rounded transition-colors"
             aria-label="關閉導覽"
           >
@@ -182,6 +197,13 @@ export function TourOverlay({ open, onClose }: TourOverlayProps) {
         <h3 className="font-bold text-foreground text-base mb-1.5">{current.title}</h3>
         <p className="text-sm text-muted-foreground leading-relaxed mb-4">{current.description}</p>
 
+        {/* CS-12：spotlight 目標不存在時（例如新使用者尚無會議卡片），顯示替代位置說明 */}
+        {current.target && !rect && current.fallbackHint && (
+          <p className="text-xs text-brand-cta bg-brand-cta/10 rounded-lg px-3 py-2 mb-4">
+            💡 {current.fallbackHint}
+          </p>
+        )}
+
         <div className="flex items-center justify-between gap-2">
           {!isFirst ? (
             <button
@@ -191,7 +213,7 @@ export function TourOverlay({ open, onClose }: TourOverlayProps) {
               <ChevronLeft size={14} /> 上一步
             </button>
           ) : (
-            <button onClick={complete} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <button onClick={dismiss} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
               跳過導覽
             </button>
           )}

@@ -76,5 +76,27 @@
 
 暫緩（架構級/IA/需後端偏好）：T-B5 dry-run 範例輸出（需後端）、T-B6 模板移工作區（IA）、T-D2 抽共用下拉元件、T-D4 語彙全面統一、T-E3 隱藏系統模板（偏好層）、T-E4 簡易模式（大改版）。
 
-## 批次 4：Onboarding（冷啟動）
-見 `2026-06-30-coldstart-onboarding-ux-audit.md`。P0：CS-1 導覽防跳過+常駐入口、CS-2 範例會議/詳情頁 coachmark。
+## 批次 4：Onboarding（冷啟動）— 完成 ✅（2026-07-01 部署 frontend-00073-6s9）
+見 `2026-06-30-coldstart-onboarding-ux-audit.md`。
+
+已完成：
+| ID | 項目 | 優先 | 狀態 | 檔案 |
+| --- | --- | --- | --- | --- |
+| CS-1 | 導覽防跳過（complete/dismiss 三態）+ 零會議首頁常駐「觀看導覽」入口 | P0 | ✅ | TourOverlay.tsx, dashboard/page.tsx, DashboardView.tsx, config.ts |
+| CS-2 | 上傳前先看 AI 成果範例（零狀態靜態範例卡：摘要/決策/待辦/風險） | P0 | ✅ | DashboardView.tsx |
+| CS-3 | 登入頁補價值說明（錄音→AI 轉文字+摘要/決策/待辦） | P1 | ✅ | login/page.tsx |
+| CS-4 | 導覽文案白話化（移除轉錄/RAG 裸詞） | P1 | ✅ | TourOverlay.tsx |
+| CS-5 | 上傳選項引導（既有 UploadSettingsModal Info hint 已滿足） | P1 | ✅ | UploadSettingsModal.tsx |
+| CS-6 | 詳情頁首開 coachmark（localStorage 一次性 banner） | P1 | ✅ | DetailView.tsx, config.ts |
+| CS-7 | 常駐「使用說明」入口 + Help Modal（重播導覽 + FAQ） | P1 | ✅ | Sidebar.tsx |
+| CS-9 | ChiMemo 側欄副標「跨會議 AI 搜尋」 | P2 | ✅ | Sidebar.tsx |
+| CS-12 | spotlight 目標缺失時 fallback 提示 | P2 | ✅ | TourOverlay.tsx |
+
+暫緩（P2）：
+| ID | 項目 | 優先 | 狀態 |
+| --- | --- | --- | --- |
+| CS-8 | 擴充導覽步驟（更多細節） | P2 | ⏸ |
+| CS-10 | 強制首次先到 dashboard | P2 | ⏸ |
+
+驗證：tsc 0 錯誤、build 成功、生產冒煙 200（/, /api/health, backend /health）。
+⚠️ 第四次流量鎖定：deploy 後手動 update-traffic 到 00073-6s9 才上線。

@@ -33,6 +33,7 @@ import { CrossMeetingRefList } from './detail/CrossMeetingRefList';
 import { QuoteCard } from './detail/QuoteCard';
 import { SecurityWrapper } from './SecurityWrapper';
 import { MeetingGlossaryPanel } from './MeetingGlossaryPanel';
+import { DETAIL_COACHMARK_KEY } from '@/lib/config';
 
 interface DetailViewProps {
     meeting: Meeting | null;
@@ -73,6 +74,17 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     const [showVersions, setShowVersions] = useState(false);
     // PR23：逐字稿預設折疊
     const [showTranscript, setShowTranscript] = useState(false);
+    // CS-6：會議詳情頁首次開啟的引導 banner（只顯示一次）
+    const [showCoachmark, setShowCoachmark] = useState(false);
+    useEffect(() => {
+        try {
+            if (!localStorage.getItem(DETAIL_COACHMARK_KEY)) setShowCoachmark(true);
+        } catch { /* ignore */ }
+    }, []);
+    const dismissCoachmark = () => {
+        try { localStorage.setItem(DETAIL_COACHMARK_KEY, '1'); } catch { /* ignore */ }
+        setShowCoachmark(false);
+    };
     // P1 a11y：export dropdown state-driven 讓鍵盤可存取（取代 group:hover）
     const [showExportMenu, setShowExportMenu] = useState(false);
 
@@ -462,6 +474,23 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                   2xl (≥1536): max-w-6xl — 4K / ultrawide 也能填滿但不貼邊 */}
             <div className="flex-1 overflow-y-auto bg-surface">
                 <div className="max-w-3xl xl:max-w-5xl 2xl:max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-6 md:py-8 space-y-6 pb-32">
+
+                    {/* CS-6：首次開啟會議詳情的引導——點出這頁能做什麼，看完關掉不再出現 */}
+                    {showCoachmark && (
+                        <div className="bg-brand-cta/5 border border-brand-cta/20 rounded-xl p-4 flex items-start gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-brand-cta/15 flex items-center justify-center text-brand-cta shrink-0">💡</div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-foreground mb-1">這是「會議詳情」頁</p>
+                                <p className="text-sm text-muted-foreground leading-relaxed">
+                                    往下捲，你會看到 AI 整理的<span className="text-foreground">摘要</span>、<span className="text-foreground">決策 / 待辦 / 風險</span>；
+                                    最底下可展開<span className="text-foreground">完整逐字稿</span>。若整理得不夠好，右上角可<span className="text-foreground">重新生成摘要</span>或換個模板。
+                                </p>
+                            </div>
+                            <button onClick={dismissCoachmark} aria-label="知道了，關閉提示" className="p-1.5 hover:bg-brand-cta/10 rounded-lg text-muted-foreground shrink-0">
+                                <X size={16} />
+                            </button>
+                        </div>
+                    )}
 
                     {/* === Non-completed states (pending / processing / failed) === */}
                     {meeting.status === 'pending' && (

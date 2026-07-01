@@ -52,9 +52,11 @@ interface DashboardViewProps {
     onRename?: (meetingId: string, newTitle: string) => void;
     // 2026-06-10: Server-side filtering
     onServerFilter?: (params: { keyword?: string; dateFrom?: string; dateTo?: string }) => void;
+    // CS-1：零會議首頁常駐「觀看導覽」入口（冷啟動二次提示）
+    onStartTour?: () => void;
 }
 
-export const DashboardView = ({ meetings, isLoading, isUploading = false, uploadState = 'idle', error, successMessage, onSelectMeeting, onCreateMeeting, onUploadClick, onRefresh, availableTemplates = [], selectedTemplateName = 'general', onTemplateChange, uploadContext = '', onUploadContextChange, uploadConfidential = false, onUploadConfidentialChange, uploadLanguage = 'zh', onUploadLanguageChange, onBulkDelete, onRename, onServerFilter }: DashboardViewProps) => {
+export const DashboardView = ({ meetings, isLoading, isUploading = false, uploadState = 'idle', error, successMessage, onSelectMeeting, onCreateMeeting, onUploadClick, onRefresh, availableTemplates = [], selectedTemplateName = 'general', onTemplateChange, uploadContext = '', onUploadContextChange, uploadConfidential = false, onUploadConfidentialChange, uploadLanguage = 'zh', onUploadLanguageChange, onBulkDelete, onRename, onServerFilter, onStartTour }: DashboardViewProps) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [showDateFilter, setShowDateFilter] = useState(false);
@@ -377,7 +379,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                         <p className="text-muted-foreground">沒有找到符合的會議記錄</p>
                     </div>
                 ) : (
-                    <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
                         <div className="w-16 h-16 rounded-2xl bg-brand-cta/10 flex items-center justify-center mb-5">
                             <Upload size={28} className="text-brand-cta" />
                         </div>
@@ -391,6 +393,43 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                         >
                             上傳第一場會議
                         </button>
+
+                        {/* CS-1：常駐「觀看導覽」二次入口——即使先前反射性跳過，仍能重新開始 */}
+                        {onStartTour && (
+                            <button
+                                onClick={onStartTour}
+                                className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 text-sm text-brand-cta hover:bg-brand-cta/10 rounded-lg transition-colors"
+                            >
+                                ▶ 觀看 1 分鐘導覽
+                            </button>
+                        )}
+
+                        {/* CS-2：成果範例——讓「沒有錄音檔可測、不知道會長怎樣」的冷啟動者，
+                              上傳前就先看到 AI 會整理出什麼，降低不確定感。 */}
+                        <div className="mt-10 w-full max-w-md text-left">
+                            <p className="text-xs font-medium text-muted-foreground mb-2 text-center">
+                                📋 上傳後，你會拿到像這樣的整理結果：
+                            </p>
+                            <div className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-sm">
+                                <div className="pb-2 border-b border-border">
+                                    <p className="text-[11px] text-muted-foreground mb-0.5">會議摘要</p>
+                                    <p className="text-sm text-foreground">本次討論確認下季產品上市時程，並就行銷預算分配達成共識。</p>
+                                </div>
+                                <div>
+                                    <p className="text-[11px] text-brand-cta font-medium mb-1">🎯 決定了什麼</p>
+                                    <p className="text-sm text-foreground/80">上市日期定於 9 月 1 日；行銷預算上限 200 萬。</p>
+                                </div>
+                                <div>
+                                    <p className="text-[11px] text-status-success font-medium mb-1">⚡ 待辦事項</p>
+                                    <p className="text-sm text-foreground/80">王經理下週五前提出通路名單；設計組月底完成主視覺。</p>
+                                </div>
+                                <div>
+                                    <p className="text-[11px] text-status-warning font-medium mb-1">⚠️ 要注意的風險</p>
+                                    <p className="text-sm text-foreground/80">供應商交期尚未確認，可能影響上市時程。</p>
+                                </div>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground/70 mt-2 text-center">以上為示意範例，實際內容由 AI 依你的會議自動產生</p>
+                        </div>
                     </div>
                 )
             )}
