@@ -945,11 +945,13 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
                 answer += f"**{c.meeting_title}**\n{c.content.replace('[會議摘要 - 標題匹配] ', '')}\n\n"
 
     # Y5 (2026-05-25)：log to rag_query_logs（寫失敗不影響主回應，只 warn）
+    # R-A1 (2026-07-01)：一併存 citations JSON，讓歷史對話可還原引用來源
     _log_rag_query(
         db,
         user_upn=request.user_upn,
         query=request.question,
         answer=answer,
+        citations=citations,
         citation_count=len(citations),
         confidence=confidence,
         response_time_ms=int((time.time() - _t0) * 1000),
@@ -970,21 +972,28 @@ def _log_rag_query(
     user_upn: str,
     query: str,
     answer: str,
+    citations: List[Citation],
     citation_count: int,
     confidence: str,
     response_time_ms: int,
 ) -> None:
     """2026-05-25 (Y5)：把每次 RAG ask 寫入 rag_query_logs 表，給歷史 UI 用。
+    2026-07-01 (R-A1)：一併存 citations JSON，讓歷史對話載入時可還原引用來源。
     寫入失敗不影響主回應（log warning 即可）。"""
     import uuid as _uuid
     try:
+        # R-A1：序列化 citations 供前端還原（限制大小避免超長 payload）
+        citations_json = json.dumps(
+            [c.model_dump() for c in citations[:10]],
+            ensure_ascii=False,
+        )
         db.execute(
             text(
                 """
                 INSERT INTO rag_query_logs
-                    (id, user_upn, query, answer_preview, citation_count, confidence,
-                     response_time_ms, created_at)
-                VALUES (:id, :upn, :q, :ans, :cc, :conf, :rt, NOW())
+                    (id, user_upn, query, answer_preview, citations_json,
+                     citation_count, confidence, response_time_ms, created_at)
+                VALUES (:id, :upn, :q, :ans, :cj, :cc, :conf, :rt, NOW())
                 """
             ),
             {
@@ -992,6 +1001,7 @@ def _log_rag_query(
                 "upn": user_upn,
                 "q": query[:2000],  # safety truncate
                 "ans": (answer or "")[:1000],  # preview only
+                "cj": citations_json,
                 "cc": citation_count,
                 "conf": confidence[:20],
                 "rt": response_time_ms,
@@ -1011,6 +1021,8 @@ class RagHistoryItem(BaseModel):
     confidence: Optional[str]
     response_time_ms: Optional[int]
     created_at: str
+    # R-A1 (2026-07-01)：完整引用來源，供歷史對話載入時還原可點擊的 citations
+    citations: List[Citation] = Field(default_factory=list)
 
 
 @router.get("/history", response_model=List[RagHistoryItem])
@@ -1030,8 +1042,8 @@ async def get_rag_history(
     rows = db.execute(
         text(
             """
-            SELECT id, query, answer_preview, citation_count, confidence,
-                   response_time_ms, created_at
+            SELECT id, query, answer_preview, citations_json, citation_count,
+                   confidence, response_time_ms, created_at
             FROM rag_query_logs
             WHERE user_upn = :upn
               AND created_at >= NOW() - (:days || ' days')::interval
@@ -1041,6 +1053,17 @@ async def get_rag_history(
         ),
         {"upn": user_upn, "days": days, "limit": limit},
     ).fetchall()
+
+    def _parse_citations(raw) -> List[Citation]:
+        """安全解析 citations_json；舊資料（無此欄或 NULL）回傳空清單。"""
+        if not raw:
+            return []
+        try:
+            data = json.loads(raw) if isinstance(raw, str) else raw
+            return [Citation(**c) for c in data]
+        except Exception:
+            return []
+
     return [
         RagHistoryItem(
             id=r.id,
@@ -1050,6 +1073,7 @@ async def get_rag_history(
             confidence=r.confidence,
             response_time_ms=r.response_time_ms,
             created_at=r.created_at.isoformat() if r.created_at else "",
+            citations=_parse_citations(getattr(r, "citations_json", None)),
         )
         for r in rows
     ]

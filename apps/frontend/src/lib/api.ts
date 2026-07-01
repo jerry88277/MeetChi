@@ -806,7 +806,11 @@ class ApiClient {
         return this.fetch(`/api/v1/rag/greeting?${q.toString()}`);
     }
 
-    async askRag(question: string, userUpn: string = 'global_test@company.com', history?: RagChatMessage[], meetingIds?: string[]): Promise<RagResponse> {
+    async askRag(question: string, userUpn: string, history?: RagChatMessage[], meetingIds?: string[], signal?: AbortSignal): Promise<RagResponse> {
+        if (!userUpn) {
+            // R-E3: 移除危險預設 'global_test@company.com'——未登入直接擋，避免跨租戶資料外洩
+            throw new Error('未登入或無法取得使用者識別，無法查詢。');
+        }
         return this.fetch('/api/v1/rag/ask', {
             method: 'POST',
             body: JSON.stringify({
@@ -816,6 +820,7 @@ class ApiClient {
                 meeting_ids: meetingIds,
                 top_k: 10
             }),
+            signal,
         });
     }
 
@@ -1021,6 +1026,8 @@ export interface RagHistoryItem {
     confidence: string | null;
     response_time_ms: number | null;
     created_at: string;
+    // R-A1 (2026-07-01)：完整引用來源，供歷史對話載入時還原可點擊的 citations
+    citations?: RagCitation[];
 }
 
 export interface LastMeetingSummary {

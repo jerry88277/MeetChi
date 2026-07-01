@@ -175,6 +175,13 @@ export default function DashboardPage() {
         { meetingId?: string } | null
     >(null);
 
+    // R-C1：ChatPanel 錯誤氣泡透過全域事件開啟回報視窗（手機看不到 sidebar 回報鈕）
+    useEffect(() => {
+        const handler = () => setFeedbackContext({});
+        window.addEventListener('meetchi:open-feedback', handler);
+        return () => window.removeEventListener('meetchi:open-feedback', handler);
+    }, []);
+
     // Phase 9.1: Polling hook — watches lastUploadedMeetingId
     // Root fix: enabled driven by ACTUAL meeting data state, not just UI state
     const hasProcessingMeeting = meetings.some(

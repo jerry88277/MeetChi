@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
-import { Send, FileText, Loader2, History, ChevronDown, X, Sparkles } from "lucide-react";
+import { Send, FileText, Loader2, History, ChevronDown, X, Sparkles, RefreshCw, MessageSquareWarning } from "lucide-react";
 import { useSession } from "next-auth/react";
 import ReactMarkdown from "react-markdown";
 import { api, RagCitation, RagHistoryItem, RagGreetingResponse } from "@/lib/api";
@@ -16,6 +16,9 @@ type Message = {
   role: "user" | "ai";
   text: string;
   citations: RagCitation[];
+  // R-B2 / R-C1：錯誤氣泡渲染「重試」與「回報問題」動作
+  isError?: boolean;
+  retryQuery?: string;
 };
 
 export function ChatPanel({ onCitationClick }: ChatPanelProps) {
@@ -29,13 +32,13 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
     id: "welcome",
     role: "ai",
     text:
-      "哈囉！我是 ChiMemo — 您的跨會議 AI 助理。我會搜尋並**彙整您所有過去會議中同一主題**的相關內容。\n\n" +
-      "💡 建議用「主題 / 關鍵字」提問，避免直接用會議檔名。例如：\n" +
-      "  • 彙整最近所有提到 AI 投資 ROI 的討論\n" +
-      "  • 各場會議對 RAG 架構的看法有什麼共識或分歧？\n" +
-      "  • 客服流程改善在哪幾場會議被提到？\n" +
-      "  • 比較不同會議對 KPI 的設定差異\n\n" +
-      "聚焦單一主題每次效果最好；找不到答案時我會提示可能的近似主題。",
+      "哈囉！我是 ChiMemo — 您的會議小幫手。我會幫您**一次翻遍所有過去的會議**，找出同一件事在不同會議裡的相關討論並整理給您。\n\n" +
+      "💡 建議用「想了解的主題或關鍵字」來問，不用打會議檔名。例如：\n" +
+      "  • 最近幾場會議談到「客服流程改善」的內容幫我整理一下\n" +
+      "  • 大家對「新產品上市時程」有沒有共識或不同意見？\n" +
+      "  • 「預算」這件事在哪幾場會議被討論過？\n" +
+      "  • 比較不同會議對「年度目標」的設定差異\n\n" +
+      "一次問一個主題效果最好；如果找不到，我會提示您幾個比較接近的會議。",
     citations: []
   };
 
@@ -82,6 +85,8 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
   }, [messages, storageKey]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  // R-B1：進行中查詢的 AbortController，供取消
+  const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -144,20 +149,25 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
     if (userUpn) {
       try { localStorage.setItem(`rag_last_active_${userUpn}`, Date.now().toString()); } catch {}
     }
-    setMessages(prev => [...prev, userMsg]);
+    // R-B2：重試前先移除舊的錯誤氣泡，避免堆疊
+    setMessages(prev => [...prev.filter(m => !m.isError), userMsg]);
     setInput("");
     setIsLoading(true);
 
+    // R-B1：建立 AbortController，供使用者取消
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       // Extract history, skipping the first hardcoded welcome message
-      const history = messages.length > 1
-        ? messages.slice(1).map(m => ({ role: m.role, text: m.text }))
+      const history = messages.filter(m => !m.isError).length > 1
+        ? messages.filter(m => !m.isError).slice(1).map(m => ({ role: m.role, text: m.text }))
         : [];
 
       if (!userUpn) {
         throw new Error("尚未登入或無法取得使用者識別，請重新整理頁面後再試。");
       }
-      const res = await api.askRag(userMsg.text, userUpn, history);
+      const res = await api.askRag(userMsg.text, userUpn, history, undefined, controller.signal);
       // 2026-05-25 (Y3) low-score fallback：當所有 citations similarity 都偏低
       // (< 0.6) 或回應屬 no_answer，主動提供「最接近的相關段落 + 試另一個主題」
       // 引導，避免使用者卡住不知道下一步。
@@ -179,9 +189,17 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
           "  2. 用了會議檔名而非主題關鍵字\n\n" +
           "**最接近的相關會議**（相似度 " + (maxSim * 100).toFixed(0) + "% 以下）：\n" +
           uniqueMeetings.map((t, i) => `  ${i + 1}. ${t}`).join('\n') +
-          "\n\n建議試試：聚焦該會議的具體主題（如 AI、KPI、流程改善）再問一次。"
+          "\n\n建議試試：聚焦該會議的具體主題再問一次。"
         );
         answerText = answerText + hint;
+      }
+      // R-A6：完全查無 citations 時也給引導，而非空手而回
+      if (!hasCitations && res.confidence !== 'high') {
+        answerText = answerText + (
+          "\n\n💡 這次沒有找到相關的會議段落，可以試試：\n" +
+          "  • 換個關鍵字或更廣的主題（例如用「預算」而非特定檔名）\n" +
+          "  • 確認相關會議已上傳並完成處理（剛上傳的會議需幾分鐘建立索引）"
+        );
       }
       setMessages(prev => [
         ...prev,
@@ -190,14 +208,41 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
       // Y5：清掉 cached history，下次開 dropdown 重新拿（含這次新增的）
       setHistoryItems([]);
     } catch (err) {
+      // R-B1：使用者主動取消——靜默停止，不顯示錯誤
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return;
+      }
       console.error(err);
+      // R-B2 / R-C1：錯誤氣泡帶「重試」與「回報問題」動作，不再叫使用者去看不到的 sidebar
       setMessages(prev => [
         ...prev,
-        { id: (Date.now() + 1).toString(), role: "ai", text: `⚠️ 這次查詢沒有順利完成，請稍後再試。若持續失敗，可透過左側邊欄「回報問題」按鈕反饋。\n\n---\n💡 您的問題：「${userMsg.text}」`, citations: [] }
+        {
+          id: (Date.now() + 1).toString(),
+          role: "ai",
+          text: `⚠️ 這次查詢沒有順利完成，請稍後再試。\n\n💡 您的問題：「${userMsg.text}」`,
+          citations: [],
+          isError: true,
+          retryQuery: userMsg.text,
+        }
       ]);
     } finally {
+      abortRef.current = null;
       setIsLoading(false);
     }
+  };
+
+  // R-B1：取消進行中的查詢
+  const cancelQuery = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsLoading(false);
+  };
+
+  // R-C1：透過全域事件開啟回報視窗（手機 Drawer 看不到 sidebar 的回報鈕）
+  const openReport = () => {
+    try {
+      window.dispatchEvent(new CustomEvent('meetchi:open-feedback'));
+    } catch { /* ignore */ }
   };
 
   const handleSend = async (e: React.FormEvent) => {
@@ -352,7 +397,8 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
                         id: `h-${item.id}-a`,
                         role: "ai",
                         text: item.answer_preview,
-                        citations: [],
+                        // R-A1：還原歷史對話的引用（後端 citations_json）
+                        citations: item.citations ?? [],
                       });
                     }
                     setMessages(prev => {
@@ -376,7 +422,10 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
                       <>
                         <span>·</span>
                         <span className={item.confidence === 'high' ? 'text-status-success' : item.confidence === 'no_answer' ? 'text-status-warning' : ''}>
-                          {item.confidence}
+                          {item.confidence === 'high' ? '高信心'
+                            : item.confidence === 'low' ? '低信心'
+                            : item.confidence === 'no_answer' ? '查無資料'
+                            : item.confidence}
                         </span>
                       </>
                     )}
@@ -464,6 +513,17 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
             )}
           </div>
         )}
+        {/* R-C3：零會議專屬空狀態 — 引導先上傳，而非讓使用者對空系統提問 */}
+        {!greetingLoading && greeting && greeting.meeting_count === 0 && (
+          <div className="mb-2 p-5 rounded-2xl border border-dashed border-border bg-muted/30 text-center">
+            <Sparkles size={22} className="text-brand-chimei-orange mx-auto mb-2" />
+            <p className="text-sm font-medium text-foreground mb-1">還沒有可查詢的會議</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              ChiMemo 會跨所有會議幫您找答案。<br />
+              請先到「會議」頁上傳並完成處理一場會議，稍後回來即可開始提問。
+            </p>
+          </div>
+        )}
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-[85%] md:max-w-[75%] rounded-2xl p-4 md:p-5 ${msg.role === "user" ? "bg-brand-cta text-white rounded-br-none shadow-md" : "bg-card text-foreground rounded-bl-none shadow-sm border border-border"}`}>
@@ -486,9 +546,32 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
                     >
                       <FileText size={12} />
                       [{index + 1}] {cite.meeting_title}
-                      {cite.similarity && <span className="opacity-60 ml-1">{(cite.similarity * 100).toFixed(0)}%</span>}
+                      {cite.similarity != null && <span className="opacity-60 ml-1">{(cite.similarity * 100).toFixed(0)}%</span>}
                     </button>
                   ))}
+                </div>
+              )}
+
+              {/* R-B2 / R-C1：錯誤氣泡內建「重試」與「回報問題」動作 */}
+              {msg.isError && msg.role === "ai" && (
+                <div className="mt-3 flex flex-wrap gap-2 pt-3 border-t border-border">
+                  {msg.retryQuery && (
+                    <button
+                      type="button"
+                      onClick={() => sendMessage(msg.retryQuery!)}
+                      disabled={isLoading}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full bg-brand-cta text-white hover:bg-brand-cta/90 transition-colors shadow-sm disabled:opacity-50"
+                    >
+                      <RefreshCw size={12} /> 重試
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={openReport}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-border bg-surface text-muted-foreground hover:bg-muted transition-colors"
+                  >
+                    <MessageSquareWarning size={12} /> 回報問題
+                  </button>
                 </div>
               )}
             </div>
@@ -502,6 +585,14 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
                 <span>正在搜尋所有會議段落並彙整回答...</span>
               </div>
               <p className="text-xs text-muted-foreground/60 mt-1.5">通常需要 5-15 秒，取決於會議數量</p>
+              {/* R-B1：進行中可取消 */}
+              <button
+                type="button"
+                onClick={cancelQuery}
+                className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-border bg-surface text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              >
+                <X size={12} /> 取消查詢
+              </button>
             </div>
           </div>
         )}
@@ -519,10 +610,10 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
           </button>
           <button
             type="button"
-            onClick={() => handleSuggestedClick("有誰提到關於 RAG 架構的事？")}
+            onClick={() => handleSuggestedClick("最近有哪些重要的決策或結論？")}
             className="text-xs px-3 py-1.5 rounded-full border border-border bg-surface hover:bg-brand-cta/10 hover:border-brand-cta hover:text-brand-cta transition-colors text-muted-foreground whitespace-nowrap"
           >
-            誰提過 RAG 架構？
+            最近有哪些重要決策？
           </button>
         </div>
 

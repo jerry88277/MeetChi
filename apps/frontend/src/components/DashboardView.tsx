@@ -152,16 +152,21 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                             </select>
                         </div>
 
-                        {/* Secondary: record audio */}
+                        {/* Secondary: record audio — 待開發，暫時停用避免誤導 (U-B4) */}
                         <button
-                            onClick={onCreateMeeting}
-                            disabled={isProcessing}
-                            aria-label="即時錄音"
-                            title="即時錄音（開發中）"
-                            className="flex items-center gap-2 px-3 py-2 border border-border bg-card text-foreground rounded-lg hover:bg-muted text-sm font-medium transition-colors duration-150 disabled:opacity-50"
+                            type="button"
+                            onClick={(e) => e.preventDefault()}
+                            disabled
+                            aria-disabled="true"
+                            aria-label="即時錄音（待開發）"
+                            title="即時錄音功能開發中，敬請期待"
+                            className="relative flex items-center gap-2 px-3 py-2 border border-border bg-muted/40 text-muted-foreground rounded-lg text-sm font-medium cursor-not-allowed opacity-60"
                         >
-                            <Mic size={16} className="text-brand-cta" />
+                            <Mic size={16} className="text-muted-foreground" />
                             <span className="hidden sm:inline">即時錄音</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-normal border border-border">
+                                待開發
+                            </span>
                         </button>
 
                         {/* Primary: upload audio file — direct action, no dropdown */}

@@ -15,7 +15,7 @@
 | U-A1 | DetailView 補 `transcribed` 狀態分支（顯示逐字稿+摘要生成中） | P0 | ✅ | DetailView.tsx |
 | U-A3/U-E1 | 機密「補真防護」：SecurityWrapper 正確接線 + 複製/右鍵/列印/選取防護 + 真實浮水印身分 | P0 | ✅ | DetailView.tsx, SecurityWrapper.tsx |
 | U-A4 | 浮水印用真實 user email + 提高可見度 | P1 | ✅ | SecurityWrapper.tsx |
-| U-B4 | 「即時錄音」開發中→disabled/明確標示 | P1 | ⏸ | DashboardView.tsx（需產品決策：錄音功能是否可用） |
+| U-B4 | 「即時錄音」開發中→disabled/明確標示 | P1 | ✅ | DashboardView.tsx（停用+「待開發」徽章，阻擋點擊） |
 | U-B5 | transcribed 情境逐字稿預設展開 | P1 | ✅ | DetailView.tsx |
 | U-D2 | pending 詳情 `Status: QUEUED`→中文 | P1 | ✅ | DetailView.tsx |
 | U-B2 | 上傳進行中可取消 | P1 | ✅ | useUploadQueue.ts, UploadTray.tsx, api.ts |
@@ -27,8 +27,23 @@
 | U-C6 | SecurityWrapper MutationObserver 誤判放寬 | P1 | ✅ | SecurityWrapper.tsx（batch1 已放寬為只觀察浮水印節點） |
 | （P2 群組） | reload 還原、搜尋來源、改名觸控、雙份重生 UI、文案統一、a11y、RWD、心跳重繪、浮水印效能 | P2 | ⬜ | 多檔 |
 
-## 批次 2：ChiMemo（待批次1後）
-見 `2026-06-29`/`2026-06-30-module-chimemo-4persona-audit.md`。P0：R-A1 歷史 citations。P1 群：meeting_ids 篩選+索引狀態、查無/錯誤引導、取消/重試、零會議空狀態、confidence/hint 區隔中文化、引用前後文、匯出複製、串流、術語白話化等。
+## 批次 2：ChiMemo（跨會議 RAG）— 部分完成 ✅（2026-07-01 部署 backend-00095-yoz / frontend-00071-2rs）
+見 `2026-06-30-module-chimemo-4persona-audit.md`。
+
+已完成：
+| ID | 項目 | 優先 | 狀態 | 檔案 |
+| --- | --- | --- | --- | --- |
+| R-A1 | 歷史對話還原 citations（後端 citations_json 欄位 + 前端還原） | P0 | ✅ | rag.py, main.py, ChatPanel.tsx, api.ts |
+| R-E3 | 移除危險預設 upn，未登入直接擋 | P1 | ✅ | api.ts |
+| R-B1 | 查詢進行中可取消（AbortController + 取消鈕） | P1 | ✅ | ChatPanel.tsx, api.ts |
+| R-B2 | 查詢失敗「重試」鈕 | P1 | ✅ | ChatPanel.tsx |
+| R-C1 | 錯誤氣泡內建「回報問題」（全域事件，手機可用） | P1 | ✅ | ChatPanel.tsx, page.tsx |
+| R-C3 | 零會議專屬空狀態 | P1 | ✅ | ChatPanel.tsx |
+| R-D2 | confidence 英文→中文（歷史 dropdown） | P1 | ✅ | ChatPanel.tsx |
+| R-F6 | 術語白話化（welcome + 建議問句移除 RAG/ROI/KPI） | P1 | ✅ | ChatPanel.tsx |
+| R-A5 | similarity 0 顯示（!= null 判斷） | P2 | ✅ | ChatPanel.tsx |
+
+暫緩（架構級/後續）：R-A7+R-C4 meeting_ids 篩選+索引狀態、R-F2 SSE 串流、R-A4 引用逐段渲染重構、R-E1 引用前後文。
 
 ## 批次 3：模板管理（待批次1後）
 見 `2026-06-30-module-template-management-4persona-audit.md`。P0：T-A1（同 U-A2）。P1 群：getTemplates 同步、Tailwind purge、設為預設、建立/Fork 流程、編輯器驗證+500字、is_active 一致、系統模板停用、簡易模式、modal Esc/focus。

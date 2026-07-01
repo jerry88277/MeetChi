@@ -107,6 +107,20 @@ if DATABASE_URL.startswith("postgresql"):
                     END IF;
                 END $$;
             """))
+        # R-A1 (2026-07-01)：rag_query_logs 加 citations_json 供歷史對話還原引用來源
+        conn.execute(text("""
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.tables WHERE table_name='rag_query_logs'
+                ) AND NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='rag_query_logs' AND column_name='citations_json'
+                ) THEN
+                    ALTER TABLE rag_query_logs ADD COLUMN citations_json TEXT;
+                END IF;
+            END $$;
+        """))
         conn.commit()
 
 # Phase RAG-AC: Safe-create access control tables (users, meeting_participants)
