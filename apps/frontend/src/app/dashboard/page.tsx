@@ -34,6 +34,7 @@ import { TemplateGallery } from '@/components/TemplateGallery';
 import { RagWorkspace } from '@/components/rag/RagWorkspace';
 import { RagDrawer } from '@/components/rag/RagDrawer';
 import { UploadTray } from '@/components/UploadTray';
+import { UploadSettingsModal, type UploadSettings } from '@/components/UploadSettingsModal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FeedbackModal } from '@/components/FeedbackModal';
 import { AdminFeedbackPanel } from '@/components/AdminFeedbackPanel';
@@ -412,16 +413,48 @@ export default function DashboardPage() {
 
     // Upload queue-based file handler (Google Drive style: concurrent, non-blocking)
     const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
+    // U-A2: 選檔後暫存，開啟「上傳設定」視窗（模板/語言/情境/機密），確認才入列
+    const [pendingUploadFiles, setPendingUploadFiles] = useState<File[] | null>(null);
 
-    const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024; // 2GB 上限
+
+    const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
         const fileList = event.target.files;
         if (!fileList || fileList.length === 0) return;
         const files = Array.from(fileList);
         event.target.value = '';
+        // 先開設定視窗，讓使用者選模板/語言/情境/機密後再上傳
+        setPendingUploadFiles(files);
+    };
 
-        // For large files (>120 min), confirm before adding to queue
+    const confirmUpload = async (settings: UploadSettings) => {
+        const files = pendingUploadFiles;
+        setPendingUploadFiles(null);
+        if (!files || files.length === 0) return;
+
+        // 記住這次選擇，作為下次預設
+        setUploadTemplateName(settings.templateName);
+        setUploadLanguage(settings.language);
+        setUploadContext(settings.context);
+        setUploadConfidential(settings.isConfidential);
+
         const filesToQueue: File[] = [];
         for (const file of files) {
+            // U-C3: 格式檢查 — 有 MIME 但非 audio/video 直接擋下
+            if (file.type && !file.type.startsWith('audio/') && !file.type.startsWith('video/')) {
+                toast.error(`「${file.name}」不是音訊或影片檔，已略過。`, {
+                    description: '支援格式：mp3 / m4a / wav / mp4 等音訊或影片。',
+                });
+                continue;
+            }
+            // U-C1: 檔案大小上限
+            if (file.size > MAX_UPLOAD_BYTES) {
+                toast.error(`「${file.name}」超過 2GB 上限，已略過。`, {
+                    description: '請壓縮或分割檔案後再上傳。',
+                });
+                continue;
+            }
+            // 大型檔案（>120 分鐘）確認
             if (file.type.startsWith('audio/') || file.type.startsWith('video/')) {
                 const duration = await new Promise<number>((resolve) => {
                     const url = URL.createObjectURL(file);
@@ -448,7 +481,7 @@ export default function DashboardPage() {
         }
 
         if (filesToQueue.length > 0) {
-            uploadQueue.enqueueFiles(filesToQueue, uploadTemplateName, uploadContext, uploadConfidential, uploadLanguage);
+            uploadQueue.enqueueFiles(filesToQueue, settings.templateName, settings.context, settings.isConfidential, settings.language);
             // Refresh meeting list after a delay to pick up new PENDING meetings
             setTimeout(() => fetchMeetings(), 2000);
         }
@@ -775,6 +808,20 @@ export default function DashboardPage() {
             <main className="flex-1 flex flex-col relative overflow-hidden">
                 <UATBanner />
                 <TourOverlay open={tourOpen} onClose={() => setTourOpen(false)} />
+                {pendingUploadFiles && pendingUploadFiles.length > 0 && (
+                    <UploadSettingsModal
+                        files={pendingUploadFiles}
+                        availableTemplates={availableTemplates}
+                        initial={{
+                            templateName: uploadTemplateName,
+                            language: uploadLanguage,
+                            context: uploadContext,
+                            isConfidential: uploadConfidential,
+                        }}
+                        onConfirm={confirmUpload}
+                        onCancel={() => setPendingUploadFiles(null)}
+                    />
+                )}
                 {currentView !== 'record' && (
                     <div className="md:hidden bg-background border-b border-border p-4 flex items-center justify-between z-20">
                         <div className="flex items-center gap-2">

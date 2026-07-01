@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 
 export type UploadTaskStatus = 'queued' | 'uploading' | 'processing' | 'done' | 'error';
@@ -149,6 +150,11 @@ export function useUploadQueue() {
             updateTask(taskId, { status: 'processing', progress: 100, _file: undefined });
             api.startTranscriptionTask(meeting.id, templateName, context).catch((err) => {
                 console.error('Transcription task trigger failed:', err);
+                // U-C5: 觸發轉錄失敗時通知使用者，避免會議悄悄卡在 pending
+                toast.error(`「${title}」已上傳，但啟動轉錄失敗。`, {
+                    description: '請至該會議點「重新從頭轉錄」，或稍後重試。',
+                    duration: 8000,
+                });
             });
 
         } catch (err) {

@@ -106,6 +106,11 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
             .catch(() => {/* graceful — selector just won't show */});
     }, []);
 
+    // U-B5: 轉錄完成（尚無摘要）時，預設展開逐字稿讓使用者可立即閱讀
+    useEffect(() => {
+        if (meeting?.status === 'transcribed') setShowTranscript(true);
+    }, [meeting?.status]);
+
     useEffect(() => {
         if (meeting?.id) {
             api.getSummaryVersions(meeting.id)
@@ -274,6 +279,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     const actionItems = meeting.actionItems ?? [];
     const keyQuotes = meeting.keyQuotes ?? [];
     const isCompleted = meeting.status === 'completed';
+    const isTranscribed = meeting.status === 'transcribed';
 
     // 2026-05-12 (feedback 4504f2e3): 把 SecurityWrapper 從 dashboard/layout.tsx
     // 移下來，只在 is_confidential=true 時才包，避免全域鎖住一般會議的複製功能。
@@ -472,7 +478,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                     <div className="h-2 w-1/3 bg-muted rounded"></div>
                                     <div className="h-2 w-1/3 bg-muted rounded"></div>
                                 </div>
-                                <p className="text-xs text-muted-foreground mt-2 font-mono">Status: QUEUED</p>
+                                <p className="text-xs text-muted-foreground mt-2 font-mono">目前狀態：排隊中</p>
                             </div>
                         </section>
                     )}
@@ -585,6 +591,33 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                         >
                                             <MessageSquareWarning size={16} />
                                             <span>3. 立即回報</span>
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </section>
+                    )}
+
+                    {/* === 轉錄完成（Plan B）：逐字稿已可查看，摘要生成中 === */}
+                    {isTranscribed && (
+                        <section className="bg-gradient-to-br from-brand-azure/5 via-card to-brand-cta/5 border border-brand-azure/30 border-l-4 border-l-brand-azure p-5 rounded-xl shadow-sm">
+                            <div className="flex items-start gap-4">
+                                <div className="bg-brand-azure/15 p-2.5 rounded-full shrink-0">
+                                    <FileText className="h-6 w-6 text-brand-azure" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h4 className="text-lg font-bold text-foreground mb-1">📄 逐字稿已可查看</h4>
+                                    <p className="text-sm text-muted-foreground">
+                                        語音轉錄已完成，您可以先閱讀下方完整逐字稿。AI 摘要（決策、待辦、風險）仍在背景生成中，完成後會自動出現。
+                                    </p>
+                                    {canRegenerate && (
+                                        <button
+                                            onClick={() => onRegenerateSummary?.(meeting.id, selectedTemplate)}
+                                            disabled={isRegenerating}
+                                            className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-brand-cta bg-brand-cta/10 rounded-lg hover:bg-brand-cta/20 disabled:opacity-50 transition-colors"
+                                        >
+                                            {isRegenerating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                                            立即生成摘要
                                         </button>
                                     )}
                                 </div>
@@ -808,7 +841,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                     )}
 
                     {/* === Section 5: 完整逐字稿（折疊） === */}
-                    {isCompleted && (
+                    {(isCompleted || isTranscribed) && (
                         <section>
                             <button
                                 onClick={() => setShowTranscript(!showTranscript)}
@@ -1015,7 +1048,11 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     // 條件式套用機密保護：watermark + select-none + contextmenu/Ctrl+C 攔截
     // is_confidential=false 的一般會議返回原 content，使用者可正常複製
     if (meeting.isConfidential) {
-        return <SecurityWrapper>{content}</SecurityWrapper>;
+        return (
+            <SecurityWrapper isConfidential userIdentifier={userUpn || 'MeetChi-Confidential'}>
+                {content}
+            </SecurityWrapper>
+        );
     }
     return content;
 };

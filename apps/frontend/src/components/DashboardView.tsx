@@ -117,7 +117,7 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
                 <div>
                     <div className="flex items-center gap-3 mb-1">
                         <h1 className="text-3xl font-bold tracking-tight text-foreground">我的會議記錄</h1>
-                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-status-success/10 text-status-success border border-status-success/30 rounded-full text-xs font-medium" title="此平台的錄音與摘要處理完全在本地端或私有網路的 GPU 上運行，不會將機密對話外洩至任何第三方雲端服務。">
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-status-success/10 text-status-success border border-status-success/30 rounded-full text-xs font-medium" title="您的會議資料儲存於公司專屬的 Google Cloud (GCP) 環境，並透過存取控制限定授權人員存取。">
                             <Shield className="w-3.5 h-3.5" />
                             <span>資料安全保護</span>
                         </div>

@@ -1,0 +1,11 @@
+# Keep Cloud Build upload lean — deps/build are produced inside the container
+node_modules/
+.next/
+out/
+coverage/
+.git/
+*.log
+install.log
+install2.log
+.env*.local
+.DS_Store
