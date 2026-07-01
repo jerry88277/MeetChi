@@ -135,11 +135,28 @@ export default function DashboardPage() {
     useFontSize();
 
     useEffect(() => {
-        api.getTemplates()
+        const loadTemplates = () => api.getTemplates()
             .then(setAvailableTemplates)
             .catch(() => {/* graceful degradation */});
+        loadTemplates();
+        // T-A2：模板管理頁建立/複製/刪除後廣播，這裡重抓保持同步。
+        // T-B2：預設模板變更也一併同步（讀 localStorage）。
+        const onTemplatesChanged = () => {
+            loadTemplates();
+            try {
+                const def = localStorage.getItem('meetchi:default_template');
+                if (def) setUploadTemplateName(def);
+            } catch {/* ignore */}
+        };
+        window.addEventListener('meetchi:templates-changed', onTemplatesChanged);
+        // T-B2：初次載入時套用已儲存的預設模板
+        try {
+            const def = localStorage.getItem('meetchi:default_template');
+            if (def) setUploadTemplateName(def);
+        } catch {/* ignore */}
         // PR24: 啟動 console.error / unhandledrejection 緩衝，給 feedback modal 用
         installConsoleErrorHook();
+        return () => window.removeEventListener('meetchi:templates-changed', onTemplatesChanged);
     }, []);
 
     // Phase 3: Crash Recovery — Check for stranded recordings in IndexedDB

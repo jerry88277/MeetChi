@@ -101,9 +101,13 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
     useEffect(() => {
-        api.getTemplates()
+        const loadTemplates = () => api.getTemplates()
             .then(setTemplates)
             .catch(() => {/* graceful — selector just won't show */});
+        loadTemplates();
+        // T-A2：模板管理頁異動後重抓，避免下拉清單過時
+        window.addEventListener('meetchi:templates-changed', loadTemplates);
+        return () => window.removeEventListener('meetchi:templates-changed', loadTemplates);
     }, []);
 
     // U-B5: 轉錄完成（尚無摘要）時，預設展開逐字稿讓使用者可立即閱讀

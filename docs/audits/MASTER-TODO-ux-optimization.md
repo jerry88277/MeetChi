@@ -45,8 +45,36 @@
 
 暫緩（架構級/後續）：R-A7+R-C4 meeting_ids 篩選+索引狀態、R-F2 SSE 串流、R-A4 引用逐段渲染重構、R-E1 引用前後文。
 
-## 批次 3：模板管理（待批次1後）
-見 `2026-06-30-module-template-management-4persona-audit.md`。P0：T-A1（同 U-A2）。P1 群：getTemplates 同步、Tailwind purge、設為預設、建立/Fork 流程、編輯器驗證+500字、is_active 一致、系統模板停用、簡易模式、modal Esc/focus。
+## 批次 3：模板管理 — 大部分完成 ✅（2026-07-01 部署 frontend-00072-t4x）
+見 `2026-06-30-module-template-management-4persona-audit.md`。
+
+已完成：
+| ID | 項目 | 級 | 狀態 | 檔案 |
+| --- | --- | --- | --- | --- |
+| T-A1 | 上傳流程套用模板 | P0 | ✅（既有 UploadSettingsModal 已實作） | UploadSettingsModal.tsx |
+| T-A2 | 建立/複製/刪除後跨畫面同步 | P1 | ✅（CustomEvent 廣播 + page/DetailView 監聽） | TemplateGallery.tsx, page.tsx, DetailView.tsx |
+| T-A3/T-F4 | 動態 Tailwind color class purge | P1 | ✅（COLOR_MAP 靜態） | TemplateGallery.tsx |
+| T-A4 | 從零建立新模板入口 | P1 | ✅（+ 新增模板→空白編輯器） | TemplateGallery.tsx |
+| T-A5 | 編輯器開放 icon/color | P2 | ✅ | TemplateGallery.tsx |
+| T-A6 | 搜尋 tag 大小寫/名稱說明 | P2 | ✅ | TemplateGallery.tsx |
+| T-B1 | Fork 後 toast+立即編輯 | P1 | ✅ | TemplateGallery.tsx |
+| T-B2 | 設為預設模板（localStorage，上傳帶入） | P1 | ✅ | TemplateGallery.tsx, page.tsx |
+| T-B3 | 編輯儲存中/成功 toast | P1 | ✅ | TemplateGallery.tsx |
+| T-B4/T-E2 | 刪除確認單一框帶使用數 | P1 | ✅ | TemplateGallery.tsx |
+| T-C1 | 編輯器前端驗證（名稱/段落/output_key 空或重複） | P1 | ✅ | TemplateGallery.tsx |
+| T-C2 | instruction 500 字計數+maxLength | P1 | ✅ | TemplateGallery.tsx |
+| T-C3 | 取消編輯 dirty-check 離開確認 | P1 | ✅ | TemplateGallery.tsx |
+| T-C5 | 空狀態分流+CTA | P2 | ✅ | TemplateGallery.tsx |
+| T-D1 | Gallery 過濾 is_active 一致 | P1 | ✅ | TemplateGallery.tsx |
+| T-D3 | 自訂模板「我的」徽章 | P2 | ✅ | TemplateGallery.tsx |
+| T-E1 | 刪除語意誠實（30天內請IT還原） | P1 | ✅ | TemplateGallery.tsx |
+| T-F1 | modal Esc 關閉（useEscape） | P1 | ✅ | TemplateGallery.tsx |
+| T-F2 | 刪除鈕加文字 | P2 | ✅ | TemplateGallery.tsx |
+| T-F3 | 編輯器窄螢幕改單欄 | P2 | ✅ | TemplateGallery.tsx |
+| T-F5 | 預覽指令展開+友善輸出型別 | P2 | ✅ | TemplateGallery.tsx |
+| T-F6 | usage_count 正規型別 | P2 | ✅ | TemplateGallery.tsx |
+
+暫緩（架構級/IA/需後端偏好）：T-B5 dry-run 範例輸出（需後端）、T-B6 模板移工作區（IA）、T-D2 抽共用下拉元件、T-D4 語彙全面統一、T-E3 隱藏系統模板（偏好層）、T-E4 簡易模式（大改版）。
 
 ## 批次 4：Onboarding（冷啟動）
 見 `2026-06-30-coldstart-onboarding-ux-audit.md`。P0：CS-1 導覽防跳過+常駐入口、CS-2 範例會議/詳情頁 coachmark。
