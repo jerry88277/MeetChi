@@ -162,8 +162,53 @@ curl -s https://meetchi-frontend-705495828555.asia-southeast1.run.app/api/health
 
 # 3. Frontend 實際打到的 API URL（檢查 JS bundle）
 curl -s https://meetchi-frontend-705495828555.asia-southeast1.run.app/dashboard | findstr "meetchi-backend"
+
+# 4. 流量鎖定檢查（必做）：確認流量已在最新 revision（見「🚦 流量鎖定防治」）
+gcloud run services describe [SERVICE] --region asia-southeast1 --format="json(status.traffic)"
 ```
 > Step 3 應能在 HTML/JS 中找到 `meetchi-backend-705495828555` 字串。若找到 `127.0.0.1` 或 `localhost`，表示 build-arg 未正確注入。
+
+---
+
+## 🚦 流量鎖定防治（Traffic-Lock Prevention）— 每次部署後必做
+
+> **背景事故**：2026-06/07 多次發生「新 revision 已部署，但流量仍留在舊 revision」的鎖定現象。
+> 最嚴重一次：`meetchi-gpu-asr` 流量鎖在舊 `phaseb-emb`（min=1），讓 1 個 NVIDIA L4
+> 實例 24/7 常駐，6/26–6/27 零流量仍燒錢（約 $42 純浪費）。frontend 亦多次中招。
+
+### 根因（重要：與 Terraform 無關）
+- **不是** IaC 造成。`terraform/cloudrun.tf` 內所有 traffic 區塊皆為
+  `type = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"`（＝ `latestRevision: true`，永遠跟最新），
+  且 `gpu_asr` resource 整段為註解（Deployed via gcloud CLI, NOT Terraform）。
+- **真正機制**：一旦有人用 `gcloud run services update-traffic --to-revisions <名稱>=100`
+  或 `gcloud run deploy --tag <tag>` 部署，服務的 `spec.traffic` 會變成**具名 revision pin**
+  （`revisionName` 而非 `latestRevision:true`）。之後 `gcloud run deploy` 建了新 revision
+  **也不會自動搬流量** → 流量鎖定。
+
+### ⛔ 觸發條件
+任何一次 `gcloud run deploy` / `gcloud run services update` 之後（backend / frontend / gpu-asr 皆適用）。
+
+### ✅ 執行動作（強制）
+```bash
+# 部署後一律把流量拉回最新 revision，消除具名 revision pin
+gcloud run services update-traffic [SERVICE] --region asia-southeast1 --to-latest
+```
+> - `[SERVICE]` = `meetchi-backend` / `meetchi-frontend` / `meetchi-gpu-asr`
+> - 若刻意做金絲雀/藍綠（用 `--tag` 或 `--to-revisions` 分流），則**跳過本步**，但需在 devlog 明確記錄「刻意 pin」及回收計畫。
+> - 這是 `--to-latest`（安全，非 `--set-*` replace-all 旗標），符合 agents.md §3。
+
+### 🔎 驗證方式（物理證據）
+```bash
+# 確認 traffic 為 latestRevision:true 或指向剛部署的新 revision，且 percent=100
+gcloud run services describe [SERVICE] --region asia-southeast1 \
+  --format="json(spec.traffic,status.traffic)"
+```
+> 通過標準：`status.traffic` 只有一筆 `percent:100`，其 `revisionName` = 本次新建 revision
+> （或 `latestRevision:true`）。若仍指向舊 revision → 流量鎖定未解，重跑上面的 `--to-latest`。
+
+### 💸 GPU 服務額外檢查（scale-to-zero）
+`meetchi-gpu-asr` 部署務必確認 `--min-instances=0`，並於閒置 ~15 分後用 Cloud Monitoring
+`run.googleapis.com/container/instance_count` 驗證降到 0，避免暖 L4 實例常駐燒錢。
 
 ---
 
@@ -198,6 +243,8 @@ gcloud builds list
 ### Cloud Run 更新
 ```bash
 gcloud run services update [SERVICE] --image [IMAGE] --region [REGION]
+# 部署後強制拉回最新 revision，防止流量鎖定（見「🚦 流量鎖定防治」）
+gcloud run services update-traffic [SERVICE] --region [REGION] --to-latest
 ```
 
 ### Terraform
