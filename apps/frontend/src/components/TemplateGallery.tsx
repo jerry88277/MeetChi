@@ -19,15 +19,17 @@ const ICON_MAP: Record<string, React.ElementType> = {
 };
 
 // T-A3 / T-F4：動態 `bg-${color}` class 在生產 build 會被 Tailwind purge，改用靜態 map。
-// 後端目前的顏色值：brand-cta / brand-accent / status-success / status-warning。
+// 後端目前的顏色值：brand-cta / brand-violet / status-success / status-warning。
 const COLOR_MAP: Record<string, { bg: string; text: string; dot: string }> = {
     'brand-cta': { bg: 'bg-brand-cta/15', text: 'text-brand-cta', dot: 'bg-brand-cta' },
-    'brand-accent': { bg: 'bg-brand-accent/15', text: 'text-brand-accent', dot: 'bg-brand-accent' },
+    'brand-violet': { bg: 'bg-brand-violet/15', text: 'text-brand-violet', dot: 'bg-brand-violet' },
     'status-success': { bg: 'bg-status-success/15', text: 'text-status-success', dot: 'bg-status-success' },
     'status-warning': { bg: 'bg-status-warning/15', text: 'text-status-warning', dot: 'bg-status-warning' },
 };
 const DEFAULT_COLOR = { bg: 'bg-brand-cta/15', text: 'text-brand-cta', dot: 'bg-brand-cta' };
-const colorClasses = (color: string) => COLOR_MAP[color] || DEFAULT_COLOR;
+// Legacy alias: templates seeded before the DDG rename stored color='brand-accent'
+// (which was itself an alias of brand-violet). Normalize so existing DB rows still render violet.
+const colorClasses = (color: string) => COLOR_MAP[color === 'brand-accent' ? 'brand-violet' : color] || DEFAULT_COLOR;
 
 // T-A5：編輯器可選圖示 / 顏色（限定為已在 Tailwind safelist 的值）
 const ICON_OPTIONS: string[] = Object.keys(ICON_MAP);

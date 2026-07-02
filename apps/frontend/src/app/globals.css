@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+/* v4 native plugin loading — tailwind.config.ts is NOT auto-loaded in v4
+   (@tailwindcss/postcss + @import). These were previously declared only in
+   the dead config, so `prose` (RAG markdown) and the animate-* utilities
+   silently produced no CSS. Loading them here makes them authoritative. */
+@plugin "@tailwindcss/typography";
+@plugin "tailwindcss-animate";
+
+/* Class-based dark mode. Without this, v4 `dark:` utilities default to the
+   prefers-color-scheme media query and ignore the .dark toggle. */
+@custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *));
+
 /* ===============================
    MeetChi Brand Theme System
    依 user 訪談決策（Sprint 2a / PR20）：
@@ -107,6 +118,17 @@
   --ease-standard:   cubic-bezier(.2, 0, 0, 1);
   --ease-enter:      cubic-bezier(0, 0, .2, 1);
   --ease-exit:       cubic-bezier(.4, 0, 1, 1);
+
+  /* Brand spring easing (design-audit I1) — used by MeetingCard hover */
+  --ease-brand:      cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-brand-out:  cubic-bezier(0.2, 0, 0, 1);
+
+  /* Indeterminate progress bar (MeetingCard processing state) */
+  --animate-indeterminate: indeterminate 1.4s ease-in-out infinite;
+  @keyframes indeterminate {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(300%); }
+  }
 }
 
 /* ===============================
@@ -148,21 +170,6 @@ body {
    Animation Keyframes
    =============================== */
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideInFromBottom {
-  from { opacity: 0; transform: translateY(1rem); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes slideInFromRight {
-  from { opacity: 0; transform: translateX(2rem); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
@@ -175,17 +182,12 @@ body {
 
 /* ===============================
    Animation Utilities
-   =============================== */
+   ===============================
+   NOTE: enter/exit utilities (animate-in, fade-in, slide-in-from-*, zoom-in-*)
+   are now provided by the `tailwindcss-animate` plugin (loaded via @plugin at
+   the top of this file). The previous hand-rolled subset was incomplete and
+   silently dropped variants like slide-in-from-top-2 / zoom-in-95. */
 
-.animate-in {
-  animation-duration: 0.5s;
-  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  animation-fill-mode: both;
-}
-
-.fade-in { animation-name: fadeIn; }
-.slide-in-from-bottom-4 { animation-name: slideInFromBottom; }
-.slide-in-from-right-8 { animation-name: slideInFromRight; }
 .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
 .animate-spin { animation: spin 1s linear infinite; }
 

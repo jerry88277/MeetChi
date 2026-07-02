@@ -1,5 +1,11 @@
 # MeetChi Brand × UX Frontend Optimization Report
 
+> **⚠️ 狀態更新（2026-07-02）** — 已實作項目：
+> - ✅ **雙層色彩架構**（§2.3 應修正 #1）：`brand-chimei-*` 官方品牌層已加入 `globals.css`（navy/orange/green/red/yellow/teal），與 `brand-*` 產品互動層並存。
+> - ✅ **focus 可達性**（§3.3）：`:focus-visible` 樣式已補回。
+> - ✅ **`brand-accent` 死 token 清除**：前後端改用 `brand-violet`（詳見 DDG-CHIMEI.md 修正註 + devlog 2026-07-02）。
+> - 文案/空狀態/獎勵時刻（§3.1–3.4）等仍待實作。
+
 ## 1. Executive Summary
 
 **Verdict:** MeetChi 已有正確的企業產品骨架與 Soft Structuralism 基調，但目前更像「受 CHIMEI 啟發」而不是「真正承接 CHIMEI 品牌」，最大缺口在於色票不夠忠實、成功路徑回饋不足、以及文案仍偏工具化。

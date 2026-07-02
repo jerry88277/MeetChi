@@ -76,10 +76,13 @@ PR20 (Sprint 2a, commit `7b22cf0`) 與使用者進行 8 題結構化訪談確認
 
 | Alias | 實際指向 | 為何保留 |
 |---|---|---|
-| ~~`brand-accent`~~ | `brand-violet` | **已於 PR-X4 (2026-05-10) 全 codebase 移除**；用 `brand-violet` |
-| ~~`brand-highlight`~~ | `brand-green` | **同上**；移除螢光青 #5BFAE6 後該 alias 失去語意 |
+| ~~`brand-accent`~~ | `brand-violet` | **2026-07-02 才真正清除完畢**（見下方修正）；用 `brand-violet` |
+| ~~`brand-highlight`~~ | `brand-green` | 移除螢光青 #5BFAE6 後該 alias 失去語意 |
 
-> 後續代碼若再用 `bg-brand-accent` / `bg-brand-highlight` 會 Tailwind build error（找不到 token）。請改用正名。
+> ⚠️ **修正（2026-07-02）**：舊版本文宣稱 `brand-accent` 已於 PR-X4 全 codebase 移除、再用會 build error——**兩點都不正確**。實情：
+> - `TemplateGallery.tsx` 的 `COLOR_MAP` 仍在用 `bg-brand-accent`，且後端 `template_engine.py` 的 `tpl-rd` / `tpl-standup` 系統模板 `color` 仍回傳 `brand-accent`。
+> - `brand-accent` 在 Tailwind v4 `@theme` 中**未定義**，所以不會 build error，而是**靜默渲染成無色**（非 build error）。
+> - 已於 2026-07-02 修正：前後端一律改用 `brand-violet`，並在 `TemplateGallery` 加 legacy normalization（`brand-accent` → `brand-violet`）以相容既有資料。詳見 devlog 2026-07-02。
 
 ### 3.2 狀態色 (Status Colors)
 
@@ -381,3 +384,5 @@ MeetChi 之前的視覺是「AI 科技未來感」（深紫 + 螢光青）。觀
 | ConfirmDialog 標準確認框 | [apps/frontend/src/components/ui/confirm-dialog.tsx](../../apps/frontend/src/components/ui/confirm-dialog.tsx) |
 | 卡片標準範例 | [apps/frontend/src/components/MeetingCard.tsx](../../apps/frontend/src/components/MeetingCard.tsx) |
 | 單欄 detail 範例 | [apps/frontend/src/components/DetailView.tsx](../../apps/frontend/src/components/DetailView.tsx) |
+
+> ⚠️ **修正（2026-07-02）**：本表宣稱「v4 zero-config，不需 tailwind.config.ts」現已成立，但先前 repo 內**其實留著一個 `tailwind.config.ts`**。經查該檔在 v4（`@tailwindcss/postcss` + `@import "tailwindcss"`，無 `@config`）下**根本沒被載入**——它宣告的 `@tailwindcss/typography`（`prose`）、`tailwindcss-animate`（`animate-in`/`slide-in-*`/`zoom-in`）、`ease-brand`、`animate-indeterminate` 全部**靜默失效**（RAG 對話 markdown 無樣式、多處進場動畫不播、MeetingCard 進度條不動）。已於 2026-07-02 刪除死 config，改用 v4 原生 `@plugin`/`@theme`/`@custom-variant` 在 `globals.css` 內正確載入，並補回 class-based dark mode（`@custom-variant dark`）。詳見 devlog 2026-07-02。

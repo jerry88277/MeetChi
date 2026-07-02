@@ -1,5 +1,10 @@
 # MeetChi 前端設計審計報告
 
+> **⚠️ 狀態更新（2026-07-02）** — 以下項目經查已實作，本報告其餘項仍為待辦：
+> - ✅ **C1**（背景改 `#FAFAF8` 微暖白）：`globals.css` `--color-background: #FAFAF8` 已落地。
+> - ✅ **I1**（brand spring easing）：已加 `--ease-brand: cubic-bezier(0.16,1,0.3,1)`，但**改以 v4 `@theme` 定義**（非本報告建議的 `tailwind.config.ts`——該檔在 v4 下不會被載入，已於 2026-07-02 刪除）。`MeetingCard` 的 `ease-brand` 先前因 config 未載入而失效，現已修復。
+> - 其餘 T1/C2/CP2/L1/I3/I4… 仍待實作。
+
 **日期**: 2026-06-08  
 **方法**: taste-skill `redesign-skill` 框架（[github.com/leonxlnx/taste-skill](https://github.com/leonxlnx/taste-skill)）  
 **審計範圍**: Login、Dashboard、MeetingCard、Sidebar、SettingsView

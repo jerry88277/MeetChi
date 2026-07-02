@@ -138,7 +138,7 @@ SYSTEM_TEMPLATES: List[TemplateSchema] = [
         description="技術決策與進度追蹤",
         category="engineering",
         icon="Code",
-        color="brand-accent",
+        color="brand-violet",
         sections=[
             TemplateSection(title="摘要", instruction="整理研發會議重點", output_key="summary", output_type="string"),
             TemplateSection(title="技術決策", instruction="列出會議中做出的技術決策及理由", output_key="technical_decisions", output_type="list"),
@@ -190,7 +190,7 @@ SYSTEM_TEMPLATES: List[TemplateSchema] = [
         description="Yesterday / Today / Blockers 三段式報告",
         category="engineering",
         icon="Clock",
-        color="brand-accent",
+        color="brand-violet",
         sections=[
             TemplateSection(title="摘要", instruction="簡要整理今日站會內容", output_key="summary", output_type="string"),
             TemplateSection(title="昨日完成", instruction="整理每位成員昨日完成的工作", output_key="yesterday", output_type="list"),

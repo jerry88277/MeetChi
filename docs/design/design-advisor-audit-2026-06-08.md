@@ -1,5 +1,10 @@
 # MeetChi Design-Advisor UX/UI Audit
 
+> **⚠️ 狀態更新（2026-07-02）** — 部分項目已實作：
+> - ✅ 全域 `:focus-visible` 焦點樣式已補回（`globals.css`：2px `brand-cta` outline + ring），修正本報告 Critical #3 與可達性紅線的「focus 被整段移除」問題。
+> - ✅ 側欄「工作區 / 系統設定」分組（Secondary #4）已於批次 4 導覽優化處理。
+> - Critical #1（登入頁測試帳號）、#2（新增會議下拉超載）等仍依 MASTER-TODO 批次進度處理。
+
 ## ✅ What Works
 
 1. **整體基調有對**：暖白底、深藍側欄、克制陰影，符合企業內部工具而不是 SaaS 行銷站。Evidence: `src/app/globals.css:47-56`, `src/components/Sidebar.tsx:43-45`, `src/components/MeetingCard.tsx:120-124`.
