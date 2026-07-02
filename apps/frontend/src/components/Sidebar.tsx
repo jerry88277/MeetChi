@@ -50,9 +50,9 @@ export const Sidebar = ({
     ];
 
     const systemItems = [
-        { id: 'templates', icon: LayoutTemplate, label: '模板管理' },
-        { id: 'settings', icon: Settings, label: '系統設定' },
-        ...(isAdmin ? [{ id: 'admin', icon: FlaskConical, label: '系統維運' }] : []),
+        { id: 'templates', icon: LayoutTemplate, label: '模板管理', tourId: 'nav-templates' as string | undefined },
+        { id: 'settings', icon: Settings, label: '系統設定', tourId: 'nav-settings' as string | undefined },
+        ...(isAdmin ? [{ id: 'admin', icon: FlaskConical, label: '系統維運', tourId: undefined as string | undefined }] : []),
     ];
 
     const sidebarClass = `fixed inset-y-0 left-0 z-50 w-64 bg-brand-navy text-white transform transition-transform duration-300 ease-in-out ${
@@ -130,6 +130,7 @@ export const Sidebar = ({
                             return (
                                 <button
                                     key={item.id}
+                                    data-tour={item.tourId}
                                     onClick={() => {
                                         setActiveTab(item.id);
                                         setIsMobileOpen(false);

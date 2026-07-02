@@ -85,7 +85,12 @@ export default function DashboardPage() {
     React.useEffect(() => {
         const done = localStorage.getItem(TOUR_STORAGE_KEY);
         const dismissed = localStorage.getItem(TOUR_DISMISSED_KEY);
-        if (!done && !dismissed) setTourOpen(true);
+        if (!done && !dismissed) {
+            // CS-10：首次登入即使 URL 落在其他分頁（?view=templates 等），也強制切回
+            // dashboard 再開導覽，確保 spotlight 目標（會議列表 / 上傳鈕）存在，導覽不空指。
+            setCurrentView('dashboard');
+            setTourOpen(true);
+        }
     }, []);
 
     // Check admin status

@@ -33,12 +33,36 @@ const STEPS: TourStep[] = [
     position: 'bottom',
     fallbackHint: "「上傳音檔」按鈕在主畫面右上角。",
   },
+  // CS-8：導覽涵蓋上傳時的進階選項（範本 / 語言 / 機密旗標 / 錄音）。
+  // 這些選項在「上傳設定」視窗裡出現，導覽期間視窗未開，故以純文字步驟一次說明。
+  {
+    target: null,
+    title: "上傳時可以這樣設定",
+    description: "按下上傳後，會跳出設定視窗讓你調整：①選一個「範本」決定整理格式；②設定語言（國語，或含台語的混合）；③把敏感會議標成「機密」加強保護。現階段以上傳錄音檔為主，即時錄音功能陸續開放中。",
+    position: 'center',
+  },
   {
     target: "nav-rag",
     title: "ChiMemo：一次問所有會議",
     description: "有很多場會議後，可以在這裡直接用問的，例如「上週決定的預算是多少？」，它會跨所有會議幫你找答案。",
     position: 'right',
     fallbackHint: "「ChiMemo」在左側選單的「工作區」分組。",
+  },
+  // CS-8：模板管理導覽步驟。
+  {
+    target: "nav-templates",
+    title: "模板管理：自訂整理格式",
+    description: "在這裡可以建立或修改「範本」，決定 AI 幫你整理成哪些欄位（例如摘要、決策、待辦）。上傳時就能套用。",
+    position: 'right',
+    fallbackHint: "「模板管理」在左側選單的「系統」分組。",
+  },
+  // CS-8：系統設定導覽步驟。
+  {
+    target: "nav-settings",
+    title: "系統設定",
+    description: "調整個人偏好與顯示選項的地方，例如字體大小等。找不到功能時可以先來這裡看看。",
+    position: 'right',
+    fallbackHint: "「系統設定」在左側選單的「系統」分組。",
   },
   {
     target: "feedback-btn",

@@ -76,7 +76,7 @@
 
 暫緩（架構級/IA/需後端偏好）：T-B5 dry-run 範例輸出（需後端）、T-B6 模板移工作區（IA）、T-D2 抽共用下拉元件、T-D4 語彙全面統一、T-E3 隱藏系統模板（偏好層）、T-E4 簡易模式（大改版）。
 
-## 批次 4：Onboarding（冷啟動）— 完成 ✅（2026-07-01 部署 frontend-00073-6s9）
+## 批次 4：Onboarding（冷啟動）— 完成 ✅（2026-07-01 起 frontend-00073-6s9；P2 補完 2026-07-02 frontend-00074-rd2）
 見 `2026-06-30-coldstart-onboarding-ux-audit.md`。
 
 已完成：
@@ -89,14 +89,13 @@
 | CS-5 | 上傳選項引導（既有 UploadSettingsModal Info hint 已滿足） | P1 | ✅ | UploadSettingsModal.tsx |
 | CS-6 | 詳情頁首開 coachmark（localStorage 一次性 banner） | P1 | ✅ | DetailView.tsx, config.ts |
 | CS-7 | 常駐「使用說明」入口 + Help Modal（重播導覽 + FAQ） | P1 | ✅ | Sidebar.tsx |
+| CS-8 | 擴充導覽步驟涵蓋 模板/設定/上傳進階選項（語言·機密·範本） | P2 | ✅ | TourOverlay.tsx, Sidebar.tsx |
 | CS-9 | ChiMemo 側欄副標「跨會議 AI 搜尋」 | P2 | ✅ | Sidebar.tsx |
+| CS-10 | 首次登入強制切 dashboard view 再開導覽（防落在他頁 spotlight 空指） | P2 | ✅ | dashboard/page.tsx |
 | CS-12 | spotlight 目標缺失時 fallback 提示 | P2 | ✅ | TourOverlay.tsx |
 
-暫緩（P2）：
-| ID | 項目 | 優先 | 狀態 |
-| --- | --- | --- | --- |
-| CS-8 | 擴充導覽步驟（更多細節） | P2 | ⏸ |
-| CS-10 | 強制首次先到 dashboard | P2 | ⏸ |
+暫緩（P2）：— 無（批次 4 全數完成）
 
 驗證：tsc 0 錯誤、build 成功、生產冒煙 200（/, /api/health, backend /health）。
-⚠️ 第四次流量鎖定：deploy 後手動 update-traffic 到 00073-6s9 才上線。
+⚠️ 第四次流量鎖定（2026-07-01）：deploy 後手動 update-traffic 到 00073-6s9 才上線。
+⚠️ 第五次流量鎖定（2026-07-02）：CS-8/CS-10 部署產生 00074-rd2 但流量仍鎖在 00073-6s9（tag pin 所致），手動 update-traffic 到 00074-rd2 才上線。
