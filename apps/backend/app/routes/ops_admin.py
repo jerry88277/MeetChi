@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
+from app.timeutil import UTCDateTime, to_utc_iso
 from app.models import (
     Meeting,
     MeetingParticipant,
@@ -136,15 +137,15 @@ class MeetingOpsItem(BaseModel):
     title: str
     status: str
     owner_upn: Optional[str]
-    created_at: Optional[datetime]
-    updated_at: Optional[datetime]
+    created_at: Optional[UTCDateTime]
+    updated_at: Optional[UTCDateTime]
     duration: Optional[float]
     segment_count: int = 0
     # Timing breakdown
-    upload_completed_at: Optional[datetime] = None
-    transcription_started_at: Optional[datetime] = None
-    transcription_completed_at: Optional[datetime] = None
-    embedding_completed_at: Optional[datetime] = None
+    upload_completed_at: Optional[UTCDateTime] = None
+    transcription_started_at: Optional[UTCDateTime] = None
+    transcription_completed_at: Optional[UTCDateTime] = None
+    embedding_completed_at: Optional[UTCDateTime] = None
     total_processing_seconds: Optional[float] = None
     failure_reason: Optional[str] = None
 
@@ -157,7 +158,7 @@ class UserUsageStats(BaseModel):
     display_name: Optional[str]
     meeting_count: int
     total_audio_seconds: float
-    last_upload_at: Optional[datetime]
+    last_upload_at: Optional[UTCDateTime]
     estimated_cost_usd: float
 
 
@@ -392,7 +393,7 @@ async def get_meeting_full_content(
         "title": meeting.title,
         "status": meeting.status.value if meeting.status else None,
         "owner_upn": meeting.owner_upn,
-        "created_at": meeting.created_at,
+        "created_at": to_utc_iso(meeting.created_at),
         "duration": meeting.duration,
         "summary_json": meeting.summary_json,
         "transcript_segments": segments,

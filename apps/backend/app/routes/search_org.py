@@ -14,6 +14,7 @@ import uuid
 # Import models
 from app.models import Meeting, TranscriptSegment, Tag, Folder, meeting_tags
 from app.database import get_db
+from app.timeutil import UTCDateTime, to_utc_iso
 
 router = APIRouter(prefix="/api/v1", tags=["Search & Organization"])
 
@@ -27,7 +28,7 @@ class SearchResult(BaseModel):
     title: str
     snippet: str
     rank: float
-    created_at: datetime
+    created_at: UTCDateTime
     
     class Config:
         from_attributes = True
@@ -400,7 +401,7 @@ async def list_folder_meetings(
             {
                 "id": m.id,
                 "title": m.title,
-                "created_at": m.created_at,
+                "created_at": to_utc_iso(m.created_at),
                 "status": m.status.value if m.status else None
             } for m in meetings
         ]
