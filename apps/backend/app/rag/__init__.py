@@ -22,6 +22,13 @@ from app.rag.chunker import (
     ExpandedRow,
     expand_with_context,
 )
+from app.rag.query_intent import (
+    QueryIntent,
+    QUERY_SCOPES,
+    classify_query_intent,
+    build_meeting_sql_filters,
+    passthrough_intent,
+)
 
 __all__ = [
     "STRICT_GROUNDING_SYSTEM_PROMPT",
@@ -29,4 +36,9 @@ __all__ = [
     "build_grounded_prompt",
     "ExpandedRow",
     "expand_with_context",
+    "QueryIntent",
+    "QUERY_SCOPES",
+    "classify_query_intent",
+    "build_meeting_sql_filters",
+    "passthrough_intent",
 ]

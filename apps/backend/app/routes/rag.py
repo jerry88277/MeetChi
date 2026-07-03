@@ -12,6 +12,7 @@ Endpoint:
 
 import logging
 import json
+import os
 import re
 from typing import List, Optional
 
@@ -29,9 +30,16 @@ from app.rag import (
     build_grounded_prompt,
     expand_with_context,
     CONFIDENCE_LEVELS,
+    classify_query_intent,
+    build_meeting_sql_filters,
+    passthrough_intent,
 )
 
 logger = logging.getLogger(__name__)
+
+# Q5 (2026-07-03)：查詢意圖路由器 feature flag。預設開啟；設為 "false"/"0" 可安全回退
+# 到「無意圖縮域」的舊行為（意圖器任何失敗本就會 fallback，但此旗標可整段停用）。
+RAG_INTENT_ROUTER_ENABLED = os.getenv("RAG_INTENT_ROUTER_ENABLED", "true").lower() not in ("false", "0", "no")
 
 router = APIRouter(prefix="/api/v1/rag", tags=["RAG"])
 
@@ -177,6 +185,8 @@ def _find_similar_segments(
     user_upn: Optional[str] = None,
     meeting_ids: Optional[List[str]] = None,
     top_k: int = 10,
+    extra_where: str = "",
+    extra_params: Optional[dict] = None,
 ) -> tuple:
     """
     Find top-K most similar transcript segments using pgvector cosine distance.
@@ -186,39 +196,34 @@ def _find_similar_segments(
       2. meeting_ids → 在以上範圍內進一步縮小搜索範圍（選遳）
       3. 無兩者  → 展開全域搜索（已登入、管理員模式等）
 
+    Q5 (2026-07-03)：extra_where / extra_params 由查詢意圖路由器產生，於語意搜尋前
+    先用結構化條件（日期 / 機密）縮小 meetings 範圍。fragment 以 " AND ..." 開頭、
+    只含固定欄位名，值全走 bound params（見 app.rag.build_meeting_sql_filters）。
+
     Returns:
         (results, total_searched): list of result rows and total segments in search scope
     """
     embedding_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
+    extra_params = extra_params or {}
 
     if user_upn:
         # ============================================================
         # ★ MemPlace 隔離查詢：JOIN meeting_participants 強制邏存取
-        # PostgreSQL Query Planner 會自動：
-        #   1. idx_mp_user_upn 定位少數幾場會議 meeting_id
-        #   2. 對這少數幾場會議的 segments 做 Exact Search
-        #   效能：~1ms（與所有會議的全域搜索相比減封99.95%車算量）
         # ============================================================
         if meeting_ids:
             # user_upn + meeting_ids 雙重邏存取
             placeholders = ",".join(f":mid_{i}" for i in range(len(meeting_ids)))
             sql = text(f"""
                 SELECT
-                    ts.id,
-                    ts.meeting_id,
-                    ts.speaker,
-                    ts.start_time,
-                    ts.end_time,
-                    ts.content_polished,
-                    ts.content_raw,
-                    m.title as meeting_title,
+                    ts.id, ts.meeting_id, ts.speaker, ts.start_time, ts.end_time,
+                    ts.content_polished, ts.content_raw, m.title as meeting_title,
                     (ts.content_embedding <=> CAST(:query_embedding AS vector)) as distance
                 FROM transcript_segments ts
                 JOIN meetings m ON ts.meeting_id = m.id
                 JOIN meeting_participants mp
                     ON m.id = mp.meeting_id AND mp.user_upn = :user_upn
                 WHERE ts.content_embedding IS NOT NULL
-                  AND ts.meeting_id IN ({placeholders})
+                  AND ts.meeting_id IN ({placeholders}){extra_where}
                 ORDER BY ts.content_embedding <=> CAST(:query_embedding AS vector)
                 LIMIT :top_k
             """)
@@ -227,30 +232,25 @@ def _find_similar_segments(
                 params[f"mid_{i}"] = mid
         else:
             # 純 user_upn 隔離（最常見情境）
-            sql = text("""
+            sql = text(f"""
                 SELECT
-                    ts.id,
-                    ts.meeting_id,
-                    ts.speaker,
-                    ts.start_time,
-                    ts.end_time,
-                    ts.content_polished,
-                    ts.content_raw,
-                    m.title as meeting_title,
+                    ts.id, ts.meeting_id, ts.speaker, ts.start_time, ts.end_time,
+                    ts.content_polished, ts.content_raw, m.title as meeting_title,
                     (ts.content_embedding <=> CAST(:query_embedding AS vector)) as distance
                 FROM transcript_segments ts
                 JOIN meetings m ON ts.meeting_id = m.id
                 JOIN meeting_participants mp
                     ON m.id = mp.meeting_id AND mp.user_upn = :user_upn
-                WHERE ts.content_embedding IS NOT NULL
+                WHERE ts.content_embedding IS NOT NULL{extra_where}
                 ORDER BY ts.content_embedding <=> CAST(:query_embedding AS vector)
                 LIMIT :top_k
             """)
             params = {"query_embedding": embedding_str, "top_k": top_k, "user_upn": user_upn}
 
+        params.update(extra_params)
         results = db.execute(sql, params).fetchall()
 
-        # 隙間搜索範圍：該用戶實際被搜索的 segments 數
+        # 搜索範圍：該用戶實際被搜索的 segments 數（不套用意圖縮域，代表全可存取範圍）
         count_sql = text("""
             SELECT COUNT(*) FROM transcript_segments ts
             JOIN meeting_participants mp ON ts.meeting_id = mp.meeting_id
@@ -263,25 +263,20 @@ def _find_similar_segments(
         placeholders = ",".join(f":mid_{i}" for i in range(len(meeting_ids)))
         sql = text(f"""
             SELECT
-                ts.id,
-                ts.meeting_id,
-                ts.speaker,
-                ts.start_time,
-                ts.end_time,
-                ts.content_polished,
-                ts.content_raw,
-                m.title as meeting_title,
+                ts.id, ts.meeting_id, ts.speaker, ts.start_time, ts.end_time,
+                ts.content_polished, ts.content_raw, m.title as meeting_title,
                 (ts.content_embedding <=> CAST(:query_embedding AS vector)) as distance
             FROM transcript_segments ts
             JOIN meetings m ON ts.meeting_id = m.id
             WHERE ts.content_embedding IS NOT NULL
-              AND ts.meeting_id IN ({placeholders})
+              AND ts.meeting_id IN ({placeholders}){extra_where}
             ORDER BY ts.content_embedding <=> CAST(:query_embedding AS vector)
             LIMIT :top_k
         """)
         params = {"query_embedding": embedding_str, "top_k": top_k}
         for i, mid in enumerate(meeting_ids):
             params[f"mid_{i}"] = mid
+        params.update(extra_params)
         results = db.execute(sql, params).fetchall()
         count_sql = text(
             f"SELECT COUNT(*) FROM transcript_segments "
@@ -290,25 +285,20 @@ def _find_similar_segments(
         total_searched = db.execute(count_sql, {f"mid_{i}": mid for i, mid in enumerate(meeting_ids)}).scalar()
 
     else:
-        # 全域搜索（管理員或未實作 AD 整合時指, 建議硝亮命名 limit 限更小）
-        sql = text("""
+        # 全域搜索（管理員或未實作 AD 整合時）
+        sql = text(f"""
             SELECT
-                ts.id,
-                ts.meeting_id,
-                ts.speaker,
-                ts.start_time,
-                ts.end_time,
-                ts.content_polished,
-                ts.content_raw,
-                m.title as meeting_title,
+                ts.id, ts.meeting_id, ts.speaker, ts.start_time, ts.end_time,
+                ts.content_polished, ts.content_raw, m.title as meeting_title,
                 (ts.content_embedding <=> CAST(:query_embedding AS vector)) as distance
             FROM transcript_segments ts
             JOIN meetings m ON ts.meeting_id = m.id
-            WHERE ts.content_embedding IS NOT NULL
+            WHERE ts.content_embedding IS NOT NULL{extra_where}
             ORDER BY ts.content_embedding <=> CAST(:query_embedding AS vector)
             LIMIT :top_k
         """)
         params = {"query_embedding": embedding_str, "top_k": top_k}
+        params.update(extra_params)
         results = db.execute(sql, params).fetchall()
         total_searched = db.execute(
             text("SELECT COUNT(*) FROM transcript_segments WHERE content_embedding IS NOT NULL")
@@ -323,31 +313,34 @@ def _find_similar_summaries(
     user_upn: Optional[str] = None,
     meeting_ids: Optional[List[str]] = None,
     top_k: int = 3,
+    extra_where: str = "",
+    extra_params: Optional[dict] = None,
 ) -> list:
     """
     Search meetings.summary_embedding for high-level meeting-matching.
-    
+
     Returns list of rows with: meeting_id, title, summary_json, distance.
     Summary embeddings contain title + decisions + action_items → excellent for
     "which meeting discussed X?" type questions.
+
+    Q5：extra_where / extra_params 由查詢意圖路由器產生，與 segment 搜尋一致縮域。
     """
     embedding_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
+    extra_params = extra_params or {}
 
     if user_upn:
         if meeting_ids:
             placeholders = ",".join(f":mid_{i}" for i in range(len(meeting_ids)))
             sql = text(f"""
                 SELECT
-                    m.id as meeting_id,
-                    m.title as meeting_title,
-                    m.summary_json,
+                    m.id as meeting_id, m.title as meeting_title, m.summary_json,
                     (m.summary_embedding <=> CAST(:query_embedding AS vector)) as distance
                 FROM meetings m
                 JOIN meeting_participants mp
                     ON m.id = mp.meeting_id AND mp.user_upn = :user_upn
                 WHERE m.summary_embedding IS NOT NULL
                   AND m.deleted_at IS NULL
-                  AND m.id IN ({placeholders})
+                  AND m.id IN ({placeholders}){extra_where}
                 ORDER BY m.summary_embedding <=> CAST(:query_embedding AS vector)
                 LIMIT :top_k
             """)
@@ -355,17 +348,15 @@ def _find_similar_summaries(
             for i, mid in enumerate(meeting_ids):
                 params[f"mid_{i}"] = mid
         else:
-            sql = text("""
+            sql = text(f"""
                 SELECT
-                    m.id as meeting_id,
-                    m.title as meeting_title,
-                    m.summary_json,
+                    m.id as meeting_id, m.title as meeting_title, m.summary_json,
                     (m.summary_embedding <=> CAST(:query_embedding AS vector)) as distance
                 FROM meetings m
                 JOIN meeting_participants mp
                     ON m.id = mp.meeting_id AND mp.user_upn = :user_upn
                 WHERE m.summary_embedding IS NOT NULL
-                  AND m.deleted_at IS NULL
+                  AND m.deleted_at IS NULL{extra_where}
                 ORDER BY m.summary_embedding <=> CAST(:query_embedding AS vector)
                 LIMIT :top_k
             """)
@@ -374,14 +365,12 @@ def _find_similar_summaries(
         placeholders = ",".join(f":mid_{i}" for i in range(len(meeting_ids)))
         sql = text(f"""
             SELECT
-                m.id as meeting_id,
-                m.title as meeting_title,
-                m.summary_json,
+                m.id as meeting_id, m.title as meeting_title, m.summary_json,
                 (m.summary_embedding <=> CAST(:query_embedding AS vector)) as distance
             FROM meetings m
             WHERE m.summary_embedding IS NOT NULL
               AND m.deleted_at IS NULL
-              AND m.id IN ({placeholders})
+              AND m.id IN ({placeholders}){extra_where}
             ORDER BY m.summary_embedding <=> CAST(:query_embedding AS vector)
             LIMIT :top_k
         """)
@@ -389,20 +378,19 @@ def _find_similar_summaries(
         for i, mid in enumerate(meeting_ids):
             params[f"mid_{i}"] = mid
     else:
-        sql = text("""
+        sql = text(f"""
             SELECT
-                m.id as meeting_id,
-                m.title as meeting_title,
-                m.summary_json,
+                m.id as meeting_id, m.title as meeting_title, m.summary_json,
                 (m.summary_embedding <=> CAST(:query_embedding AS vector)) as distance
             FROM meetings m
             WHERE m.summary_embedding IS NOT NULL
-              AND m.deleted_at IS NULL
+              AND m.deleted_at IS NULL{extra_where}
             ORDER BY m.summary_embedding <=> CAST(:query_embedding AS vector)
             LIMIT :top_k
         """)
         params = {"query_embedding": embedding_str, "top_k": top_k}
 
+    params.update(extra_params)
     try:
         results = db.execute(sql, params).fetchall()
         return results
@@ -697,19 +685,38 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
     search_query = request.question
     if request.history:
         search_query = _contextualize_query(client, request.question, request.history)
-    
-    # Step 1.5: Embed the contextualized query
-    query_embedding = embed_single_text(client, search_query)
+
+    # Step 1.2 (Q5, 2026-07-03): Query Intent Routing
+    # 語意搜尋前，先用 LLM 把問題解析成結構化意圖（scope/topic/日期/機密），
+    # 產生 SQL 縮域條件並用更乾淨的 topic 做 embedding，避免單場問題過度召回。
+    # 任何失敗都 fallback passthrough（不縮域、topic=原問題），不改變現行行為。
+    intent = passthrough_intent(search_query)
+    intent_where, intent_params = "", {}
+    if RAG_INTENT_ROUTER_ENABLED:
+        try:
+            intent = classify_query_intent(search_query, client)
+            intent_where, intent_params = build_meeting_sql_filters(intent)
+        except Exception as e:
+            logger.warning(f"[RAG] intent routing failed (non-fatal): {e}")
+            intent = passthrough_intent(search_query)
+            intent_where, intent_params = "", {}
+    # 用意圖器萃取的乾淨 topic 做語意搜尋（fallback 回原查詢）
+    embed_query = intent.topic or search_query
+
+    # Step 1.5: Embed the (intent-cleaned) query
+    query_embedding = embed_single_text(client, embed_query)
     if query_embedding is None:
         raise HTTPException(status_code=500, detail="Failed to generate query embedding")
     
-    # Step 2: Find similar segments via pgvector (with MemPlace isolation)
+    # Step 2: Find similar segments via pgvector (with MemPlace isolation + intent narrowing)
     try:
         results, total_searched = _find_similar_segments(
             db, query_embedding,
             user_upn=request.user_upn,
             meeting_ids=request.meeting_ids,
             top_k=request.top_k,
+            extra_where=intent_where,
+            extra_params=intent_params,
         )
     except Exception as e:
         logger.error(f"[RAG] Vector search failed: {e}")
@@ -728,6 +735,8 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
             user_upn=request.user_upn,
             meeting_ids=request.meeting_ids,
             top_k=3,
+            extra_where=intent_where,
+            extra_params=intent_params,
         )
         for sr in summary_results:
             sim = 1.0 - float(sr.distance)
