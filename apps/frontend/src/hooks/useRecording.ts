@@ -35,8 +35,8 @@ export function useRecording() {
     const startRecording = useCallback(async () => {
         const title = prompt(
             '請輸入會議標題：',
-            `會議 ${new Date().toLocaleDateString('zh-TW')}`
-        ) || `會議 ${new Date().toLocaleDateString('zh-TW')}`;
+            `會議 ${new Date().toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' })}`
+        ) || `會議 ${new Date().toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' })}`;
         setRecordingTitle(title);
         const meeting = await api.createMeeting({ title, user_upn: sessionUpn });
         setRecordingMeetingId(meeting.id);

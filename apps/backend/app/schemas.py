@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from app.timeutil import UTCDateTime
+
 
 # ============================================
 # Transcript Segment
@@ -48,8 +50,8 @@ class MeetingRead(BaseModel):
     id: str
     title: str
     status: str
-    created_at: datetime
-    updated_at: datetime
+    created_at: UTCDateTime
+    updated_at: UTCDateTime
     duration: Optional[float]
     audio_url: Optional[str]
     language: str = "zh"
@@ -58,7 +60,7 @@ class MeetingRead(BaseModel):
     transcript_polished: Optional[str]
     summary_json: Optional[str]
     speaker_mappings: Optional[str] = None  # Phase 8.1.3
-    completed_at: Optional[datetime] = None  # Processing completion timestamp
+    completed_at: Optional[UTCDateTime] = None  # Processing completion timestamp
     is_confidential: bool = False  # Sprint 2e Phase 1 (2026-05-11)
     failure_reason: Optional[str] = None  # 2026-05-25 (Y7)：給 FAILED meeting 顯示具體原因
     processing_stage: Optional[str] = None  # queued | transcribing | summarizing
@@ -77,8 +79,8 @@ class MeetingListItem(BaseModel):
     id: str
     title: str
     status: str
-    created_at: datetime
-    updated_at: datetime
+    created_at: UTCDateTime
+    updated_at: UTCDateTime
     duration: Optional[float]
     audio_url: Optional[str]
     language: str = "zh"
@@ -214,11 +216,11 @@ class FeedbackRead(BaseModel):
 
     status: str
     assigned_to: Optional[str] = None
-    resolved_at: Optional[datetime] = None
+    resolved_at: Optional[UTCDateTime] = None
     admin_notes: Optional[str] = None
 
-    created_at: datetime
-    updated_at: datetime
+    created_at: UTCDateTime
+    updated_at: UTCDateTime
 
     class Config:
         from_attributes = True

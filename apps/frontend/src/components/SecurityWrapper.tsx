@@ -174,7 +174,7 @@ export const SecurityWrapper = ({
                                 transform="rotate(-30 150 100)"
                                 className="text-slate-900 dark:text-white"
                             >
-                                {userIdentifier} · {new Date().toISOString().slice(0, 10)}
+                                {userIdentifier} · {new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' })}
                             </text>
                         </pattern>
                     </defs>

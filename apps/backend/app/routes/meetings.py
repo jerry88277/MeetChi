@@ -16,6 +16,7 @@ import uuid
 import asyncio
 import logging
 from datetime import datetime
+from app.timeutil import to_utc_iso
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Request, status
@@ -286,7 +287,7 @@ async def bulk_delete_meetings(
                 "owner_upn": meeting.owner_upn,
                 "audio_url": meeting.audio_url,
                 "template_name": meeting.template_name,
-                "created_at": meeting.created_at.isoformat() if meeting.created_at else None,
+                "created_at": to_utc_iso(meeting.created_at),
                 "bulk_operation": True,
             },
             request=request,
@@ -359,7 +360,7 @@ async def delete_meeting(
                 "owner_upn": meeting.owner_upn,
                 "audio_url": meeting.audio_url,
                 "template_name": meeting.template_name,
-                "created_at": meeting.created_at.isoformat() if meeting.created_at else None,
+                "created_at": to_utc_iso(meeting.created_at),
             },
             request=request,
         )
@@ -489,7 +490,7 @@ async def list_summary_versions(meeting_id: str, db: Session = Depends(get_db)):
             "id": v.id,
             "template_name": v.template_name,
             "summary_json": v.summary_json,
-            "created_at": v.created_at.isoformat() if v.created_at else None,
+            "created_at": to_utc_iso(v.created_at),
         }
         for v in versions
     ]
@@ -743,7 +744,7 @@ async def get_dashboard_aggregate(
 
     # Last upload time
     last_meeting = base_query.order_by(desc(Meeting.created_at)).first()
-    last_upload_at = last_meeting.created_at.isoformat() if last_meeting and last_meeting.created_at else None
+    last_upload_at = to_utc_iso(last_meeting.created_at) if last_meeting else None
 
     # Suggested actions
     suggested_actions = []
@@ -765,7 +766,7 @@ async def get_dashboard_aggregate(
                 "id": m.id,
                 "title": m.title,
                 "status": m.status.value if hasattr(m.status, 'value') else str(m.status),
-                "created_at": m.created_at.isoformat() if m.created_at else None,
+                "created_at": to_utc_iso(m.created_at),
             }
             for m in recent
         ],

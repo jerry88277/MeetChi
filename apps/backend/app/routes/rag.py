@@ -24,6 +24,7 @@ from sqlalchemy import text
 
 from app.database import get_db
 from app.models import Meeting, TranscriptSegment, MeetingParticipant
+from app.timeutil import to_utc_iso
 from app.llm_utils import get_gemini_client, GEMINI_MODEL
 from app.embedding import embed_single_text, backfill_all_embeddings
 from app.rag import (
@@ -1155,7 +1156,7 @@ async def get_rag_history(
             citation_count=r.citation_count or 0,
             confidence=r.confidence,
             response_time_ms=r.response_time_ms,
-            created_at=r.created_at.isoformat() if r.created_at else "",
+            created_at=to_utc_iso(r.created_at) or "",
             citations=_parse_citations(getattr(r, "citations_json", None)),
         )
         for r in rows

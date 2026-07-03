@@ -221,7 +221,8 @@ def get_last_meeting_summary(meetings: List[Dict]) -> Optional[Dict]:
         try:
             dt = m["created_at"]
             if hasattr(dt, "strftime"):
-                date_str = dt.strftime("%Y-%m-%d")
+                from app.timeutil import to_taipei
+                date_str = to_taipei(dt).strftime("%Y-%m-%d")
             else:
                 date_str = str(dt)[:10]
         except Exception:
