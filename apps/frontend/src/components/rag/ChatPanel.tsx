@@ -187,7 +187,7 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
           "\n\n💡 我沒有找到很精準的答案，可能因為：\n" +
           "  1. 提問主題與會議內容差距較大\n" +
           "  2. 用了會議檔名而非主題關鍵字\n\n" +
-          "**最接近的相關會議**（相似度 " + (maxSim * 100).toFixed(0) + "% 以下）：\n" +
+          "**最接近的相關會議**：\n" +
           uniqueMeetings.map((t, i) => `  ${i + 1}. ${t}`).join('\n') +
           "\n\n建議試試：聚焦該會議的具體主題再問一次。"
         );
@@ -254,6 +254,24 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
     if (isLoading) return;
     setInput(suggestedText);
     void sendMessage(suggestedText);
+  };
+
+  // Fix D (2026-07-03)：只顯示答案文字中實際引用到的 [來源N] chips，濾掉未使用的雜訊。
+  // 若 LLM 完全沒標註來源（罕見），則 fallback 顯示全部，避免使用者無來源可查。
+  const getReferencedCitations = (text: string, citations: RagCitation[]) => {
+    const regex = /\[來源\s*:?\s*(\d+)\]/g;
+    const used = new Set<number>();
+    let m;
+    while ((m = regex.exec(text)) !== null) {
+      const idx = parseInt(m[1], 10) - 1;
+      if (idx >= 0 && idx < citations.length) used.add(idx);
+    }
+    if (used.size === 0) {
+      return citations.map((cite, index) => ({ cite, index }));
+    }
+    return Array.from(used)
+      .sort((a, b) => a - b)
+      .map(index => ({ cite: citations[index], index }));
   };
 
   const renderMessageTextWithCitations = (text: string, citations: RagCitation[]) => {
@@ -483,16 +501,9 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
                   </div>
                 )}
 
-                {/* Pending action count */}
-                {greeting.pending_action_count > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    📌 您有{" "}
-                    <span className="font-semibold text-foreground">
-                      {greeting.pending_action_count}
-                    </span>{" "}
-                    項待辦行動項目尚未完成
-                  </p>
-                )}
+                {/* 待辦數量不顯示：目前系統無讓使用者勾選/消除待辦狀態的機制，
+                    顯示未完成數量會造成永遠無法歸零的焦慮且無法對應動作。
+                    （移除 pending_action_count 數量徽章，2026-07-03） */}
 
                 {/* Suggested question chips → inject into input */}
                 {greeting.suggested_questions.length > 0 && (
@@ -538,7 +549,7 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
               {/* Citations array */}
               {msg.citations && msg.citations.length > 0 && msg.role === "ai" && (
                 <div className="mt-4 flex flex-wrap gap-2 pt-3 border-t border-border">
-                  {msg.citations.map((cite, index) => (
+                  {getReferencedCitations(msg.text, msg.citations).map(({ cite, index }) => (
                     <button
                       key={`${cite.meeting_id}-${index}`}
                       onClick={() => onCitationClick(cite)}
@@ -546,7 +557,6 @@ export function ChatPanel({ onCitationClick }: ChatPanelProps) {
                     >
                       <FileText size={12} />
                       [{index + 1}] {cite.meeting_title}
-                      {cite.similarity != null && <span className="opacity-60 ml-1">{(cite.similarity * 100).toFixed(0)}%</span>}
                     </button>
                   ))}
                 </div>

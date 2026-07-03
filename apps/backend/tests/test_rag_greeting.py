@@ -226,12 +226,16 @@ class TestBuildGreetingText:
         assert "AI 投資" in text
         assert "5" in text
 
-    def test_includes_pending_count_when_positive(self):
+    def test_includes_pending_prompt_when_positive_but_no_count(self):
+        # 2026-07-03：待辦「數量」不再顯示（系統無勾選/消除機制），
+        # 但仍在有待辦時給中性引導；斷言引導出現且不含數字。
         text = build_greeting_text("Jerry", 3, ["AI"], None, 2)
-        assert "2" in text  # pending count mentioned
+        assert "待辦" in text  # 中性引導出現
+        assert "2" not in text  # 數量不顯示
 
-    def test_no_pending_count_when_zero(self):
+    def test_no_pending_prompt_when_zero(self):
         text = build_greeting_text("Jerry", 3, ["AI"], None, 0)
+        assert "待辦" not in text
         assert "待追蹤" not in text
 
 

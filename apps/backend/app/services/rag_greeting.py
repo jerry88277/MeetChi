@@ -147,8 +147,11 @@ def build_greeting_text(display_name: str, meeting_count: int, top_topics: List[
             else:
                 parts.append("。")
 
+    # 2026-07-03：不顯示待辦「數量」。系統目前沒有讓使用者勾選/消除
+    # 待辦狀態的機制，顯示未完成數字會造成永遠無法歸零的焦慮，且無法對應動作。
+    # 改為不含數字的中性引導（僅在確實有待辦時提示，可透過提問追蹤）。
     if pending_count > 0:
-        parts.append(f"目前有 {pending_count} 個待追蹤事項，需要我幫您整理嗎？")
+        parts.append("需要我幫您整理跨會議尚未完成的待辦事項嗎？")
 
     return "".join(parts)
 

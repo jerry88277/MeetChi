@@ -104,6 +104,70 @@ class RagGreetingResponse(BaseModel):
 
 
 # ============================================
+# Speaker-name resolution (Q3, 2026-07-03)
+# RAG 檢索取的是原始 diarization label（SPEAKER_A / SPEAKER_00），
+# 但逐字稿/摘要頁早已透過 meetings.speaker_mappings 對應到真實姓名。
+# 這裡把同一份對照表接進 RAG，讓 citation 與 prompt context 顯示真名，
+# 徹底消除「說話者 A」與真名混雜的問題。
+# ============================================
+
+def _fetch_speaker_mappings(db: Session, meeting_ids: set) -> dict:
+    """Batch-fetch speaker_mappings JSON for the given meetings.
+
+    Returns: { meeting_id: { "SPEAKER_A": {"display_name","role",...}, ... } }
+    永不 raise —— 任何錯誤都回傳已解析的部分結果，串接失敗不影響主流程。
+    """
+    result: dict = {}
+    ids = [m for m in meeting_ids if m]
+    if not ids:
+        return result
+    try:
+        placeholders = ",".join(f":mid_{i}" for i in range(len(ids)))
+        params = {f"mid_{i}": mid for i, mid in enumerate(ids)}
+        rows = db.execute(
+            text(f"SELECT id, speaker_mappings FROM meetings WHERE id IN ({placeholders})"),
+            params,
+        ).fetchall()
+        for r in rows:
+            raw = r.speaker_mappings
+            if not raw:
+                continue
+            try:
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(parsed, dict):
+                    result[r.id] = parsed
+            except Exception:
+                continue
+    except Exception as e:
+        logger.warning(f"[RAG/Q3] fetch speaker_mappings failed (non-fatal): {e}")
+    return result
+
+
+def _resolve_speaker(mappings_for_meeting: Optional[dict], raw_speaker: Optional[str]) -> Optional[str]:
+    """把單一 diarization label 轉成人類可讀的講者名。
+
+    優先序（對齊前端 SpeakerName.tsx）：
+      1. speaker_mappings 有對應 → display_name（附 role 若有）
+      2. 格式為 SPEAKER_xx / Speaker_N → 「講者 N」（1-indexed，不外露原始 label）
+      3. 其他 → 原值
+    """
+    if not raw_speaker:
+        return None
+    if mappings_for_meeting:
+        entry = mappings_for_meeting.get(raw_speaker)
+        if isinstance(entry, dict) and entry.get("display_name"):
+            name = entry["display_name"].strip()
+            role = (entry.get("role") or "").strip()
+            return f"{name}（{role}）" if role else name
+        if isinstance(entry, str) and entry.strip():
+            return entry.strip()
+    m = re.match(r'(?:speaker|spk)[_\s-]?(\d+)', str(raw_speaker), re.IGNORECASE)
+    if m:
+        return f"講者 {int(m.group(1)) + 1}"
+    return raw_speaker
+
+
+# ============================================
 # RAG Pipeline Core
 # ============================================
 
@@ -820,6 +884,13 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
     citation_source = expanded_rows if expanded_rows else results
     sorted_results = sorted(citation_source, key=lambda r: (getattr(r, 'meeting_id', ''), getattr(r, 'start_time', 0) or 0)) if citation_source else []
 
+    # Q3 (2026-07-03)：批次抓所有涉及會議的 speaker_mappings，讓 citation 顯示真名
+    speaker_map_by_meeting = _fetch_speaker_mappings(
+        db, {getattr(r, 'meeting_id', '') for r in sorted_results}
+    )
+    # 標題匹配到的會議：使用者明確指名，其 segments 不受相似度門檻剔除
+    title_matched_ids = {c.meeting_id for c in title_match_citations}
+
     citations: List[Citation] = []
     # 群組臨時狀態（避免 pydantic 即時 mutate；最後一次性 build）
     groups: List[dict] = []
@@ -831,8 +902,9 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
         start_time = getattr(row, 'start_time', None)
         end_time = getattr(row, 'end_time', None)
         meeting_title = getattr(row, 'meeting_title', None) or "未命名會議"
-        speaker = getattr(row, 'speaker', None)
-        
+        # Q3：原始 diarization label → 真名（無對應則「講者 N」，不外露 SPEAKER_xx）
+        speaker = _resolve_speaker(speaker_map_by_meeting.get(meeting_id), getattr(row, 'speaker', None))
+
         if (
             groups
             and groups[-1]["meeting_id"] == meeting_id
@@ -855,11 +927,23 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
                 "similarity": similarity,
             })
 
+    # Fix E (2026-07-03)：相似度門檻——剔除明顯不相關的雜訊段落（如樣本中的 57%），
+    # 但標題匹配到的會議（使用者指名）豁免；若全數被剔除則保留最強 1 筆避免空手。
+    SEGMENT_SIM_FLOOR = 0.35
+    if groups:
+        kept = [
+            g for g in groups
+            if g["similarity"] >= SEGMENT_SIM_FLOOR or g["meeting_id"] in title_matched_ids
+        ]
+        if not kept:
+            kept = [max(groups, key=lambda g: g["similarity"])]
+        groups = kept
+
     # 群組依最高 similarity 排序（讓最強 hit 排前面）
     groups.sort(key=lambda g: g["similarity"], reverse=True)
 
     for g in groups:
-        # speaker 顯示：單一 → 直接給；多人 → 「2 人 (SPEAKER_00, SPEAKER_01)」
+        # speaker 顯示：單一 → 直接給；多人 → 「2 人 (真名A, 真名B)」
         speakers = g["speakers"]
         if len(speakers) == 0:
             speaker_str = None
@@ -877,31 +961,17 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
             similarity=round(g["similarity"], 4),
         ))
 
-    # 用 expanded content 組 prompt（讓 LLM 看到更完整上下文）
-    prompt_citations = []
-    # A3: Prepend title-match citations (highest priority - user asked about this meeting)
-    for tc in title_match_citations:
-        prompt_citations.append(tc)
-    # A1: Prepend summary citations (highest semantic density)
-    for sc in summary_citations:
-        prompt_citations.append(sc)
-    for er in expanded_rows:
-        prompt_citations.append(Citation(
-            meeting_id=getattr(er, "meeting_id", ""),
-            meeting_title=getattr(er, "meeting_title", None) or "未命名會議",
-            speaker=getattr(er, "speaker", None),
-            start_time=getattr(er, "start_time", None),
-            end_time=getattr(er, "end_time", None),
-            content=getattr(er, "content", "") or "",
-            similarity=1.0 - float(getattr(er, "distance", 0.0)),
-        ))
-
-    # A3 + A1: Merge into frontend citations (prepend for priority)
+    # BUG#1 fix (2026-07-03)：引用索引對齊。
+    # 過去 prompt 用 prompt_citations（未合併的 expanded_rows），但回傳前端的是
+    # 合併重排後的 citations → LLM 標的 [來源N] 指到錯的 citation 卡片。
+    # 現在統一：LLM 與前端看到「同一份、同順序」的 citations，[來源N] 一一對應。
+    # 排序：標題匹配 > 摘要 > 段落群組（皆已依相關性排好）。
     citations = title_match_citations + summary_citations + citations
 
     # Step 3: Generate answer with Gemini using app.rag.prompt.build_grounded_prompt
     # 取代既有 _build_rag_prompt（軟規則） → grounded 5 條硬規則 + 4 級 confidence
-    rag_prompt = build_grounded_prompt(request.question, prompt_citations, request.history)
+    # ⭐ 用與前端「完全相同」的 citations list 組 prompt（BUG#1 對齊關鍵）
+    rag_prompt = build_grounded_prompt(request.question, citations, request.history)
 
     answer = "無法生成回答。"
     confidence = "no_answer"
@@ -933,16 +1003,20 @@ async def ask_across_meetings(request: RAGRequest, db: Session = Depends(get_db)
         answer = f"（回答生成失敗，但以下是最相關的會議段落供參考）\n\n錯誤: {str(e)}"
         confidence = "no_answer"
 
-    # If title match injected segments but LLM still said no_answer,
-    # override to at least "low" confidence since we have relevant content
+    # Fix F (2026-07-03)：誠實化 no_answer fallback。
+    # 過去這裡會在 LLM 誠實拒答時「用標題匹配摘要編一個答案」，違反 grounding 誠實原則。
+    # 現在改為：明確告知「找到你提到的會議，但逐字稿無法直接回答問題」，
+    # 並清楚標示以下為『會議摘要（供參考）』而非問題的直接解答；純文字、不使用 markdown。
     if confidence == "no_answer" and title_match_citations:
         confidence = "low"
         if "無法" in answer or "找不到" in answer or "沒有找到" in answer:
-            # Provide a better answer pointing to the matched meeting
-            matched_titles = [c.meeting_title for c in title_match_citations]
-            answer = f"以下是與「{request.question}」相關的會議內容摘要（來自標題匹配）：\n\n"
+            answer = (
+                f"我找到你提到的會議，但目前的逐字稿內容無法直接回答「{request.question}」。\n"
+                "以下是該會議的摘要，供你參考：\n\n"
+            )
             for c in title_match_citations:
-                answer += f"**{c.meeting_title}**\n{c.content.replace('[會議摘要 - 標題匹配] ', '')}\n\n"
+                summary_text = c.content.replace('[會議摘要 - 標題匹配] ', '')
+                answer += f"◆ {c.meeting_title}\n{summary_text}\n\n"
 
     # Y5 (2026-05-25)：log to rag_query_logs（寫失敗不影響主回應，只 warn）
     # R-A1 (2026-07-01)：一併存 citations JSON，讓歷史對話可還原引用來源

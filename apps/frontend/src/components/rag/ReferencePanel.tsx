@@ -82,11 +82,15 @@ export function ReferencePanel({ citation, onClose }: ReferencePanelProps) {
                 {citation.content}
               </p>
             </div>
-            {citation.similarity > 0 && (
-              <div className="text-right text-xs text-muted-foreground mt-2">
-                搜尋相似度吻合：{(citation.similarity * 100).toFixed(1)}%
-              </div>
-            )}
+            {/* Q4 (2026-07-03)：移除相似度百分比（對使用者無意義）。
+                重點是精準連回原文——提供「跳到逐字稿此段」的動作。 */}
+            <button
+              onClick={handleOpenInNewTab}
+              className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-medium text-brand-cta hover:text-white hover:bg-brand-cta border border-brand-cta/20 bg-brand-cta/5 rounded-lg py-2 transition-colors mt-1"
+            >
+              <ExternalLink size={13} />
+              在逐字稿中查看此段原文
+            </button>
           </div>
         </div>
       </div>
