@@ -41,6 +41,7 @@ export interface Meeting {
     is_confidential?: boolean;  // Sprint 2e Phase 1 (2026-05-11)
     failure_reason?: string | null;  // 2026-05-25 Y7
     processing_stage?: "queued" | "transcribing" | "diarizing" | "summarizing" | null;  // 2026-06-18
+    audio_stats?: string | null;  // 2026-07-03：上傳音檔健康報告 (JSON 字串)
 }
 
 // Sprint 2c (PR21) extended: backend summary_json 加新欄位後，frontend 對齊。

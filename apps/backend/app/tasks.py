@@ -814,7 +814,17 @@ def run_offline_asr_refinement(meeting_id: str, audio_path: str, language: str =
             meeting.status = MeetingStatus.COMPLETED
             meeting.completed_at = datetime.utcnow()
             meeting.processing_stage = None
-            meeting.failure_reason = None  # Clear stale failure_reason from prior attempts
+            # 2026-07-03：0 段落多為靜音/無訊號音檔 —— 依 audio_stats 給使用者可讀原因，
+            # 而非清空 failure_reason 讓使用者以為系統壞掉。
+            silent_reason = None
+            try:
+                if meeting.audio_stats:
+                    _st = json.loads(meeting.audio_stats)
+                    if _st.get("health") == "silent":
+                        silent_reason = _st.get("health_label_zh")
+            except Exception:  # noqa: BLE001
+                pass
+            meeting.failure_reason = silent_reason  # None if audio was fine (genuine empty)
             db.commit()
             _update_task_status(db, meeting_id, "offline_asr", "COMPLETED", "Empty result, kept Gemini transcript")
             return {"status": "completed", "note": "empty_result_kept_gemini"}
@@ -884,6 +894,47 @@ def run_offline_asr_refinement(meeting_id: str, audio_path: str, language: str =
 
 
 
+def _compute_and_store_audio_stats(meeting, db):
+    """下載會議音檔、分析健康報告（時長/音量/聲道/靜音/削波），存 meeting.audio_stats。
+
+    在轉錄開始前呼叫一次，GPU/local/split 全路徑共用。檔案通常僅數 MB，
+    下載 + ffmpeg volumedetect 成本低。任一步驟失敗不影響主轉錄流程。
+    """
+    from app.audio_stats import analyze_audio_stats
+
+    audio_url = meeting.audio_url
+    if not audio_url:
+        return
+
+    local_path = None
+    downloaded = False
+    try:
+        if audio_url.startswith("gs://"):
+            from google.cloud import storage as gcs_storage
+
+            parts = audio_url.replace("gs://", "").split("/", 1)
+            bucket_name = parts[0]
+            blob_name = parts[1] if len(parts) > 1 else ""
+            temp_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp")
+            os.makedirs(temp_dir, exist_ok=True)
+            local_path = os.path.join(temp_dir, "stats_" + os.path.basename(blob_name))
+            gcs_storage.Client().bucket(bucket_name).blob(blob_name).download_to_filename(local_path)
+            downloaded = True
+        else:
+            local_path = audio_url
+
+        stats = analyze_audio_stats(local_path)
+        meeting.audio_stats = json.dumps(stats, ensure_ascii=False)
+        db.commit()
+        logger.info(f"[audio_stats] stored for {meeting.id}: health={stats.get('health')}")
+    finally:
+        if downloaded and local_path and os.path.exists(local_path):
+            try:
+                os.remove(local_path)
+            except Exception:
+                pass
+
+
 def generate_summary_core(meeting_id: str, template_type: str = "general", context: str = "", length: str = "", style: str = "", skip_asr: bool = False, suppress_fail_notification: bool = False):
     """
     Core logic for meeting processing:
@@ -914,6 +965,14 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
 
         # 1. Run Offline ASR Refinement (if audio exists and not skipped)
         if meeting.audio_url and not skip_asr:
+            # 2026-07-03：先分析上傳音檔「原始狀態」健康報告（時長/音量/聲道/靜音/削波），
+            # 存 meeting.audio_stats 供前端呈現。在 GPU/local/split 分支之前執行，全路徑覆蓋。
+            # 永不影響主流程（helper 內部吞例外）。
+            try:
+                _compute_and_store_audio_stats(meeting, db)
+            except Exception as _e:  # noqa: BLE001
+                logger.warning(f"[audio_stats] non-fatal failure for {meeting_id}: {_e}")
+
             gpu_asr_url = os.getenv("GPU_ASR_SERVICE_URL")
             logger.info(f"[DEBUG] GPU_ASR_SERVICE_URL env value: '{gpu_asr_url}'")
             if gpu_asr_url:

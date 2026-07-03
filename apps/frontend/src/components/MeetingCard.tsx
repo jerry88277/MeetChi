@@ -287,6 +287,16 @@ export const MeetingCard = ({ meeting, onClick, onRename }: MeetingCardProps) =>
                                 🔒 機密
                             </span>
                         )}
+                        {meeting.audioStats?.health === 'silent' && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-status-error/10 text-status-error border border-status-error/20" title={meeting.audioStats?.health_label_zh || '未偵測到可辨識語音'}>
+                                🔇 無有效聲音
+                            </span>
+                        )}
+                        {meeting.audioStats?.health === 'low_volume' && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-status-warning/10 text-status-warning border border-status-warning/20" title={meeting.audioStats?.health_label_zh || '音量偏低'}>
+                                🔈 音量偏低
+                            </span>
+                        )}
             <h3 className="font-bold text-foreground group-hover:text-brand-cta transition-colors break-words line-clamp-2">
                             {isRenaming ? (
                                 <input

@@ -99,4 +99,20 @@ export interface Meeting {
     speakerContributions?: SpeakerContribution[];
     nextSteps?: NextStep[];
     crossMeetingRefs?: CrossMeetingRef[];
+    audioStats?: AudioStats | null;     // 2026-07-03：上傳音檔健康報告
+}
+
+// 2026-07-03：上傳音檔「原始狀態」健康報告（後端 app/audio_stats.py 產生）
+export interface AudioStats {
+    duration_sec?: number | null;
+    channels?: number | null;
+    sample_rate?: number | null;
+    codec?: string | null;
+    peak_dbfs?: number | null;
+    mean_dbfs?: number | null;
+    clip_ratio?: number | null;
+    health?: "ok" | "silent" | "low_volume" | "clipping" | "unknown";
+    health_label_zh?: string;
+    warnings?: string[];
+    analyzed_at?: string;
 }

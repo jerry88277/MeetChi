@@ -1,0 +1,110 @@
+[
+  {
+    "name": "ZH_1_original",
+    "label": "原始",
+    "ref": "对然后但是呢就是说确实有一个手机呢带来很多方便",
+    "meeting_id": "61dc8907-8eca-4641-bb96-d271b813006f",
+    "status": "COMPLETED",
+    "hyp": "然後但是呢就是說確實有一個手機呢帶來很多方便",
+    "cer": 0.391304347826087
+  },
+  {
+    "name": "ZH_2_quiet-40dB",
+    "label": "低音量-40dB",
+    "ref": "对然后但是呢就是说确实有一个手机呢带来很多方便",
+    "meeting_id": "46e02d30-8efd-4ed9-8124-f39943f4fee3",
+    "status": "COMPLETED",
+    "hyp": "對 然後但是呢 就是說確實有一個手機帶來很多方便",
+    "cer": 0.43478260869565216
+  },
+  {
+    "name": "ZH_3_quiet-40dB_normalized",
+    "label": "低音量-40dB+正規化",
+    "ref": "对然后但是呢就是说确实有一个手机呢带来很多方便",
+    "meeting_id": "1418930b-85cd-4d8a-a047-8df8c6f29b87",
+    "status": "COMPLETED",
+    "hyp": "對 然後但是呢就是說確實有一個手機呢帶來很多方便",
+    "cer": 0.391304347826087
+  },
+  {
+    "name": "ZH_4_noise_SNR0dB",
+    "label": "加噪SNR0dB",
+    "ref": "对然后但是呢就是说确实有一个手机呢带来很多方便",
+    "meeting_id": "bb0bbf71-14f8-4a2e-8b8a-7ec16f21589d",
+    "status": "COMPLETED",
+    "hyp": "然後但是就是說確實有個手機能帶來很多方便",
+    "cer": 0.5217391304347826
+  },
+  {
+    "name": "EN_1_original",
+    "label": "原始",
+    "ref": "with without with without anybody against",
+    "meeting_id": "e9041bf2-309f-45d1-8215-c75493e2b504",
+    "status": "COMPLETED",
+    "hyp": "without any body against",
+    "cer": 0.4166666666666667
+  },
+  {
+    "name": "EN_2_quiet-40dB",
+    "label": "低音量-40dB",
+    "ref": "with without with without anybody against",
+    "meeting_id": "0754d71d-7bfc-4607-b81c-07abc9d3704c",
+    "status": "COMPLETED",
+    "hyp": "without any body against",
+    "cer": 0.4166666666666667
+  },
+  {
+    "name": "EN_3_quiet-40dB_normalized",
+    "label": "低音量-40dB+正規化",
+    "ref": "with without with without anybody against",
+    "meeting_id": "7615d2b5-a839-4ee9-a396-91b8032b5261",
+    "status": "COMPLETED",
+    "hyp": "without any body against",
+    "cer": 0.4166666666666667
+  },
+  {
+    "name": "EN_4_noise_SNR0dB",
+    "label": "加噪SNR0dB",
+    "ref": "with without with without anybody against",
+    "meeting_id": "84a5e1c2-866f-4a66-976e-4b85060892a3",
+    "status": "COMPLETED",
+    "hyp": "without any body again",
+    "cer": 0.4722222222222222
+  },
+  {
+    "name": "MIX_1_original",
+    "label": "原始",
+    "ref": "如果你customer在知道这个会有五percent的accident",
+    "meeting_id": "99ddd900-cd15-45bd-825f-caf6a05e39a2",
+    "status": "COMPLETED",
+    "hyp": "如果你 customer 再知道這個會有 5% 的 accident",
+    "cer": 0.34285714285714286
+  },
+  {
+    "name": "MIX_2_quiet-40dB",
+    "label": "低音量-40dB",
+    "ref": "如果你customer在知道这个会有五percent的accident",
+    "meeting_id": "75bcc0bd-7f1b-42c4-b4e5-0207f2c3e3e1",
+    "status": "COMPLETED",
+    "hyp": "如果你 customer 再知道這個會有 5% 的 accident",
+    "cer": 0.34285714285714286
+  },
+  {
+    "name": "MIX_3_quiet-40dB_normalized",
+    "label": "低音量-40dB+正規化",
+    "ref": "如果你customer在知道这个会有五percent的accident",
+    "meeting_id": "3884791b-2697-40ff-9947-168962c30e71",
+    "status": "COMPLETED",
+    "hyp": "如果你 customer 再知道這個會有 5% 的 accident",
+    "cer": 0.34285714285714286
+  },
+  {
+    "name": "MIX_4_noise_SNR0dB",
+    "label": "加噪SNR0dB",
+    "ref": "如果你customer在知道这个会有五percent的accident",
+    "meeting_id": "0903f9cd-37c5-45d2-8171-318e24b76e2a",
+    "status": "COMPLETED",
+    "hyp": "如果你 customer 在聽到這個會有 53.5％ 的 accident",
+    "cer": 0.37142857142857144
+  }
+]

@@ -156,6 +156,14 @@ class Meeting(Base):
     # in the pipeline the meeting currently sits.
     processing_stage = Column(String(20), nullable=True)
 
+    # 2026-07-03：上傳音檔「原始狀態」健康報告 (JSON 字串)
+    # 讓使用者知道自己上傳的音檔狀態：時長/聲道/取樣率/codec/peak-mean dBFS/
+    # health(ok|silent|low_volume|clipping)/health_label_zh/warnings。
+    # 於轉錄開始前以 ffmpeg volumedetect + ffprobe 計算一次（見 app/audio_stats.py）。
+    # 動機：靜音/無訊號音檔（如麥克風未開）會轉錄出 0 段落但 status=COMPLETED，
+    # 過去讓使用者誤以為系統壞掉；此欄位明確呈現原始音檔狀態。
+    audio_stats = Column(Text, nullable=True)
+
     # pgvector embedding for future semantic search
     summary_embedding = Column(Vector(768), nullable=True)
     

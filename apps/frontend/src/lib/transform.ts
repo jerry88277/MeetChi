@@ -228,6 +228,15 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
         failureReason: apiMeeting.failure_reason ?? null,
         durationSeconds: apiMeeting.duration ?? null,
         processingStage: apiMeeting.processing_stage ?? null,
+        // 2026-07-03：上傳音檔健康報告（後端存 JSON 字串，前端解析為物件）
+        audioStats: (() => {
+            if (!apiMeeting.audio_stats) return null;
+            try {
+                return JSON.parse(apiMeeting.audio_stats);
+            } catch {
+                return null;
+            }
+        })(),
         // Summary V2
         chapters,
         speakerContributions,

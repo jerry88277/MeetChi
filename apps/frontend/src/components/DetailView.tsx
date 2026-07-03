@@ -31,6 +31,7 @@ import { SpeakerContributionsBar } from './detail/SpeakerContributionsBar';
 import { NextStepsTable } from './detail/NextStepsTable';
 import { CrossMeetingRefList } from './detail/CrossMeetingRefList';
 import { QuoteCard } from './detail/QuoteCard';
+import { AudioHealthReport } from './detail/AudioHealthReport';
 import { SecurityWrapper } from './SecurityWrapper';
 import { MeetingGlossaryPanel } from './MeetingGlossaryPanel';
 import { DETAIL_COACHMARK_KEY } from '@/lib/config';
@@ -491,6 +492,9 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                             </button>
                         </div>
                     )}
+
+                    {/* === 上傳音檔健康報告（2026-07-03）：所有狀態皆顯示，讓使用者知道原始音檔狀態 === */}
+                    <AudioHealthReport stats={meeting.audioStats} />
 
                     {/* === Non-completed states (pending / processing / failed) === */}
                     {meeting.status === 'pending' && (

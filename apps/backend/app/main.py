@@ -94,7 +94,7 @@ Base.metadata.create_all(bind=engine)
 if DATABASE_URL.startswith("postgresql"):
     with engine.connect() as conn:
         # Add missing columns if not exist
-        for col_name in ["speaker_mappings", "custom_prompt", "completed_at"]:
+        for col_name in ["speaker_mappings", "custom_prompt", "completed_at", "audio_stats"]:
             col_type = "TIMESTAMP" if col_name == "completed_at" else "TEXT"
             conn.execute(text(f"""
                 DO $$

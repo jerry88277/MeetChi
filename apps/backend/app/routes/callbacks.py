@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request, BackgroundTasks
 from pydantic import BaseModel
 from typing import List, Optional
 import logging
+from datetime import datetime
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Meeting, TranscriptSegment, MeetingStatus
@@ -93,6 +94,34 @@ async def handle_asr_done(payload: ASRDonePayload, background_tasks: BackgroundT
         _update_task_status(db, meeting_id, "offline_asr", "SKIPPED", "Remote GPU ASR skipped")
         meeting.status = MeetingStatus.COMPLETED
         meeting.processing_stage = None
+        # 2026-07-03：GPU 對靜音/無訊號音檔多半回 skipped（VAD 找不到語音）。
+        # 若 audio_stats 判為 silent，補上使用者可讀原因（與 completed+empty 分支一致）。
+        try:
+            if meeting.audio_stats:
+                _st = json.loads(meeting.audio_stats)
+                if _st.get("health") == "silent":
+                    meeting.failure_reason = _st.get("health_label_zh") or meeting.failure_reason
+        except Exception:  # noqa: BLE001
+            pass
+        db.commit()
+    elif payload.status == "completed" and not payload.segments:
+        # 2026-07-03：GPU 完成但 0 段落 —— 過去所有 if/elif 皆落空，狀態懸置，
+        # 使用者誤以為系統壞掉。多半是「實質靜音／無訊號」音檔（麥克風未開等）。
+        # 明確收斂為 COMPLETED，並依 audio_stats 給使用者可讀原因。
+        reason = "未偵測到可辨識語音（音檔可能為靜音或無有效聲音訊號）"
+        try:
+            if meeting.audio_stats:
+                _st = json.loads(meeting.audio_stats)
+                if _st.get("health") == "silent":
+                    reason = _st.get("health_label_zh") or reason
+        except Exception:  # noqa: BLE001
+            pass
+        logger.warning(f"[Callback] Completed with 0 segments for {meeting_id}: {reason}")
+        _update_task_status(db, meeting_id, "offline_asr", "COMPLETED", "Completed with 0 segments (silent/empty audio)")
+        meeting.status = MeetingStatus.COMPLETED
+        meeting.processing_stage = None
+        meeting.completed_at = meeting.completed_at or datetime.utcnow()
+        meeting.failure_reason = reason
         db.commit()
         
     # Only trigger summarization when ASR completed successfully with segments.

@@ -64,6 +64,7 @@ class MeetingRead(BaseModel):
     is_confidential: bool = False  # Sprint 2e Phase 1 (2026-05-11)
     failure_reason: Optional[str] = None  # 2026-05-25 (Y7)：給 FAILED meeting 顯示具體原因
     processing_stage: Optional[str] = None  # queued | transcribing | summarizing
+    audio_stats: Optional[str] = None  # 2026-07-03：上傳音檔健康報告 (JSON 字串)
 
     transcript_segments: List[TranscriptSegmentRead] = []  # Include segments for detail view
 
@@ -89,6 +90,7 @@ class MeetingListItem(BaseModel):
     speaker_mappings: Optional[str] = None
     is_confidential: bool = False  # Sprint 2e Phase 1：list 也要看得到 badge
     processing_stage: Optional[str] = None  # queued | transcribing | summarizing
+    audio_stats: Optional[str] = None  # 2026-07-03：list 也要看得到音檔健康 badge（如靜音警示）
 
     class Config:
         from_attributes = True

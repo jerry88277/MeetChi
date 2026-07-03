@@ -1,0 +1,29 @@
+[
+  {
+    "tag": "ZH",
+    "id": "01061",
+    "file": "sample_ZH_01061.wav",
+    "sr": 16000,
+    "dur": 5.93,
+    "lang": "zh",
+    "transcription": "对然后但是呢就是说确实有一个手机呢带来很多方便"
+  },
+  {
+    "tag": "EN",
+    "id": "00708",
+    "file": "sample_EN_00708.wav",
+    "sr": 16000,
+    "dur": 4.28,
+    "lang": "en",
+    "transcription": "with without with without anybody against"
+  },
+  {
+    "tag": "MIX",
+    "id": "01032",
+    "file": "sample_MIX_01032.wav",
+    "sr": 16000,
+    "dur": 4.83,
+    "lang": "mixed",
+    "transcription": "如果你customer在知道这个会有五percent的accident"
+  }
+]
