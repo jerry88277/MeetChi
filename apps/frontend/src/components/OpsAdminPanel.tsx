@@ -72,7 +72,7 @@ export function OpsAdminPanel({ userRole }: OpsAdminPanelProps) {
         const stuckLabel = m.stuck_minutes != null ? `（已停滯約 ${m.stuck_minutes} 分鐘）` : '';
         if (!window.confirm(
             `確定要復原會議「${m.title}」嗎？${stuckLabel}\n\n` +
-            `系統會把狀態從 ${m.status} 重置為 PENDING 並重新排入轉錄佇列。`
+            `系統會把狀態從 ${(m.status || '').toUpperCase()} 重置為 PENDING 並重新排入轉錄佇列。`
         )) return;
         setResettingId(m.id);
         try {
@@ -103,15 +103,19 @@ export function OpsAdminPanel({ userRole }: OpsAdminPanelProps) {
     };
 
     const statusBadge = (status: string) => {
+        const s = (status || '').toLowerCase();
         const colors: Record<string, string> = {
-            COMPLETED: 'bg-green-100 text-green-700',
-            PROCESSING: 'bg-blue-100 text-blue-700',
-            PENDING: 'bg-yellow-100 text-yellow-700',
-            FAILED: 'bg-red-100 text-red-700',
+            completed: 'bg-green-100 text-green-700',
+            processing: 'bg-blue-100 text-blue-700',
+            refining: 'bg-blue-100 text-blue-700',
+            transcribed: 'bg-indigo-100 text-indigo-700',
+            recording: 'bg-purple-100 text-purple-700',
+            pending: 'bg-yellow-100 text-yellow-700',
+            failed: 'bg-red-100 text-red-700',
         };
         return (
-            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors[status] || 'bg-gray-100 text-gray-600'}`}>
-                {status}
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium uppercase ${colors[s] || 'bg-gray-100 text-gray-600'}`}>
+                {s}
             </span>
         );
     };
@@ -299,7 +303,7 @@ export function OpsAdminPanel({ userRole }: OpsAdminPanelProps) {
                                                     : '—'}
                                             </td>
                                             <td className="px-4 py-3 text-right whitespace-nowrap">
-                                                {['PROCESSING', 'REFINING', 'TRANSCRIBED'].includes(m.status) ? (
+                                                {['processing', 'refining', 'transcribed'].includes((m.status || '').toLowerCase()) ? (
                                                     <button
                                                         onClick={() => handleResetStuck(m)}
                                                         disabled={resettingId === m.id}
