@@ -44,7 +44,11 @@ export function OpsAdminPanel({ userRole }: OpsAdminPanelProps) {
                 date_from: dateFrom || undefined,
                 date_to: dateTo || undefined,
             });
-            setMeetings(data);
+            // 卡住的會議置頂，讓「復原卡住」按鈕一眼可見，不必往下捲動尋找。
+            const sorted = [...data].sort(
+                (a, b) => Number(Boolean(b.is_stuck)) - Number(Boolean(a.is_stuck))
+            );
+            setMeetings(sorted);
         } catch (e) { console.error('Failed to load meetings', e); }
         setLoading(false);
     }, [statusFilter, userFilter, keyword, dateFrom, dateTo]);
@@ -252,6 +256,16 @@ export function OpsAdminPanel({ userRole }: OpsAdminPanelProps) {
                             <Loader2 className="animate-spin text-brand-cta" size={24} />
                         </div>
                     ) : (
+                        <>
+                        {meetings.some(m => m.is_stuck) && (
+                            <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                                <AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-600" />
+                                <div>
+                                    偵測到 <strong>{meetings.filter(m => m.is_stuck).length}</strong> 筆會議疑似卡住（停滯超過 15 分鐘），已置頂顯示。
+                                    可點各列右側紅色「<strong>復原卡住</strong>」按鈕，將其重置並重新排入轉錄佇列。
+                                </div>
+                            </div>
+                        )}
                         <div className="overflow-x-auto border rounded-xl">
                             <table className="w-full text-sm">
                                 <thead className="bg-muted/50">
@@ -269,7 +283,7 @@ export function OpsAdminPanel({ userRole }: OpsAdminPanelProps) {
                                 </thead>
                                 <tbody className="divide-y divide-border">
                                     {meetings.map(m => (
-                                        <tr key={m.id} className="hover:bg-muted/30">
+                                        <tr key={m.id} className={m.is_stuck ? 'bg-red-50/70 hover:bg-red-50' : 'hover:bg-muted/30'}>
                                             <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
                                                 {m.id.slice(0, 8)}...
                                             </td>
@@ -317,6 +331,7 @@ export function OpsAdminPanel({ userRole }: OpsAdminPanelProps) {
                                 </tbody>
                             </table>
                         </div>
+                        </>
                     )}
                 </div>
             )}
