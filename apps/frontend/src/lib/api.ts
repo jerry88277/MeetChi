@@ -942,6 +942,27 @@ class ApiClient {
             body: JSON.stringify({ user_upn: userUpn, role }),
         });
     }
+
+    async resetStuckMeeting(
+        meetingId: string,
+        opts?: { force?: boolean; reenqueue?: boolean },
+    ): Promise<{
+        meeting_id: string;
+        previous_status: string;
+        new_status: string;
+        stuck_minutes: number | null;
+        reenqueued: boolean;
+        message: string;
+    }> {
+        const sp = new URLSearchParams();
+        if (opts?.force) sp.set('force', 'true');
+        if (opts?.reenqueue === false) sp.set('reenqueue', 'false');
+        const qs = sp.toString();
+        return this.fetch(
+            `/api/v1/ops/meetings/${meetingId}/reset-stuck${qs ? `?${qs}` : ''}`,
+            { method: 'POST' },
+        );
+    }
 }
 export interface TemplateSectionDTO {
     title: string;
@@ -1088,6 +1109,9 @@ export interface OpsMeetingItem {
     updated_at: string | null;
     duration: number | null;
     segment_count: number;
+    processing_stage?: string | null;
+    stuck_minutes?: number | null;
+    is_stuck?: boolean;
     upload_completed_at: string | null;
     transcription_started_at: string | null;
     transcription_completed_at: string | null;

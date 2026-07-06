@@ -39,6 +39,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/ops", tags=["ops-admin"])
 
+# 卡住偵測：worker 在 atomic claim 後死亡/逾時會讓狀態鎖在這些非終態，
+# 重試只認 PENDING/FAILED 故無法自動復原（見 /meetings/{id}/reset-stuck）。
+_STUCK_STATUSES = ("PROCESSING", "REFINING", "TRANSCRIBED")
+_STUCK_THRESHOLD_MIN = 15
+
 # ============================================
 # Role Constants
 # ============================================
@@ -141,6 +146,9 @@ class MeetingOpsItem(BaseModel):
     updated_at: Optional[UTCDateTime]
     duration: Optional[float]
     segment_count: int = 0
+    processing_stage: Optional[str] = None
+    stuck_minutes: Optional[int] = None
+    is_stuck: bool = False
     # Timing breakdown
     upload_completed_at: Optional[UTCDateTime] = None
     transcription_started_at: Optional[UTCDateTime] = None
@@ -304,15 +312,26 @@ async def list_meetings_ops(
     for m in meetings:
         tasks = task_map.get(m.id, [])
         timing = _extract_timing(tasks, m)
+        cur_status = m.status.value if m.status else "UNKNOWN"
+        stuck_min = None
+        is_stuck = False
+        if cur_status in _STUCK_STATUSES:
+            ref = m.updated_at or m.created_at
+            if ref:
+                stuck_min = int((datetime.utcnow() - ref).total_seconds() // 60)
+                is_stuck = stuck_min >= _STUCK_THRESHOLD_MIN
         results.append(MeetingOpsItem(
             id=m.id,
             title=m.title or "Untitled",
-            status=m.status.value if m.status else "UNKNOWN",
+            status=cur_status,
             owner_upn=m.owner_upn,
             created_at=m.created_at,
             updated_at=m.updated_at,
             duration=m.duration,
             segment_count=seg_counts.get(m.id, 0),
+            processing_stage=m.processing_stage,
+            stuck_minutes=stuck_min,
+            is_stuck=is_stuck,
             failure_reason=m.failure_reason,
             **timing,
         ))
@@ -422,6 +441,85 @@ async def update_user_role(
 
     logger.info(f"[Ops] Role updated: {req.user_upn} → {req.role} (by {user.get('email')})")
     return {"user_upn": req.user_upn, "role": req.role, "message": "Role updated"}
+
+
+@router.post("/meetings/{meeting_id}/reset-stuck")
+async def reset_stuck_meeting(
+    meeting_id: str,
+    force: bool = Query(False, description="略過停滯時間安全檢查"),
+    reenqueue: bool = Query(True, description="重置後自動重新 enqueue 轉錄"),
+    user: dict = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """管理者：把卡住的會議從 PROCESSING/REFINING/TRANSCRIBED 安全重置回 PENDING 並重新 enqueue。
+
+    卡住成因：worker 在 atomic claim 後死亡/逾時，狀態鎖在非終態；重試只認
+    PENDING/FAILED 故 Cloud Tasks 一律 skip → 無法自我復原。
+
+    安全設計：
+    - 只允許重置 _STUCK_STATUSES；COMPLETED / FAILED / PENDING 一律拒絕。
+    - 預設要求停滯 >= _STUCK_THRESHOLD_MIN，避免打斷處理中的會議；可 force 略過。
+    - 清空 processing_stage / failure_reason，讓 worker 的 atomic claim 能成功。
+    """
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail=f"Meeting {meeting_id} not found")
+
+    cur_status = meeting.status.value if meeting.status else "UNKNOWN"
+    if cur_status not in _STUCK_STATUSES and not force:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Meeting status is {cur_status}, not a stuck state {_STUCK_STATUSES}; use force=true to override",
+        )
+
+    ref = meeting.updated_at or meeting.created_at
+    age_min = int((datetime.utcnow() - ref).total_seconds() // 60) if ref else None
+    if not force and (age_min is None or age_min < _STUCK_THRESHOLD_MIN):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Meeting last updated {age_min} min ago (< {_STUCK_THRESHOLD_MIN}); "
+                f"may still be actively processing. Use force=true to override."
+            ),
+        )
+
+    prev_stage = meeting.processing_stage
+    meeting.status = MeetingStatus.PENDING
+    meeting.processing_stage = None
+    meeting.failure_reason = None
+    meeting.updated_at = datetime.utcnow()
+    db.commit()
+    logger.warning(
+        f"[Ops] reset-stuck-meeting {meeting_id}: {cur_status}/{prev_stage} "
+        f"(stuck {age_min} min) → PENDING by {user.get('email')}, reenqueue={reenqueue}"
+    )
+
+    result = {
+        "meeting_id": meeting_id,
+        "previous_status": cur_status,
+        "previous_stage": prev_stage,
+        "stuck_minutes": age_min,
+        "new_status": "PENDING",
+        "reenqueued": False,
+    }
+
+    if reenqueue:
+        from app.routes.cloud_tasks import (
+            EnqueueTranscriptionRequest,
+            enqueue_transcription,
+        )
+        enq = enqueue_transcription(
+            EnqueueTranscriptionRequest(meeting_id=meeting_id, template_type="general", context="")
+        )
+        result["reenqueued"] = getattr(enq, "status", None) == "enqueued"
+        result["enqueue_status"] = getattr(enq, "status", None)
+        result["enqueue_message"] = getattr(enq, "message", None)
+
+    result["message"] = (
+        f"Reset {cur_status} → PENDING"
+        + (" and re-enqueued transcription" if result["reenqueued"] else "")
+    )
+    return result
 
 
 @router.get("/my-role")

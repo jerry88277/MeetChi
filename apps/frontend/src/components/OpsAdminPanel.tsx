@@ -62,6 +62,27 @@ export function OpsAdminPanel({ userRole }: OpsAdminPanelProps) {
         loadUsers();
     }, [loadOverview, loadMeetings, loadUsers]);
 
+    const [resettingId, setResettingId] = useState<string | null>(null);
+
+    const handleResetStuck = useCallback(async (m: OpsMeetingItem) => {
+        const stuckLabel = m.stuck_minutes != null ? `（已停滯約 ${m.stuck_minutes} 分鐘）` : '';
+        if (!window.confirm(
+            `確定要復原會議「${m.title}」嗎？${stuckLabel}\n\n` +
+            `系統會把狀態從 ${m.status} 重置為 PENDING 並重新排入轉錄佇列。`
+        )) return;
+        setResettingId(m.id);
+        try {
+            const res = await api.resetStuckMeeting(m.id);
+            alert(res.message || '已重置並重新排入轉錄');
+            await loadMeetings();
+        } catch (e) {
+            console.error('reset-stuck failed', e);
+            alert(`復原失敗：${e instanceof Error ? e.message : String(e)}`);
+        } finally {
+            setResettingId(null);
+        }
+    }, [loadMeetings]);
+
     const formatDuration = (seconds: number | null) => {
         if (!seconds) return '—';
         if (seconds < 60) return `${Math.round(seconds)}s`;
@@ -243,6 +264,7 @@ export function OpsAdminPanel({ userRole }: OpsAdminPanelProps) {
                                         <th className="px-4 py-3 text-right font-medium">音源長度</th>
                                         <th className="px-4 py-3 text-right font-medium">段落數</th>
                                         <th className="px-4 py-3 text-right font-medium">處理耗時</th>
+                                        <th className="px-4 py-3 text-right font-medium">操作</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border">
@@ -262,11 +284,32 @@ export function OpsAdminPanel({ userRole }: OpsAdminPanelProps) {
                                                     ? formatDuration(m.total_processing_seconds)
                                                     : '—'}
                                             </td>
+                                            <td className="px-4 py-3 text-right whitespace-nowrap">
+                                                {['PROCESSING', 'REFINING', 'TRANSCRIBED'].includes(m.status) ? (
+                                                    <button
+                                                        onClick={() => handleResetStuck(m)}
+                                                        disabled={resettingId === m.id}
+                                                        title={m.is_stuck
+                                                            ? `疑似卡住${m.stuck_minutes != null ? `（停滯約 ${m.stuck_minutes} 分鐘）` : ''}，點擊復原並重新排入轉錄`
+                                                            : '重置狀態並重新排入轉錄（若確定已卡住）'}
+                                                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                                                            m.is_stuck
+                                                                ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                                                                : 'bg-muted text-muted-foreground hover:bg-muted/70'
+                                                        } disabled:opacity-50`}
+                                                    >
+                                                        {resettingId === m.id
+                                                            ? <Loader2 size={12} className="animate-spin" />
+                                                            : <AlertTriangle size={12} />}
+                                                        {m.is_stuck ? '復原卡住' : '重置'}
+                                                    </button>
+                                                ) : '—'}
+                                            </td>
                                         </tr>
                                     ))}
                                     {meetings.length === 0 && (
                                         <tr>
-                                            <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                                            <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
                                                 無符合條件的會議
                                             </td>
                                         </tr>
