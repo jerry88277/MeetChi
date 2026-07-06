@@ -25,20 +25,32 @@ import type { Meeting } from '@/types/meeting';
 import { transformMeeting } from '@/lib/transform';
 import { Sidebar } from '@/components/Sidebar';
 import { UATBanner } from '@/components/UATBanner';
-import { TourOverlay } from '@/components/TourOverlay';
 import { DashboardView } from '@/components/DashboardView';
-import { DetailView } from '@/components/DetailView';
-import { RecordingView } from '@/components/RecordingView';
-import { SettingsView } from '@/components/SettingsView';
-import { TemplateGallery } from '@/components/TemplateGallery';
-import { RagWorkspace } from '@/components/rag/RagWorkspace';
-import { RagDrawer } from '@/components/rag/RagDrawer';
 import { UploadTray } from '@/components/UploadTray';
-import { UploadSettingsModal, type UploadSettings } from '@/components/UploadSettingsModal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { FeedbackModal } from '@/components/FeedbackModal';
-import { AdminFeedbackPanel } from '@/components/AdminFeedbackPanel';
-import { OpsAdminPanel } from '@/components/OpsAdminPanel';
+import { type UploadSettings } from '@/components/UploadSettingsModal';
+import dynamic from 'next/dynamic';
+// Perf (2026-07-06 C)：把非首屏、條件渲染的重元件改為 route-level code-split。
+// 這些元件（詳情/錄音/設定/模板/RAG/各種 modal/維運面板）不在初次 dashboard
+// 首屏路徑上，動態載入可把它們移出主 bundle，縮小首載 JS、加快首屏。
+// 皆為 client-only（"use client" 頁面內），故 ssr:false。
+const modalLoading = () => null;
+const viewLoading = () => (
+    <div className="flex-1 flex items-center justify-center py-20">
+        <Loader2 className="animate-spin text-brand-cta" size={24} />
+    </div>
+);
+const TourOverlay = dynamic(() => import('@/components/TourOverlay').then(m => m.TourOverlay), { ssr: false, loading: modalLoading });
+const DetailView = dynamic(() => import('@/components/DetailView').then(m => m.DetailView), { ssr: false, loading: viewLoading });
+const RecordingView = dynamic(() => import('@/components/RecordingView').then(m => m.RecordingView), { ssr: false, loading: viewLoading });
+const SettingsView = dynamic(() => import('@/components/SettingsView').then(m => m.SettingsView), { ssr: false, loading: viewLoading });
+const TemplateGallery = dynamic(() => import('@/components/TemplateGallery').then(m => m.TemplateGallery), { ssr: false, loading: viewLoading });
+const RagWorkspace = dynamic(() => import('@/components/rag/RagWorkspace').then(m => m.RagWorkspace), { ssr: false, loading: viewLoading });
+const RagDrawer = dynamic(() => import('@/components/rag/RagDrawer').then(m => m.RagDrawer), { ssr: false, loading: modalLoading });
+const UploadSettingsModal = dynamic(() => import('@/components/UploadSettingsModal').then(m => m.UploadSettingsModal), { ssr: false, loading: modalLoading });
+const FeedbackModal = dynamic(() => import('@/components/FeedbackModal').then(m => m.FeedbackModal), { ssr: false, loading: modalLoading });
+const AdminFeedbackPanel = dynamic(() => import('@/components/AdminFeedbackPanel').then(m => m.AdminFeedbackPanel), { ssr: false, loading: viewLoading });
+const OpsAdminPanel = dynamic(() => import('@/components/OpsAdminPanel').then(m => m.OpsAdminPanel), { ssr: false, loading: viewLoading });
 import { useMeetings } from '@/hooks/useMeetings';
 import { useRecording } from '@/hooks/useRecording';
 import { useUploadQueue } from '@/hooks/useUploadQueue';

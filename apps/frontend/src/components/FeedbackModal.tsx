@@ -110,6 +110,107 @@ const FREQUENCY_OPTIONS: Array<{ value: FeedbackFrequency; label: string }> = [
     { value: "always", label: "每次都這樣" },
 ];
 
+// ── Perf (2026-07-06 B)：把圖示密集的選項格抽成 module-scope memo 子元件。
+// 打字只改 summary/expected/... 這些 state，不動 issueType/severity/frequency，
+// 因此這些 memo 子元件在打字時 props 不變 → React 跳過重繪整組 lucide 圖示，
+// 大幅降低每次按鍵的重繪成本（配合移除 backdrop-blur 一起解決輸入延遲）。
+// state setter（onChange）為 React 保證穩定的參考，memo 才能生效。
+const IssueTypeGrid = React.memo(function IssueTypeGrid({
+    value,
+    error,
+    onChange,
+}: {
+    value: FeedbackIssueType | "";
+    error: boolean;
+    onChange: (v: FeedbackIssueType) => void;
+}) {
+    return (
+        <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 ${error ? "rounded-xl ring-2 ring-status-error/60 p-1" : ""}`}>
+            {ISSUE_TYPE_OPTIONS.map((opt) => (
+                <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => onChange(opt.value)}
+                    className={`flex items-start gap-3 p-3 text-left rounded-xl border-2 transition-[border-color,background-color,box-shadow] duration-200 ${
+                        value === opt.value
+                            ? "border-brand-cta bg-brand-cta/10 text-brand-cta shadow-sm ring-1 ring-brand-cta/30"
+                            : "border-border/60 bg-muted/30 hover:border-brand-cta/40 text-foreground"
+                    }`}
+                >
+                    <span className="mt-0.5 flex-shrink-0">{opt.icon}</span>
+                    <span className="flex-1">
+                        <span className="block text-sm font-medium">{opt.label}</span>
+                        <span className="block text-xs text-muted-foreground mt-0.5">{opt.desc}</span>
+                    </span>
+                    {value === opt.value && (
+                        <span className="mt-0.5 flex-shrink-0 w-4 h-4 rounded-full bg-brand-cta text-white flex items-center justify-center text-[9px] font-bold">✓</span>
+                    )}
+                </button>
+            ))}
+        </div>
+    );
+});
+
+const SeverityGrid = React.memo(function SeverityGrid({
+    value,
+    error,
+    onChange,
+}: {
+    value: FeedbackSeverity | "";
+    error: boolean;
+    onChange: (v: FeedbackSeverity) => void;
+}) {
+    return (
+        <div className={`grid grid-cols-3 gap-2 ${error ? "rounded-xl ring-2 ring-status-error/60 p-1" : ""}`}>
+            {SEVERITY_OPTIONS.map((opt) => (
+                <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => onChange(opt.value)}
+                    className={`p-3 text-center rounded-xl border-2 transition-[border-color,background-color,box-shadow] duration-200 relative ${
+                        value === opt.value
+                            ? `${opt.cls} shadow-sm ring-1 ring-current/30`
+                            : "border-border/60 bg-muted/30 text-muted-foreground hover:border-current"
+                    }`}
+                >
+                    {value === opt.value && (
+                        <span className="absolute top-1.5 right-1.5 w-3.5 h-3.5 rounded-full bg-current text-white flex items-center justify-center text-[8px] font-bold">✓</span>
+                    )}
+                    <span className="block text-sm font-medium">{opt.label}</span>
+                    <span className="block text-[11px] mt-0.5 opacity-80">{opt.desc}</span>
+                </button>
+            ))}
+        </div>
+    );
+});
+
+const FrequencyGrid = React.memo(function FrequencyGrid({
+    value,
+    onChange,
+}: {
+    value: FeedbackFrequency | "";
+    onChange: React.Dispatch<React.SetStateAction<FeedbackFrequency | "">>;
+}) {
+    return (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {FREQUENCY_OPTIONS.map((opt) => (
+                <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => onChange((cur) => (cur === opt.value ? "" : opt.value))}
+                    className={`p-2 text-center rounded-lg border text-xs transition-colors ${
+                        value === opt.value
+                            ? "border-brand-cta bg-brand-cta/10 text-brand-cta"
+                            : "border-border text-muted-foreground hover:border-brand-cta/40"
+                    }`}
+                >
+                    {opt.label}
+                </button>
+            ))}
+        </div>
+    );
+});
+
 /**
  * 從當前 page URL 嘗試 parse `/dashboard/meetings/{id}` 抓 meeting_id。
  * Sidebar 入口開 modal 時 meetingId prop = undefined，但若使用者剛好停在
@@ -248,7 +349,7 @@ export const FeedbackModal = React.memo(function FeedbackModal({
 
     return createPortal(
         <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4"
             onClick={onClose}
         >
             <div
@@ -332,33 +433,7 @@ export const FeedbackModal = React.memo(function FeedbackModal({
                             <label className="block text-sm font-bold text-foreground mb-2">
                                 問題類型 <span className="text-status-error">*</span>
                             </label>
-                            <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 ${errIssueType ? "rounded-xl ring-2 ring-status-error/60 p-1" : ""}`}>
-                                {ISSUE_TYPE_OPTIONS.map((opt) => (
-                                    <button
-                                        key={opt.value}
-                                        type="button"
-                                        onClick={() => setIssueType(opt.value)}
-                                        className={`flex items-start gap-3 p-3 text-left rounded-xl border-2 transition-[border-color,background-color,box-shadow] duration-200 ${
-                                            issueType === opt.value
-                                                ? "border-brand-cta bg-brand-cta/10 text-brand-cta shadow-sm ring-1 ring-brand-cta/30"
-                                                : "border-border/60 bg-muted/30 hover:border-brand-cta/40 text-foreground"
-                                        }`}
-                                    >
-                                        <span className="mt-0.5 flex-shrink-0">{opt.icon}</span>
-                                        <span className="flex-1">
-                                            <span className="block text-sm font-medium">
-                                                {opt.label}
-                                            </span>
-                                            <span className="block text-xs text-muted-foreground mt-0.5">
-                                                {opt.desc}
-                                            </span>
-                                        </span>
-                                        {issueType === opt.value && (
-                                            <span className="mt-0.5 flex-shrink-0 w-4 h-4 rounded-full bg-brand-cta text-white flex items-center justify-center text-[9px] font-bold">✓</span>
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
+                            <IssueTypeGrid value={issueType} error={errIssueType} onChange={setIssueType} />
                             {errIssueType && (
                                 <p className="text-xs text-status-error mt-1.5 flex items-center gap-1">
                                     <AlertCircle size={12} /> 請選擇問題類型
@@ -454,30 +529,7 @@ export const FeedbackModal = React.memo(function FeedbackModal({
                             <label className="block text-sm font-bold text-foreground mb-2">
                                 嚴重程度 <span className="text-status-error">*</span>
                             </label>
-                            <div className={`grid grid-cols-3 gap-2 ${errSeverity ? "rounded-xl ring-2 ring-status-error/60 p-1" : ""}`}>
-                                {SEVERITY_OPTIONS.map((opt) => (
-                                    <button
-                                        key={opt.value}
-                                        type="button"
-                                        onClick={() => setSeverity(opt.value)}
-                                        className={`p-3 text-center rounded-xl border-2 transition-[border-color,background-color,box-shadow] duration-200 relative ${
-                                            severity === opt.value
-                                                ? `${opt.cls} shadow-sm ring-1 ring-current/30`
-                                                : "border-border/60 bg-muted/30 text-muted-foreground hover:border-current"
-                                        }`}
-                                    >
-                                        {severity === opt.value && (
-                                            <span className="absolute top-1.5 right-1.5 w-3.5 h-3.5 rounded-full bg-current text-white flex items-center justify-center text-[8px] font-bold">✓</span>
-                                        )}
-                                        <span className="block text-sm font-medium">
-                                            {opt.label}
-                                        </span>
-                                        <span className="block text-[11px] mt-0.5 opacity-80">
-                                            {opt.desc}
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
+                            <SeverityGrid value={severity} error={errSeverity} onChange={setSeverity} />
                             {errSeverity && (
                                 <p className="text-xs text-status-error mt-1.5 flex items-center gap-1">
                                     <AlertCircle size={12} /> 請選擇嚴重程度
@@ -582,26 +634,7 @@ export const FeedbackModal = React.memo(function FeedbackModal({
                             <label className="block text-sm font-bold text-foreground mb-2">
                                 發生頻率
                             </label>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                {FREQUENCY_OPTIONS.map((opt) => (
-                                    <button
-                                        key={opt.value}
-                                        type="button"
-                                        onClick={() =>
-                                            setFrequency((cur) =>
-                                                cur === opt.value ? "" : opt.value
-                                            )
-                                        }
-                                        className={`p-2 text-center rounded-lg border text-xs transition-colors ${
-                                            frequency === opt.value
-                                                ? "border-brand-cta bg-brand-cta/10 text-brand-cta"
-                                                : "border-border text-muted-foreground hover:border-brand-cta/40"
-                                        }`}
-                                    >
-                                        {opt.label}
-                                    </button>
-                                ))}
-                            </div>
+                            <FrequencyGrid value={frequency} onChange={setFrequency} />
                         </div>
 
                         {/* Buttons */}
