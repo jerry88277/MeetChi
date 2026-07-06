@@ -731,10 +731,11 @@ def get_audio_url(
         bucket_name, blob_name = parts[0], parts[1]
         bucket = client.bucket(bucket_name)
 
-        # 2026-07-06 Feature #1：若同目錄存在降噪後的 denoised.m4a，優先提供播放，
-        # 讓使用者聽到後端降噪處理後的音檔（找不到則回退原始音檔）。
+        # 2026-07-06 Feature #1：若存在降噪後的播放檔則優先提供，讓使用者聽到後端
+        # 降噪處理後的音檔（找不到則回退原始音檔）。音檔為扁平結構 audio/{id}.m4a，
+        # 故降噪檔以 meeting_id 命名放同目錄：{dir}/{meeting_id}_denoised.m4a。
         dir_prefix = blob_name.rsplit("/", 1)[0] if "/" in blob_name else ""
-        denoised_blob_name = f"{dir_prefix}/denoised.m4a" if dir_prefix else "denoised.m4a"
+        denoised_blob_name = f"{dir_prefix}/{meeting_id}_denoised.m4a" if dir_prefix else f"{meeting_id}_denoised.m4a"
         try:
             denoised_blob = bucket.blob(denoised_blob_name)
             if denoised_blob.exists():

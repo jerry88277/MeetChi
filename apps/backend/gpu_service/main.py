@@ -309,13 +309,14 @@ def _denoise_audio(audio_path: str, work_dir: Optional[str]) -> Optional[str]:
         return None
 
 
-def _make_and_upload_playback_denoise(source_audio: str, original_gs_url: str, work_dir: Optional[str]) -> Optional[str]:
+def _make_and_upload_playback_denoise(source_audio: str, original_gs_url: str, meeting_id: str, work_dir: Optional[str]) -> Optional[str]:
     """產生「原始品質」降噪檔並上傳供播放（會議詳情頁底部播放器用）。非致命。
 
     2026-07-06 Feature #1（承使用者要求：底部播放器放降噪後音檔）。
     - 與 ASR 用的 16k/mono 版本不同，這裡保留原始取樣率/聲道，僅套用相同輕度濾鏈，
       並轉為 AAC/m4a 方便瀏覽器串流。
-    - 上傳到與原始音檔同目錄的 `denoised.m4a`；播放端點若偵測到此物件則優先提供。
+    - 音檔實際存放為扁平結構 `audio/{meeting_id}.m4a`，故降噪檔以 **meeting_id 命名**
+      放到同目錄 `{dir}/{meeting_id}_denoised.m4a`（每會議唯一，避免互相覆蓋）。
     回傳上傳後的 gs:// URL；任何失敗回 None（播放端點自動回退原檔）。
     """
     import subprocess
@@ -344,7 +345,7 @@ def _make_and_upload_playback_denoise(source_audio: str, original_gs_url: str, w
         bucket_name = parts[0]
         orig_blob = parts[1] if len(parts) > 1 else ""
         dir_prefix = orig_blob.rsplit("/", 1)[0] if "/" in orig_blob else ""
-        dest_blob = (f"{dir_prefix}/denoised.m4a" if dir_prefix else "denoised.m4a")
+        dest_blob = (f"{dir_prefix}/{meeting_id}_denoised.m4a" if dir_prefix else f"{meeting_id}_denoised.m4a")
 
         client = gcs_storage.Client()
         bucket = client.bucket(bucket_name)
@@ -390,7 +391,7 @@ async def _run_asr_processing(request: ASRRefineRequest, start_time: float) -> A
                 # 播放用降噪檔（原始品質 m4a）上傳，供詳情頁底部播放器優先使用（非致命）
                 original_gs = request.audio_url if request.audio_url.startswith("gs://") else ""
                 if original_gs:
-                    _make_and_upload_playback_denoise(audio_path, original_gs, temp_dir)
+                    _make_and_upload_playback_denoise(audio_path, original_gs, meeting_id, temp_dir)
                 audio_path = denoised
 
         # Run ASR synchronously
