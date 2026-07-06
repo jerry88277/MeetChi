@@ -8,8 +8,9 @@
 import logging
 import os
 import uuid
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -167,3 +168,129 @@ async def backfill_participants(
             f"({total - inserted} already had access)"
         ),
     }
+
+
+# 卡住會議自助復原：worker 在 claim 後死掉/逾時會讓 status 永久鎖在
+# PROCESSING/REFINING/TRANSCRIBED，重試只認 PENDING/FAILED 故無法自動復原。
+# 此端點把卡住列安全重置回 PENDING 並（可選）重新 enqueue 轉錄。
+_STUCK_STATUSES = ("PROCESSING", "REFINING", "TRANSCRIBED")
+
+
+@router.get("/stuck-meetings")
+def list_stuck_meetings(
+    min_stuck_minutes: int = Query(15, ge=0, description="只列出停滯超過 N 分鐘的會議"),
+    db: Session = Depends(get_db),
+    _: None = Depends(_check_admin),
+):
+    """列出疑似卡住（PROCESSING/REFINING/TRANSCRIBED 且久無更新）的會議。"""
+    now = datetime.utcnow()
+    rows = (
+        db.query(Meeting)
+        .filter(Meeting.status.in_([MeetingStatus[s] for s in _STUCK_STATUSES]))
+        .filter(Meeting.deleted_at.is_(None))
+        .all()
+    )
+    out = []
+    for m in rows:
+        updated = m.updated_at or m.created_at
+        age_min = int((now - updated).total_seconds() // 60) if updated else None
+        if age_min is None or age_min < min_stuck_minutes:
+            continue
+        out.append({
+            "id": m.id,
+            "title": m.title,
+            "status": m.status.value if hasattr(m.status, "value") else str(m.status),
+            "processing_stage": m.processing_stage,
+            "updated_at": updated.isoformat() + "Z" if updated else None,
+            "stuck_minutes": age_min,
+        })
+    out.sort(key=lambda x: x["stuck_minutes"], reverse=True)
+    return {"count": len(out), "min_stuck_minutes": min_stuck_minutes, "meetings": out}
+
+
+@router.post("/reset-stuck-meeting")
+def reset_stuck_meeting(
+    meeting_id: str = Query(..., description="要復原的會議 ID"),
+    min_stuck_minutes: int = Query(10, ge=0, description="安全閘門：只重置停滯超過 N 分鐘者"),
+    reenqueue: bool = Query(True, description="重置後是否自動重新 enqueue 轉錄"),
+    force: bool = Query(False, description="略過停滯時間安全檢查"),
+    db: Session = Depends(get_db),
+    _: None = Depends(_check_admin),
+):
+    """把卡住的會議從 PROCESSING/REFINING/TRANSCRIBED 安全重置回 PENDING 並重新 enqueue。
+
+    安全設計：
+    - 只允許重置 _STUCK_STATUSES；COMPLETED 一律拒絕（避免誤刪成果）。
+    - 預設要求停滯 >= min_stuck_minutes，避免打斷正在處理中的會議；可用 force 略過。
+    - 清空 processing_stage / failure_reason，讓 worker 的 atomic claim（僅認 PENDING/FAILED）能成功。
+    """
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail=f"Meeting {meeting_id} not found")
+
+    cur_status = meeting.status.value if hasattr(meeting.status, "value") else str(meeting.status)
+
+    if cur_status == "COMPLETED":
+        raise HTTPException(
+            status_code=409,
+            detail="Meeting is COMPLETED; refusing to reset (would risk existing results)",
+        )
+    if cur_status not in _STUCK_STATUSES and not force:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Meeting status is {cur_status}, not a stuck state {_STUCK_STATUSES}; use force=true to override",
+        )
+
+    updated = meeting.updated_at or meeting.created_at
+    age_min = int((datetime.utcnow() - updated).total_seconds() // 60) if updated else None
+    if not force and (age_min is None or age_min < min_stuck_minutes):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Meeting last updated {age_min} min ago (< {min_stuck_minutes}); "
+                f"may still be actively processing. Use force=true to override."
+            ),
+        )
+
+    prev_stage = meeting.processing_stage
+    db.execute(
+        text("""
+            UPDATE meetings
+            SET status = 'PENDING', processing_stage = NULL,
+                failure_reason = NULL, updated_at = NOW()
+            WHERE id = :mid
+        """),
+        {"mid": meeting_id},
+    )
+    db.commit()
+    logger.warning(
+        f"[Admin] reset-stuck-meeting {meeting_id}: {cur_status}/{prev_stage} "
+        f"(stuck {age_min} min) -> PENDING, reenqueue={reenqueue}"
+    )
+
+    result = {
+        "meeting_id": meeting_id,
+        "previous_status": cur_status,
+        "previous_stage": prev_stage,
+        "stuck_minutes": age_min,
+        "new_status": "PENDING",
+        "reenqueued": False,
+    }
+
+    if reenqueue:
+        from app.routes.cloud_tasks import (
+            EnqueueTranscriptionRequest,
+            enqueue_transcription,
+        )
+        enq = enqueue_transcription(
+            EnqueueTranscriptionRequest(meeting_id=meeting_id, template_type="general", context="")
+        )
+        result["reenqueued"] = getattr(enq, "status", None) == "enqueued"
+        result["enqueue_status"] = getattr(enq, "status", None)
+        result["enqueue_message"] = getattr(enq, "message", None)
+
+    result["message"] = (
+        f"Reset {cur_status} -> PENDING"
+        + (" and re-enqueued transcription" if result["reenqueued"] else "")
+    )
+    return result

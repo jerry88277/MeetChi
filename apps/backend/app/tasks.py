@@ -1094,7 +1094,27 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
         
         if not segments:
             logger.warning(f"No transcript segments found for meeting {meeting_id}")
-            return {"status": "skipped", "reason": "empty_transcript"}
+            # 靜音/無訊號音檔會產生 0 段落。此時必須落在終態並給使用者可讀原因，
+            # 否則會卡在 TRANSCRIBED/summarizing（呼叫端把非 completed 視為 500，
+            # Cloud Tasks 重試又因狀態非 PENDING/FAILED 被 skip → 永久卡住）。
+            meeting.status = MeetingStatus.COMPLETED
+            meeting.completed_at = datetime.utcnow()
+            meeting.processing_stage = None
+            silent_reason = "未偵測到可辨識語音，請確認麥克風或錄音來源是否正常後重新上傳。"
+            try:
+                if meeting.audio_stats:
+                    _st = json.loads(meeting.audio_stats)
+                    if _st.get("health") == "silent" and _st.get("health_label_zh"):
+                        silent_reason = _st["health_label_zh"]
+            except Exception:  # noqa: BLE001
+                pass
+            meeting.failure_reason = silent_reason
+            db.commit()
+            logger.info(
+                f"Meeting {meeting_id} finalized COMPLETED with empty transcript "
+                f"(silent audio): {silent_reason}"
+            )
+            return {"status": "completed", "reason": "empty_transcript"}
 
         # Construct text with Speaker Labels
         lines = []
