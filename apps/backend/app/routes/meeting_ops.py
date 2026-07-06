@@ -730,6 +730,19 @@ def get_audio_url(
             
         bucket_name, blob_name = parts[0], parts[1]
         bucket = client.bucket(bucket_name)
+
+        # 2026-07-06 Feature #1：若同目錄存在降噪後的 denoised.m4a，優先提供播放，
+        # 讓使用者聽到後端降噪處理後的音檔（找不到則回退原始音檔）。
+        dir_prefix = blob_name.rsplit("/", 1)[0] if "/" in blob_name else ""
+        denoised_blob_name = f"{dir_prefix}/denoised.m4a" if dir_prefix else "denoised.m4a"
+        try:
+            denoised_blob = bucket.blob(denoised_blob_name)
+            if denoised_blob.exists():
+                blob_name = denoised_blob_name
+                logger.info(f"[audio-url] serving denoised playback for {meeting_id}: {denoised_blob_name}")
+        except Exception as _de:
+            logger.warning(f"[audio-url] denoised probe failed ({meeting_id}), fallback original: {_de}")
+
         blob = bucket.blob(blob_name)
 
         # Reload blob metadata to get the actual stored content-type

@@ -309,6 +309,56 @@ def _denoise_audio(audio_path: str, work_dir: Optional[str]) -> Optional[str]:
         return None
 
 
+def _make_and_upload_playback_denoise(source_audio: str, original_gs_url: str, work_dir: Optional[str]) -> Optional[str]:
+    """產生「原始品質」降噪檔並上傳供播放（會議詳情頁底部播放器用）。非致命。
+
+    2026-07-06 Feature #1（承使用者要求：底部播放器放降噪後音檔）。
+    - 與 ASR 用的 16k/mono 版本不同，這裡保留原始取樣率/聲道，僅套用相同輕度濾鏈，
+      並轉為 AAC/m4a 方便瀏覽器串流。
+    - 上傳到與原始音檔同目錄的 `denoised.m4a`；播放端點若偵測到此物件則優先提供。
+    回傳上傳後的 gs:// URL；任何失敗回 None（播放端點自動回退原檔）。
+    """
+    import subprocess
+    if not original_gs_url.startswith("gs://"):
+        return None
+    work_dir = work_dir or tempfile.mkdtemp(prefix="meetchi-denoise-pb-")
+    pb_path = os.path.join(work_dir, "denoised_playback.m4a")
+    af = os.getenv("DENOISE_AF_PLAYBACK", "highpass=f=80,afftdn=nf=-20,loudnorm=I=-16:TP=-1.5:LRA=11")
+    cmd = [
+        "ffmpeg", "-y", "-i", source_audio,
+        "-af", af,
+        "-c:a", "aac", "-b:a", "128k",
+        pb_path,
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, timeout=1800)
+        if proc.returncode != 0 or not os.path.exists(pb_path) or os.path.getsize(pb_path) == 0:
+            logger.warning(
+                f"[Denoise-Playback] ffmpeg failed (rc={proc.returncode}); skip. "
+                f"stderr tail: {proc.stderr.decode('utf-8', 'ignore')[-300:]}"
+            )
+            return None
+
+        from google.cloud import storage as gcs_storage
+        parts = original_gs_url.replace("gs://", "").split("/", 1)
+        bucket_name = parts[0]
+        orig_blob = parts[1] if len(parts) > 1 else ""
+        dir_prefix = orig_blob.rsplit("/", 1)[0] if "/" in orig_blob else ""
+        dest_blob = (f"{dir_prefix}/denoised.m4a" if dir_prefix else "denoised.m4a")
+
+        client = gcs_storage.Client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(dest_blob)
+        blob.content_type = "audio/mp4"
+        blob.upload_from_filename(pb_path, content_type="audio/mp4")
+        dest_url = f"gs://{bucket_name}/{dest_blob}"
+        logger.info(f"[Denoise-Playback] Uploaded {dest_url} ({os.path.getsize(pb_path)} bytes)")
+        return dest_url
+    except Exception as e:
+        logger.warning(f"[Denoise-Playback] Error (non-fatal): {e}")
+        return None
+
+
 async def _run_asr_processing(request: ASRRefineRequest, start_time: float) -> ASRRefineResponse:
     """Run ASR processing synchronously and return result."""
     meeting_id = request.meeting_id
@@ -337,6 +387,10 @@ async def _run_asr_processing(request: ASRRefineRequest, start_time: float) -> A
         if os.getenv("ENABLE_DENOISE", "false").lower() in ("1", "true", "yes"):
             denoised = _denoise_audio(audio_path, temp_dir)
             if denoised:
+                # 播放用降噪檔（原始品質 m4a）上傳，供詳情頁底部播放器優先使用（非致命）
+                original_gs = request.audio_url if request.audio_url.startswith("gs://") else ""
+                if original_gs:
+                    _make_and_upload_playback_denoise(audio_path, original_gs, temp_dir)
                 audio_path = denoised
 
         # Run ASR synchronously
