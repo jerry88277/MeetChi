@@ -206,9 +206,31 @@ gcloud run services describe [SERVICE] --region asia-southeast1 \
 > 通過標準：`status.traffic` 只有一筆 `percent:100`，其 `revisionName` = 本次新建 revision
 > （或 `latestRevision:true`）。若仍指向舊 revision → 流量鎖定未解，重跑上面的 `--to-latest`。
 
-### 💸 GPU 服務額外檢查（scale-to-zero）
-`meetchi-gpu-asr` 部署務必確認 `--min-instances=0`，並於閒置 ~15 分後用 Cloud Monitoring
-`run.googleapis.com/container/instance_count` 驗證降到 0，避免暖 L4 實例常駐燒錢。
+### 💸 Scale-to-Zero 檢查（GPU ASR + Backend）
+
+> **教訓（2026-06-23 ~ 07-05）**：Backend 部署時帶入 `--min-instances=1` 導致 2 vCPU / 4 GiB
+> instance 24/7 常駐 + 殭屍 tagged revisions 額外保持 instances，週末零流量仍產生 $10-25/天。
+
+**每次部署後，必須驗證以下兩個服務的 minScale=0：**
+
+```bash
+# GPU ASR — 確認 minScale 未被設回 1
+gcloud run services describe meetchi-gpu-asr --region asia-southeast1 \
+  --format="value(spec.template.metadata.annotations['autoscaling.knative.dev/minScale'])"
+# 預期: 空值 或 0
+
+# Backend — 確認 minScale 未被設回 1
+gcloud run services describe meetchi-backend --region asia-southeast1 \
+  --format="value(spec.template.metadata.annotations['autoscaling.knative.dev/minScale'])"
+# 預期: 空值 或 0
+```
+
+若任一顯示 `1`，立即修正：
+```bash
+gcloud run services update [SERVICE] --min-instances=0 --region asia-southeast1
+```
+
+⚠️ **嚴禁在部署指令中使用 `--min-instances=1`**（除非有明確的暖機需求且記錄於 devlog）。
 
 ---
 

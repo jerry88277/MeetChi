@@ -122,7 +122,7 @@ steps:
       - '--allow-unauthenticated'
       - '--memory=512Mi'
       - '--cpu=1'
-      - '--min-instances=1'
+      - '--min-instances=0'
       - '--max-instances=100'
      
 ```
@@ -225,7 +225,7 @@ gcloud run deploy my-service \
 
 ```bash
 gcloud run deploy my-service \
-  --min-instances 1 \
+  --min-instances 0 \
   --region us-central1
 ```
 
