@@ -13,6 +13,16 @@ export interface TranscriptLine {
     text: string;
 }
 
+// Feature #2 (2026-07-06): 逐段編輯模式用的「原始 segment」（未聚合，帶 id）
+export interface RawSegment {
+    id: string;
+    order: number;
+    time: string;       // 顯示用（mm:ss）
+    startTime: number;  // 秒
+    speaker: string;    // 原始說話者標籤（raw label）
+    text: string;
+}
+
 // Phase 8.1.3: Speaker Mapping
 export interface SpeakerMapping {
     display_name: string;
@@ -81,6 +91,7 @@ export interface Meeting {
     summary: string;
     actionItems: ActionItem[];
     transcript: TranscriptLine[];
+    rawSegments?: RawSegment[];         // Feature #2: 逐段編輯模式用（未聚合）
     speakerMappings?: SpeakerMappings;  // Phase 8.1.3
     audio_url?: string | null;          // Phase D: Audio Playback Sync
     // PR23 — 卡片與詳情頁顆粒度由大→小所需的新欄位（皆 optional fallback）

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     ChevronRight,
     FileText,
@@ -19,6 +19,8 @@ import {
     MessageSquareQuote,
     MessageSquareWarning,
     MessageSquare,
+    Users,
+    Save,
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -222,6 +224,85 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
             window.location.reload();
         } catch (err) {
             console.error('Failed to restore version:', err);
+        }
+    };
+
+    // === Feature #2 (2026-07-06): 逐段重指派說話者 ===
+    const [segEditMode, setSegEditMode] = useState(false);
+    const [segEdits, setSegEdits] = useState<Record<string, string>>({}); // segmentId -> 新的原始說話者標籤
+    const [isSavingSegments, setIsSavingSegments] = useState(false);
+
+    // 可選的說話者清單（raw label -> 顯示名稱），來源：講者對應 + 逐字稿中實際出現的標籤
+    const speakerOptions = useMemo(() => {
+        const opts = new Map<string, string>();
+        if (localSpeakerMappings) {
+            for (const [id, m] of Object.entries(localSpeakerMappings)) {
+                opts.set(id, m.display_name || id);
+            }
+        }
+        for (const s of meeting?.rawSegments || []) {
+            if (s.speaker && !opts.has(s.speaker)) opts.set(s.speaker, s.speaker);
+        }
+        return Array.from(opts.entries());
+    }, [localSpeakerMappings, meeting?.rawSegments]);
+
+    const segEditCount = Object.keys(segEdits).length;
+
+    const handleSegSpeakerChange = (segmentId: string, current: string, next: string) => {
+        setSegEdits(prev => {
+            const draft = { ...prev };
+            if (next === current) {
+                delete draft[segmentId]; // 改回原值即視為未變動
+            } else {
+                draft[segmentId] = next;
+            }
+            return draft;
+        });
+    };
+
+    const handleCancelSegEdit = () => {
+        setSegEdits({});
+        setSegEditMode(false);
+    };
+
+    const handleSaveSegments = async () => {
+        if (!meeting) return;
+        if (segEditCount === 0) { setSegEditMode(false); return; }
+        setIsSavingSegments(true);
+        try {
+            await api.updateSegmentSpeakers(meeting.id, segEdits);
+            setSegEdits({});
+            setSegEditMode(false);
+            // 逐字稿為聚合視圖，段落邊界會因重指派而改變 → 重新載入取得最新聚合結果
+            window.location.reload();
+        } catch (err) {
+            console.error('Failed to update segment speakers:', err);
+            setIsSavingSegments(false);
+        }
+    };
+
+    // === Feature #3 (2026-07-06): 以最新說話者標籤同步摘要 ===
+    const [isResyncing, setIsResyncing] = useState(false);
+    const [resyncResult, setResyncResult] = useState<
+        { updated: boolean; recommend_regenerate: boolean; reason: string | null; error?: boolean } | null
+    >(null);
+
+    const handleResyncSummary = async () => {
+        if (!meeting) return;
+        setIsResyncing(true);
+        setResyncResult(null);
+        try {
+            const res = await api.resyncSummarySpeakers(meeting.id);
+            setResyncResult({
+                updated: res.updated,
+                recommend_regenerate: res.recommend_regenerate,
+                reason: res.reason,
+            });
+        } catch (err) {
+            console.error('Failed to resync summary speakers:', err);
+            setResyncResult({ updated: false, recommend_regenerate: false, reason: '摘要同步失敗，請稍後再試。', error: true });
+        } finally {
+            setIsResyncing(false);
         }
     };
 
@@ -1080,13 +1161,153 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                         </div>
                                     )}
 
+                                    {/* Feature #2/#3 控制列：逐段編輯說話者 + 同步摘要 */}
+                                    <div className="px-4 py-2.5 border-b border-border bg-muted/10 flex flex-wrap items-center gap-2">
+                                        {!segEditMode ? (
+                                            <button
+                                                onClick={() => { setSegEdits({}); setSegEditMode(true); }}
+                                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-border bg-card hover:border-brand-cta/40 text-foreground transition-colors"
+                                                title="逐段檢視原始 segment 並手動修正被錯歸的說話者"
+                                            >
+                                                <Users size={13} /> 逐段編輯說話者
+                                            </button>
+                                        ) : (
+                                            <>
+                                                <span className="text-xs text-brand-cta font-medium inline-flex items-center gap-1">
+                                                    <Users size={13} /> 編輯模式
+                                                    {segEditCount > 0 && <span className="text-muted-foreground">（{segEditCount} 段待儲存）</span>}
+                                                </span>
+                                                <button
+                                                    onClick={handleSaveSegments}
+                                                    disabled={isSavingSegments || segEditCount === 0}
+                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-brand-cta text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                                                >
+                                                    {isSavingSegments ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                                                    儲存變更
+                                                </button>
+                                                <button
+                                                    onClick={handleCancelSegEdit}
+                                                    disabled={isSavingSegments}
+                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-border bg-card hover:border-status-error/40 text-muted-foreground transition-colors"
+                                                >
+                                                    <X size={13} /> 取消
+                                                </button>
+                                            </>
+                                        )}
+
+                                        {/* Feature #3：以最新說話者標籤同步摘要 */}
+                                        {isCompleted && meeting.summary && (
+                                            <button
+                                                onClick={handleResyncSummary}
+                                                disabled={isResyncing}
+                                                className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-brand-cta/30 bg-brand-cta/5 hover:bg-brand-cta/10 text-brand-cta disabled:opacity-50 transition-colors"
+                                                title="改過說話者後，用 LLM 快速掃過摘要並修正其中的說話者名稱引用"
+                                            >
+                                                {isResyncing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                                                更新摘要（同步說話者）
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Feature #3：同步結果提示 */}
+                                    {resyncResult && (
+                                        <div className={`px-4 py-3 border-b border-border text-xs ${resyncResult.error ? 'bg-status-error/5' : resyncResult.recommend_regenerate ? 'bg-status-warning/5' : 'bg-status-success/5'}`}>
+                                            <div className="flex items-start gap-2">
+                                                {resyncResult.error ? (
+                                                    <AlertCircle size={14} className="text-status-error mt-0.5 flex-shrink-0" />
+                                                ) : resyncResult.recommend_regenerate ? (
+                                                    <AlertTriangle size={14} className="text-status-warning mt-0.5 flex-shrink-0" />
+                                                ) : (
+                                                    <Check size={14} className="text-status-success mt-0.5 flex-shrink-0" />
+                                                )}
+                                                <div className="flex-1 min-w-0 space-y-1.5">
+                                                    <p className="text-foreground">
+                                                        {resyncResult.error
+                                                            ? (resyncResult.reason || '摘要同步失敗，請稍後再試。')
+                                                            : resyncResult.updated
+                                                                ? '已用最新說話者標籤修正摘要中的名稱引用。'
+                                                                : '摘要中的說話者名稱已與最新標籤一致，無需修改。'}
+                                                    </p>
+                                                    {resyncResult.recommend_regenerate && resyncResult.reason && (
+                                                        <p className="text-status-warning">{resyncResult.reason}</p>
+                                                    )}
+                                                    <div className="flex flex-wrap gap-2 pt-0.5">
+                                                        {resyncResult.updated && (
+                                                            <button
+                                                                onClick={() => window.location.reload()}
+                                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-border bg-card hover:border-brand-cta/40 text-foreground transition-colors"
+                                                            >
+                                                                <RefreshCw size={11} /> 重新整理查看更新後摘要
+                                                            </button>
+                                                        )}
+                                                        {resyncResult.recommend_regenerate && onRegenerateSummary && (
+                                                            <button
+                                                                onClick={() => onRegenerateSummary(meeting.id, selectedTemplate)}
+                                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-status-warning/15 hover:bg-status-warning/25 text-status-warning font-medium transition-colors"
+                                                            >
+                                                                <RefreshCw size={11} /> 整份重生摘要
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <button onClick={() => setResyncResult(null)} className="text-muted-foreground hover:text-foreground flex-shrink-0">
+                                                    <X size={13} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* Transcript lines */}
                                     {/* P2 RWD：mobile portrait 60vh 太矮、桌機則太擠
                                           mobile/sm: 75vh（手機螢幕窄但長，多給空間）
                                           md+: 60vh（桌機橫向有空間，較緊湊讓使用者
                                           看到下方音訊播放器） */}
                                     <div className="p-4 sm:p-5 space-y-5 max-h-[75vh] md:max-h-[60vh] overflow-y-auto" data-transcript-container>
-                                        {meeting.transcript && meeting.transcript.length > 0 ? (
+                                        {segEditMode ? (
+                                            /* Feature #2 編輯模式：逐段（未聚合）顯示，每段可下拉改說話者 */
+                                            (meeting.rawSegments && meeting.rawSegments.length > 0) ? (
+                                                meeting.rawSegments.map((seg) => {
+                                                    const effectiveSpeaker = segEdits[seg.id] ?? seg.speaker;
+                                                    const disp = getSpeakerDisplay(effectiveSpeaker);
+                                                    const isChanged = seg.id in segEdits;
+                                                    return (
+                                                        <div key={seg.id} className={`flex gap-3 rounded-lg p-2 -mx-2 transition-colors ${isChanged ? 'bg-brand-cta/5 ring-1 ring-brand-cta/30' : ''}`}>
+                                                            <div className="w-12 text-xs text-muted-foreground font-mono pt-2 text-right flex-shrink-0">
+                                                                {seg.time}
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-2 mb-1">
+                                                                    <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ backgroundColor: disp.color }} />
+                                                                    <select
+                                                                        value={effectiveSpeaker}
+                                                                        onChange={(e) => handleSegSpeakerChange(seg.id, seg.speaker, e.target.value)}
+                                                                        className="text-xs font-bold rounded border border-border bg-card px-1.5 py-0.5 focus:border-brand-cta focus:outline-none max-w-[180px]"
+                                                                        style={{ color: disp.color }}
+                                                                    >
+                                                                        {speakerOptions.map(([raw, name]) => (
+                                                                            <option key={raw} value={raw} style={{ color: 'inherit' }}>
+                                                                                {name}{name !== raw ? `（${raw}）` : ''}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                    {isChanged && <span className="text-[10px] text-brand-cta">已改</span>}
+                                                                </div>
+                                                                <p
+                                                                    className="text-foreground/80 text-sm leading-relaxed px-2 -ml-2"
+                                                                    style={{ borderLeft: `2px solid ${disp.color}30`, paddingLeft: '10px' }}
+                                                                >
+                                                                    {seg.text}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            ) : (
+                                                <div className="text-center py-8 text-muted-foreground text-sm">
+                                                    尚無可編輯的逐字稿段落
+                                                </div>
+                                            )
+                                        ) : meeting.transcript && meeting.transcript.length > 0 ? (
                                             meeting.transcript.map((line, idx) => {
                                                 const speaker = getSpeakerDisplay(line.speaker);
                                                 const timeSec = parseTimeToSeconds(line.time);

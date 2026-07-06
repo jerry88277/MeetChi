@@ -271,6 +271,44 @@ async def _retranscribe_low_confidence(result, audio_path: str):
     return result
 
 
+def _denoise_audio(audio_path: str, work_dir: Optional[str]) -> Optional[str]:
+    """保守式降噪：highpass + 溫和 afftdn + loudnorm。回傳新檔路徑；失敗回 None（用原檔）。
+
+    2026-07-06 Feature #1：刻意採「輕度」參數，避免過度降噪傷及 Whisper 準確率。
+    - highpass f=80：濾除 80Hz 以下的低頻嗡聲/風扇/桌面震動。
+    - afftdn nf=-20：溫和的頻域去噪（-20dB 噪底估計，比預設保守）。
+    - loudnorm：響度正規化，改善喇叭→麥克風錄音常見的音量偏低問題。
+    參數可用環境變數 DENOISE_AF 覆寫以利 A/B 測試。
+    """
+    import subprocess
+
+    work_dir = work_dir or tempfile.mkdtemp(prefix="meetchi-denoise-")
+    out_path = os.path.join(work_dir, "denoised.wav")
+    af = os.getenv(
+        "DENOISE_AF",
+        "highpass=f=80,afftdn=nf=-20,loudnorm=I=-16:TP=-1.5:LRA=11",
+    )
+    cmd = [
+        "ffmpeg", "-y", "-i", audio_path,
+        "-af", af,
+        "-ar", "16000", "-ac", "1",
+        out_path,
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, timeout=1800)
+        if proc.returncode != 0 or not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+            logger.warning(
+                f"[Denoise] ffmpeg failed (rc={proc.returncode}); using original audio. "
+                f"stderr tail: {proc.stderr.decode('utf-8', 'ignore')[-500:]}"
+            )
+            return None
+        logger.info(f"[Denoise] Applied '{af}' -> {out_path} ({os.path.getsize(out_path)} bytes)")
+        return out_path
+    except Exception as e:
+        logger.warning(f"[Denoise] Error, using original audio: {e}")
+        return None
+
+
 async def _run_asr_processing(request: ASRRefineRequest, start_time: float) -> ASRRefineResponse:
     """Run ASR processing synchronously and return result."""
     meeting_id = request.meeting_id
@@ -289,6 +327,17 @@ async def _run_asr_processing(request: ASRRefineRequest, start_time: float) -> A
 
         if not os.path.exists(audio_path):
             raise Exception(f"Audio file not found: {audio_path}")
+
+        # 2026-07-06 Feature #1: 保守式降噪前處理（flag-gated，預設關閉）。
+        # 情境：會議室喇叭播放 → 筆電內建麥克風錄音（如 ASUS ExpertBook B1402CVA），
+        # 會混入風扇/環境嗡聲與殘響。研究結論：輕度降噪（highpass 去低頻嗡聲 +
+        # 溫和 afftdn + loudnorm 音量正規化）在低訊噪比時有助 ASR 且保留語音；
+        # 重度降噪反而吃掉子音、產生偽影而降低 Whisper 準確率。故僅做輕度處理，
+        # 且以 ENABLE_DENOISE 開關 + 失敗時回退原檔，確保不劣化既有表現。
+        if os.getenv("ENABLE_DENOISE", "false").lower() in ("1", "true", "yes"):
+            denoised = _denoise_audio(audio_path, temp_dir)
+            if denoised:
+                audio_path = denoised
 
         # Run ASR synchronously
         result = await provider.transcribe_with_diarization(audio_path, language=request.language)

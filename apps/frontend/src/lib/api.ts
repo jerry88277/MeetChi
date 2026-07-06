@@ -731,6 +731,26 @@ class ApiClient {
         });
     }
 
+    // --- Feature #2 (2026-07-06): 逐段重指派說話者 ---
+    async updateSegmentSpeakers(
+        meetingId: string,
+        updates: Record<string, string>,
+    ): Promise<{ message: string; changed: number }> {
+        return this.fetch(`/api/v1/meetings/${meetingId}/segments/speakers`, {
+            method: 'PATCH',
+            body: JSON.stringify({ updates }),
+        });
+    }
+
+    // --- Feature #3 (2026-07-06): 以最新說話者標籤同步摘要（LLM 快掃 + 建議重生）---
+    async resyncSummarySpeakers(
+        meetingId: string,
+    ): Promise<{ updated: boolean; summary: string | null; recommend_regenerate: boolean; reason: string | null; changed_count: number }> {
+        return this.fetch(`/api/v1/meetings/${meetingId}/resync-summary-speakers`, {
+            method: 'POST',
+        });
+    }
+
     async renameMeeting(meetingId: string, title: string): Promise<{ message: string; new_title: string }> {
         return this.fetch(`/api/v1/meetings/${meetingId}/title`, {
             method: 'PATCH',

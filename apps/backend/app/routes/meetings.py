@@ -43,10 +43,12 @@ from app.schemas import (
     TranscriptSegmentCreate,
     RegenerateSummaryRequest,
     SpeakerMappingUpdate,
+    SegmentSpeakerBulkUpdate,
+    SummaryResyncResponse,
     SummarizeRequestModel,
     SummarizeResponseModel,
 )
-from app.llm_utils import get_gemini_client, generate_summary
+from app.llm_utils import get_gemini_client, generate_summary, relabel_summary_speakers
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -689,6 +691,186 @@ async def update_speaker_mappings(
     db.commit()
 
     return {"message": "Speaker mappings updated", "meeting_id": meeting_id}
+
+
+# ============================================
+# Feature #2: Per-segment speaker reassignment
+# 2026-07-06: 逐字稿聚合視圖切到「編輯模式」後，使用者可逐段把被 ASR 錯歸的
+# 逐字稿重新指派給正確的說話者。以 segment id 為粒度更新 TranscriptSegment.speaker。
+# ============================================
+@router.patch("/api/v1/meetings/{meeting_id}/segments/speakers")
+async def update_segment_speakers(
+    meeting_id: str,
+    update: SegmentSpeakerBulkUpdate,
+    db: Session = Depends(get_db),
+):
+    """逐段重指派說話者：body = { updates: { segment_id: 新的原始說話者標籤 } }。"""
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    if not update.updates:
+        raise HTTPException(status_code=400, detail="No segment updates provided")
+
+    seg_ids = list(update.updates.keys())
+    segments = (
+        db.query(TranscriptSegment)
+        .filter(
+            TranscriptSegment.meeting_id == meeting_id,
+            TranscriptSegment.id.in_(seg_ids),
+        )
+        .all()
+    )
+    seg_map = {s.id: s for s in segments}
+
+    missing = [sid for sid in seg_ids if sid not in seg_map]
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Segments not found in this meeting: {missing[:5]}"
+            + (" ..." if len(missing) > 5 else ""),
+        )
+
+    changed = 0
+    for sid, new_speaker in update.updates.items():
+        new_speaker = (new_speaker or "").strip()
+        if not new_speaker:
+            continue
+        seg = seg_map[sid]
+        if (seg.speaker or "") != new_speaker:
+            seg.speaker = new_speaker
+            changed += 1
+
+    if changed:
+        meeting.updated_at = datetime.utcnow()
+        db.commit()
+
+    logger.info(
+        f"[segment-speakers] meeting={meeting_id} requested={len(seg_ids)} changed={changed}"
+    )
+    return {
+        "message": "Segment speakers updated",
+        "meeting_id": meeting_id,
+        "changed": changed,
+    }
+
+
+# ============================================
+# Feature #3: Summary speaker re-sync (hybrid — LLM quick relabel + regen advice)
+# 2026-07-06: 更新說話者標籤後按 [更新]，用 LLM 快掃摘要僅修正說話者名稱引用；
+# 若偵測到說話者集合有增減（重指派幅度大），另建議使用者整份重生摘要。
+# ============================================
+@router.post(
+    "/api/v1/meetings/{meeting_id}/resync-summary-speakers",
+    response_model=SummaryResyncResponse,
+)
+async def resync_summary_speakers(
+    meeting_id: str,
+    db: Session = Depends(get_db),
+):
+    """以最新說話者名單目標式修正摘要，並依啟發式建議是否需要整份重生。"""
+    meeting = (
+        db.query(Meeting)
+        .options(selectinload(Meeting.transcript_segments))
+        .filter(Meeting.id == meeting_id)
+        .first()
+    )
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    if not meeting.summary_json:
+        raise HTTPException(status_code=400, detail="Meeting has no summary to re-sync")
+
+    # 解析目前的說話者對應（raw label -> display_name / role）
+    mappings: dict = {}
+    if meeting.speaker_mappings:
+        try:
+            mappings = json.loads(meeting.speaker_mappings)
+        except json.JSONDecodeError:
+            mappings = {}
+
+    # 目前逐字稿中實際出現的原始說話者標籤（重指派後的真值）
+    active_raw = {
+        (s.speaker or "").strip()
+        for s in (meeting.transcript_segments or [])
+        if s.speaker and s.speaker.strip()
+    }
+
+    def _display(raw: str) -> str:
+        m = mappings.get(raw)
+        if isinstance(m, dict) and m.get("display_name"):
+            return m["display_name"]
+        return raw
+
+    canonical_speakers = sorted({_display(r) for r in active_raw}) if active_raw else \
+        sorted({_display(k) for k in mappings.keys()})
+    speaker_roles = {
+        _display(k): (v.get("role") or "")
+        for k, v in mappings.items()
+        if isinstance(v, dict) and v.get("role")
+    }
+
+    # 啟發式：摘要 speaker_contributions 引用的說話者集合 vs 目前實際說話者集合
+    recommend_regenerate = False
+    reason = None
+    try:
+        summary_obj = json.loads(meeting.summary_json)
+        summary_speakers = {
+            (c.get("speaker") or "").strip()
+            for c in (summary_obj.get("speaker_contributions") or [])
+            if isinstance(c, dict) and c.get("speaker")
+        }
+        current_display = set(canonical_speakers)
+        if summary_speakers and current_display and summary_speakers != current_display:
+            added = current_display - summary_speakers
+            removed = summary_speakers - current_display
+            recommend_regenerate = True
+            reason = (
+                "偵測到說話者集合有變動"
+                + (f"（新增：{sorted(added)}）" if added else "")
+                + (f"（摘要中未對應：{sorted(removed)}）" if removed else "")
+                + "，建議整份重生摘要以完整反映重指派結果。"
+            )
+    except (json.JSONDecodeError, AttributeError):
+        pass
+
+    client = get_gemini_client()
+    if client is None:
+        raise HTTPException(status_code=503, detail="LLM service unavailable")
+
+    result = relabel_summary_speakers(
+        client,
+        meeting.summary_json,
+        canonical_speakers,
+        speaker_roles or None,
+    )
+
+    if result.get("error") and not result.get("changed"):
+        logger.warning(f"[resync-summary] meeting={meeting_id} relabel note: {result['error']}")
+
+    changed = bool(result.get("changed"))
+    if changed:
+        # 版本備份，行為對齊 regenerate-summary
+        version = SummaryVersion(
+            id=str(uuid.uuid4()),
+            meeting_id=meeting_id,
+            template_name=meeting.template_name or "general",
+            summary_json=meeting.summary_json,
+        )
+        db.add(version)
+        meeting.summary_json = result["summary_json"]
+        meeting.updated_at = datetime.utcnow()
+        db.commit()
+
+    logger.info(
+        f"[resync-summary] meeting={meeting_id} changed={changed} "
+        f"recommend_regenerate={recommend_regenerate}"
+    )
+    return SummaryResyncResponse(
+        updated=changed,
+        summary=result.get("summary_json") if changed else None,
+        recommend_regenerate=recommend_regenerate,
+        reason=reason,
+        changed_count=1 if changed else 0,
+    )
 
 
 # ============================================

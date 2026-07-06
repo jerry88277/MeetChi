@@ -1,5 +1,5 @@
 import { Meeting as ApiMeeting, MeetingSummary, KeyQuote as ApiKeyQuote } from '@/lib/api';
-import type { Meeting, ActionItem, TranscriptLine, SpeakerMappings, KeyQuote } from '@/types/meeting';
+import type { Meeting, ActionItem, TranscriptLine, RawSegment, SpeakerMappings, KeyQuote } from '@/types/meeting';
 
 export function formatSeconds(seconds: number): string {
     const mins = Math.floor(seconds / 60);
@@ -131,6 +131,15 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
     // Each paragraph retains the start_time of the first segment.
     const rawSegments = (apiMeeting.transcript_segments || []);
     const transcript: TranscriptLine[] = [];
+    // Feature #2: 逐段編輯模式用的未聚合 segment（帶 id）
+    const editableSegments: RawSegment[] = rawSegments.map((seg, idx) => ({
+        id: seg.id,
+        order: typeof seg.order === "number" ? seg.order : idx,
+        time: formatSeconds(seg.start_time),
+        startTime: seg.start_time,
+        speaker: seg.speaker || "Unknown",
+        text: seg.content_polished || seg.content_raw || "",
+    }));
     const PARA_MIN_CHARS = 100;
     const PARA_MAX_CHARS = 300;
 
@@ -215,6 +224,7 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
         summary,
         actionItems,
         transcript,
+        rawSegments: editableSegments,
         speakerMappings,
         audio_url: apiMeeting.audio_url ?? null,
         // PR23 新欄位

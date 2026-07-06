@@ -141,6 +141,28 @@ class SpeakerMappingUpdate(BaseModel):
 
 
 # ============================================
+# Per-segment speaker reassignment (Feature #2)
+# ============================================
+class SegmentSpeakerBulkUpdate(BaseModel):
+    """逐段改說話者：{ segment_id: 新的原始說話者標籤 }（例如 "SPEAKER_01"）。"""
+    updates: Dict[str, str] = Field(
+        ..., description="Map of transcript segment id -> new raw speaker label"
+    )
+
+
+# ============================================
+# Summary speaker re-sync (Feature #3)
+# ============================================
+class SummaryResyncResponse(BaseModel):
+    """摘要說話者同步結果。"""
+    updated: bool
+    summary: Optional[str] = None
+    recommend_regenerate: bool = False
+    reason: Optional[str] = None
+    changed_count: int = 0
+
+
+# ============================================
 # Intent classification
 # ============================================
 class IntentClassifyRequest(BaseModel):

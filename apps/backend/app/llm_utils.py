@@ -814,3 +814,87 @@ def polish_text(
     except Exception as e:
         logger.error(f"Polish Error: {e}")
         return {"error": str(e)}
+
+
+# ============================================
+# Feature #3: Summary speaker re-sync (targeted relabel)
+# 2026-07-06: 當使用者更新說話者標籤 / 逐段重指派後，用 LLM 快速掃過摘要，
+# 僅修正其中的「說話者名稱引用」以對齊最新的正式名單，其餘措辭與結構全數保留。
+# 這是「混合模式」的第一步（目標式重貼）；是否需要整份重生由呼叫端依啟發式判斷。
+# ============================================
+def relabel_summary_speakers(
+    client: "genai.Client",
+    summary_json_str: str,
+    canonical_speakers: List[str],
+    speaker_roles: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """以最新的正式說話者名單，對既有 summary_json 做「僅改名不改內容」的目標式修正。
+
+    Returns dict: { "summary_json": <str>, "changed": <bool>, "error": <str optional> }.
+    失敗時回傳原字串並帶 error，呼叫端保持原摘要不動。
+    """
+    if not summary_json_str or not summary_json_str.strip():
+        return {"summary_json": summary_json_str, "changed": False, "error": "empty summary"}
+    if not canonical_speakers:
+        return {"summary_json": summary_json_str, "changed": False, "error": "no canonical speakers"}
+
+    roles_hint = ""
+    if speaker_roles:
+        pairs = [f"- {name}（{role}）" for name, role in speaker_roles.items() if name]
+        if pairs:
+            roles_hint = "\n每位說話者的角色參考：\n" + "\n".join(pairs)
+
+    canonical_list = "\n".join(f"- {s}" for s in canonical_speakers if s)
+
+    system_prompt = (
+        "你是一個嚴謹的會議摘要校對助手。你的唯一任務是：把輸入 JSON 中所有"
+        "「說話者名稱的引用」對齊到我提供的『正式說話者名單』。\n"
+        "嚴格規則：\n"
+        "1. 只更改說話者名稱字串（例如把舊代號或舊名字換成正式名單中的對應名字）。\n"
+        "2. 不得改寫、增刪、重排任何其他文字、要點、決議、行動項或章節內容。\n"
+        "3. JSON 的結構、鍵名、陣列順序、非說話者欄位一律原封不動。\n"
+        "4. 若某處無法明確對應到名單中的人，保持原樣不要臆測。\n"
+        "5. 只輸出修正後的 JSON，不要加任何解說。"
+    )
+    user_prompt = (
+        f"【正式說話者名單】\n{canonical_list}{roles_hint}\n\n"
+        f"【待校對的摘要 JSON】\n{summary_json_str}\n\n"
+        "請輸出對齊說話者名稱後、其餘完全不變的 JSON。"
+    )
+
+    try:
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=f"{system_prompt}\n\n{user_prompt}",
+            config={
+                "response_mime_type": "application/json",
+                "temperature": 0.0,
+                "max_output_tokens": min(int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "65535")), 65535),
+            },
+        )
+        resp_text = response.text
+        if not resp_text or not resp_text.strip():
+            return {"summary_json": summary_json_str, "changed": False, "error": "empty LLM response"}
+
+        # 驗證：可解析且頂層鍵集合一致（避免 LLM 丟棄欄位）
+        try:
+            orig = json.loads(summary_json_str)
+            new = json.loads(resp_text)
+        except json.JSONDecodeError as je:
+            logger.error(f"[relabel] JSON parse failed: {je}")
+            return {"summary_json": summary_json_str, "changed": False, "error": "invalid JSON from LLM"}
+
+        if isinstance(orig, dict) and isinstance(new, dict):
+            if set(orig.keys()) != set(new.keys()):
+                logger.warning(
+                    f"[relabel] top-level keys changed "
+                    f"({set(orig.keys())} -> {set(new.keys())}); rejecting."
+                )
+                return {"summary_json": summary_json_str, "changed": False, "error": "structure changed"}
+
+        normalized = json.dumps(new, ensure_ascii=False)
+        changed = json.dumps(orig, ensure_ascii=False, sort_keys=True) != json.dumps(new, ensure_ascii=False, sort_keys=True)
+        return {"summary_json": normalized, "changed": changed}
+    except Exception as e:
+        logger.error(f"[relabel] Error: {e}")
+        return {"summary_json": summary_json_str, "changed": False, "error": str(e)}
