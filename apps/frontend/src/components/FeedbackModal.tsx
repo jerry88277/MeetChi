@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import {
     X,
     Loader2,
@@ -125,14 +126,14 @@ function parseMeetingIdFromUrl(): string | undefined {
     return match?.[1];
 }
 
-export const FeedbackModal = ({
+export const FeedbackModal = React.memo(function FeedbackModal({
     isOpen,
     onClose,
     userUpn,
     initialIssueType,
     meetingId,
     prefillSummary,
-}: FeedbackModalProps) => {
+}: FeedbackModalProps) {
     const [stage, setStage] = useState<1 | 2>(1);
     const [issueType, setIssueType] = useState<FeedbackIssueType | "">(
         initialIssueType ?? ""
@@ -146,6 +147,9 @@ export const FeedbackModal = ({
     const [screenshots, setScreenshots] = useState<{ file: File; preview: string }[]>([]);
     const [submitting, setSubmitting] = useState(false);
     const [submitted, setSubmitted] = useState(false);
+    // 2026-07-06 UX #2：送出前驗證高亮。使用者按送出但必填未完成時，
+    // 將缺漏的必填欄位轉為紅色邊框 + 提示，取代「按鈕 disabled 但不知為何」。
+    const [showErrors, setShowErrors] = useState(false);
     // 2026-05-12: parse URL fallback；caller 給的 meetingId 優先
     const [resolvedMeetingId, setResolvedMeetingId] = useState<string | undefined>(meetingId);
 
@@ -162,6 +166,7 @@ export const FeedbackModal = ({
             setScreenshots([]);
             setSubmitting(false);
             setSubmitted(false);
+            setShowErrors(false);
             // caller 已帶 meetingId → 用 caller；否則嘗試從 URL parse
             setResolvedMeetingId(meetingId ?? parseMeetingIdFromUrl());
         }
@@ -169,10 +174,27 @@ export const FeedbackModal = ({
 
     const stage1Valid =
         !!issueType && summary.trim().length >= 5 && summary.length <= 1000 && !!severity;
+    // 2026-07-06 #2：個別必填欄位的缺漏旗標，供紅色高亮使用
+    const errIssueType = showErrors && !issueType;
+    const errSummary = showErrors && summary.trim().length < 5;
+    const errSeverity = showErrors && !severity;
+
+    // 送出前驗證：無效時亮紅並提示缺漏欄位，不再靜默 disable
+    const validateStage1 = (): boolean => {
+        if (!stage1Valid) {
+            setShowErrors(true);
+            const missing: string[] = [];
+            if (!issueType) missing.push("問題類型");
+            if (summary.trim().length < 5) missing.push("問題描述（至少 5 字）");
+            if (!severity) missing.push("嚴重程度");
+            toast.error(`還有必填欄位未完成：${missing.join("、")}`);
+            return false;
+        }
+        return true;
+    };
 
     const handleSubmit = async (skipStage2 = false) => {
-        if (!stage1Valid) {
-            toast.error("請先填完第一階段必填欄位");
+        if (!validateStage1()) {
             return;
         }
         setSubmitting(true);
@@ -222,8 +244,9 @@ export const FeedbackModal = ({
     };
 
     if (!isOpen) return null;
+    if (typeof document === "undefined") return null;
 
-    return (
+    return createPortal(
         <div
             className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
             onClick={onClose}
@@ -309,7 +332,7 @@ export const FeedbackModal = ({
                             <label className="block text-sm font-bold text-foreground mb-2">
                                 問題類型 <span className="text-status-error">*</span>
                             </label>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 ${errIssueType ? "rounded-xl ring-2 ring-status-error/60 p-1" : ""}`}>
                                 {ISSUE_TYPE_OPTIONS.map((opt) => (
                                     <button
                                         key={opt.value}
@@ -336,6 +359,11 @@ export const FeedbackModal = ({
                                     </button>
                                 ))}
                             </div>
+                            {errIssueType && (
+                                <p className="text-xs text-status-error mt-1.5 flex items-center gap-1">
+                                    <AlertCircle size={12} /> 請選擇問題類型
+                                </p>
+                            )}
                         </div>
 
                         {/* Summary */}
@@ -356,11 +384,20 @@ export const FeedbackModal = ({
                                 onChange={(e) => setSummary(e.target.value.slice(0, 1000))}
                                 placeholder="例：摘要把預算金額抓錯了，應該是 50 萬不是 5 萬"
                                 rows={4}
-                                className="w-full px-3 py-2 bg-surface border border-border rounded-lg focus:border-brand-cta focus:outline-none text-sm text-foreground resize-none"
+                                className={`w-full px-3 py-2 bg-surface border rounded-lg focus:outline-none text-sm text-foreground resize-none ${
+                                    errSummary
+                                        ? "border-status-error ring-2 ring-status-error/40 focus:border-status-error"
+                                        : "border-border focus:border-brand-cta"
+                                }`}
                             />
                             {summary.length > 0 && summary.trim().length < 5 && (
                                 <p className="text-xs text-status-error mt-1 flex items-center gap-1">
                                     <AlertCircle size={12} /> 至少 5 個字
+                                </p>
+                            )}
+                            {errSummary && summary.length === 0 && (
+                                <p className="text-xs text-status-error mt-1 flex items-center gap-1">
+                                    <AlertCircle size={12} /> 請描述遇到的問題（至少 5 個字）
                                 </p>
                             )}
                         </div>
@@ -417,7 +454,7 @@ export const FeedbackModal = ({
                             <label className="block text-sm font-bold text-foreground mb-2">
                                 嚴重程度 <span className="text-status-error">*</span>
                             </label>
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className={`grid grid-cols-3 gap-2 ${errSeverity ? "rounded-xl ring-2 ring-status-error/60 p-1" : ""}`}>
                                 {SEVERITY_OPTIONS.map((opt) => (
                                     <button
                                         key={opt.value}
@@ -441,15 +478,22 @@ export const FeedbackModal = ({
                                     </button>
                                 ))}
                             </div>
+                            {errSeverity && (
+                                <p className="text-xs text-status-error mt-1.5 flex items-center gap-1">
+                                    <AlertCircle size={12} /> 請選擇嚴重程度
+                                </p>
+                            )}
                         </div>
 
                         {/* Buttons — DDG §4.1: 表單 submit → brand-cta primary；
                             「補更多細節」為次要動作，使用 outline 樣式。
-                            submit 放右側（慣例 primary 位置）。 */}
+                            submit 放右側（慣例 primary 位置）。
+                            2026-07-06 #2：按鈕不再因未填而 disable，改為點擊時驗證並
+                            將缺漏必填欄位亮紅，讓使用者明確知道還差什麼。 */}
                         <div className="flex flex-col-reverse sm:flex-row gap-2 pt-2 border-t border-border">
                             <button
-                                onClick={() => setStage(2)}
-                                disabled={!stage1Valid || submitting}
+                                onClick={() => { if (validateStage1()) setStage(2); }}
+                                disabled={submitting}
                                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-card text-muted-foreground border border-border hover:border-brand-cta/40 hover:text-brand-cta rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 補更多細節
@@ -457,7 +501,7 @@ export const FeedbackModal = ({
                             </button>
                             <button
                                 onClick={() => handleSubmit(true)}
-                                disabled={!stage1Valid || submitting}
+                                disabled={submitting}
                                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-cta text-white hover:bg-brand-cta/90 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {submitting ? (
@@ -585,6 +629,7 @@ export const FeedbackModal = ({
                     </div>
                 )}
             </div>
-        </div>
+        </div>,
+        document.body
     );
-};
+});

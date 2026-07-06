@@ -18,6 +18,7 @@ import {
     Zap,
     MessageSquareQuote,
     MessageSquareWarning,
+    MessageSquare,
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -145,6 +146,41 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     // Local meeting state for in-place updates (avoids full page reload for speaker edits)
     const [localSpeakerMappings, setLocalSpeakerMappings] = useState(meeting?.speakerMappings);
     useEffect(() => { setLocalSpeakerMappings(meeting?.speakerMappings); }, [meeting?.speakerMappings]);
+
+    // 2026-07-06 #1：轉錄「卡住」偵測 watchdog。
+    // 使用者曾被告知 ETA，但等待超時後畫面仍停在「處理中/排隊中」而無任何指引，
+    // 造成等待焦慮。這裡用一個只在 pending/processing 時運作的計時器，
+    // 一旦超過預期時間即顯示「似乎卡住了 + 下一步該怎麼做」，取代無限轉圈。
+    const isPendingOrProcessing = meeting?.status === 'pending' || meeting?.status === 'processing';
+    const [nowTs, setNowTs] = useState(() => Date.now());
+    useEffect(() => {
+        if (!isPendingOrProcessing) return;
+        setNowTs(Date.now());
+        const id = setInterval(() => setNowTs(Date.now()), 20_000); // 20s tick
+        return () => clearInterval(id);
+    }, [isPendingOrProcessing, meeting?.status]);
+
+    // 進入該狀態的起算時間：processing 用 updatedAt（進入處理的時間），pending 用 createdAt
+    const stateStartMs = (() => {
+        const src = meeting?.status === 'processing'
+            ? (meeting?.updatedAt || meeting?.createdAt)
+            : meeting?.createdAt;
+        const t = src ? new Date(src).getTime() : NaN;
+        return Number.isNaN(t) ? nowTs : t;
+    })();
+    const elapsedMs = Math.max(0, nowTs - stateStartMs);
+    const elapsedMin = Math.floor(elapsedMs / 60000);
+    // 預期完成時間：processing 依音檔長度估算（GPU 約略即時，給寬鬆係數 + 下限 10 分），
+    // pending 逾 5 分視為排程未接手（多半是上傳未完成或 enqueue 異常）。
+    const durSec = meeting?.durationSeconds ?? 0;
+    const expectedProcessingMs = Math.max(10 * 60_000, durSec * 1000 * 1.5);
+    const pendingStuckMs = 5 * 60_000;
+    const processingSoftStuck = meeting?.status === 'processing' && elapsedMs > expectedProcessingMs;
+    const processingHardStuck = meeting?.status === 'processing' && elapsedMs > expectedProcessingMs * 2;
+    const pendingStuck = meeting?.status === 'pending' && elapsedMs > pendingStuckMs;
+    const fmtElapsed = elapsedMin < 60
+        ? `${elapsedMin} 分鐘`
+        : `${Math.floor(elapsedMin / 60)} 小時 ${elapsedMin % 60} 分鐘`;
 
     const handleStartEditSpeaker = (speakerId: string) => {
         if (!meeting) return;
@@ -516,6 +552,36 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                     <div className="h-2 w-1/3 bg-muted rounded"></div>
                                 </div>
                                 <p className="text-xs text-muted-foreground mt-2 font-mono">目前狀態：排隊中</p>
+                                {pendingStuck && (
+                                    <div className="mt-6 w-full max-w-md text-left bg-status-error/5 border border-status-error/30 rounded-lg p-4">
+                                        <p className="text-sm font-bold text-status-error flex items-center gap-1.5 mb-1.5">
+                                            <AlertCircle size={15} /> 已等待 {fmtElapsed}，似乎卡住了
+                                        </p>
+                                        <p className="text-xs text-foreground/75 leading-relaxed mb-3">
+                                            這份會議遲遲沒有開始轉錄。常見原因是<strong>音檔上傳未完成</strong>（例如上傳到一半網路中斷），
+                                            或系統排程暫時忙碌。建議您：
+                                        </p>
+                                        <div className="flex flex-col sm:flex-row gap-2">
+                                            <button
+                                                onClick={() => window.location.reload()}
+                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-card border border-border hover:border-brand-cta/50 rounded-lg text-xs font-medium transition-colors"
+                                            >
+                                                <RefreshCw size={12} /> 重新整理頁面
+                                            </button>
+                                            {onReportThisMeeting && (
+                                                <button
+                                                    onClick={() => onReportThisMeeting(meeting.id)}
+                                                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-brand-cta text-white hover:bg-brand-cta/90 rounded-lg text-xs font-medium transition-colors"
+                                                >
+                                                    <MessageSquare size={12} /> 立即回報
+                                                </button>
+                                            )}
+                                        </div>
+                                        <p className="text-[11px] text-muted-foreground mt-2.5">
+                                            提示：若是網路不順導致上傳中斷，建議刪除本會議後<strong>重新上傳音檔</strong>，並在上傳完成（100%）前保持頁面開啟。
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </section>
                     )}
@@ -577,6 +643,51 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                 <div className="h-4 bg-muted/60 rounded-md animate-pulse w-2/3"></div>
                                 <div className="h-4 bg-muted/40 rounded-md animate-pulse w-1/2"></div>
                             </div>
+
+                            {/* 2026-07-06 #1：processing 逾時 watchdog */}
+                            {processingSoftStuck && !processingHardStuck && (
+                                <div className="mt-4 bg-status-warning/5 border border-status-warning/30 rounded-lg p-3 text-xs text-foreground/75 flex items-start gap-2">
+                                    <Loader2 size={14} className="animate-spin text-status-warning shrink-0 mt-0.5" />
+                                    <span className="leading-relaxed">
+                                        已處理 {fmtElapsed}，比一般預期久一些。若您的音檔較長，這通常是正常的，系統仍在努力轉錄中，會自動更新，<strong>不需要重新上傳</strong>。
+                                    </span>
+                                </div>
+                            )}
+                            {processingHardStuck && (
+                                <div className="mt-4 text-left bg-status-error/5 border border-status-error/30 rounded-lg p-4">
+                                    <p className="text-sm font-bold text-status-error flex items-center gap-1.5 mb-1.5">
+                                        <AlertCircle size={15} /> 已處理 {fmtElapsed}，可能卡住了
+                                    </p>
+                                    <p className="text-xs text-foreground/75 leading-relaxed mb-3">
+                                        轉錄時間已明顯超過預期。可能是<strong>網路不穩</strong>或系統暫時忙碌導致處理中斷。您可以：
+                                    </p>
+                                    <div className="flex flex-col sm:flex-row gap-2">
+                                        <button
+                                            onClick={() => window.location.reload()}
+                                            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-card border border-border hover:border-brand-cta/50 rounded-lg text-xs font-medium transition-colors"
+                                        >
+                                            <RefreshCw size={12} /> 重新整理頁面
+                                        </button>
+                                        {onRegenerateTranscript && (
+                                            <button
+                                                onClick={() => onRegenerateTranscript(meeting.id, selectedTemplate)}
+                                                disabled={isRegenerating}
+                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-card border border-border hover:border-brand-cta/50 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                                            >
+                                                <RefreshCw size={12} /> 重新從頭轉錄
+                                            </button>
+                                        )}
+                                        {onReportThisMeeting && (
+                                            <button
+                                                onClick={() => onReportThisMeeting(meeting.id)}
+                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-brand-cta text-white hover:bg-brand-cta/90 rounded-lg text-xs font-medium transition-colors"
+                                            >
+                                                <MessageSquare size={12} /> 立即回報
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </section>
                     )}
 
@@ -913,6 +1024,10 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                                                 type="text"
                                                                 value={editName}
                                                                 onChange={e => setEditName(e.target.value)}
+                                                                onKeyDown={e => {
+                                                                    if (e.key === 'Enter') { e.preventDefault(); if (!isSavingSpeaker) handleSaveSpeaker(); }
+                                                                    else if (e.key === 'Escape') { e.preventDefault(); setEditingSpeakerId(null); }
+                                                                }}
                                                                 className="w-20 px-1.5 py-0.5 text-xs rounded border border-border bg-card focus:border-brand-cta focus:outline-none"
                                                                 placeholder="名稱"
                                                                 autoFocus
@@ -921,6 +1036,10 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                                                 type="text"
                                                                 value={editRole}
                                                                 onChange={e => setEditRole(e.target.value)}
+                                                                onKeyDown={e => {
+                                                                    if (e.key === 'Enter') { e.preventDefault(); if (!isSavingSpeaker) handleSaveSpeaker(); }
+                                                                    else if (e.key === 'Escape') { e.preventDefault(); setEditingSpeakerId(null); }
+                                                                }}
                                                                 className="w-16 px-1.5 py-0.5 text-xs rounded border border-border bg-card focus:border-brand-cta focus:outline-none"
                                                                 placeholder="角色"
                                                             />

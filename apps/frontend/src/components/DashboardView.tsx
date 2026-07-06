@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
     Plus,
     Mic,
@@ -85,10 +85,16 @@ export const DashboardView = ({ meetings, isLoading, isUploading = false, upload
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isMenuOpen]);
 
-    const filteredMeetings = meetings.filter(m =>
-        m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        m.summary.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    // 2026-07-06 #3：memo 化過濾，避免非搜尋相關的重繪（輪詢/其他 state）
+    // 反覆對整份會議清單做 O(n) filter + 連帶重繪所有卡片，降低輸入卡頓。
+    const filteredMeetings = useMemo(() => {
+        const q = searchQuery.toLowerCase();
+        if (!q) return meetings;
+        return meetings.filter(m =>
+            m.title.toLowerCase().includes(q) ||
+            m.summary.toLowerCase().includes(q)
+        );
+    }, [meetings, searchQuery]);
 
     const isProcessing = uploadState === 'uploading' || uploadState === 'processing';
     const emptyStateAction = onUploadClick ?? onCreateMeeting;

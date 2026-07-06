@@ -198,6 +198,9 @@ export default function DashboardPage() {
     const [feedbackContext, setFeedbackContext] = useState<
         { meetingId?: string } | null
     >(null);
+    // 2026-07-06 #3：穩定 onClose 參考，讓 React.memo(FeedbackModal) 不因
+    // dashboard 每次重繪（10s 輪詢等）而連帶重繪，降低輸入延遲。
+    const handleCloseFeedback = useCallback(() => setFeedbackContext(null), []);
 
     // R-C1：ChatPanel 錯誤氣泡透過全域事件開啟回報視窗（手機看不到 sidebar 回報鈕）
     useEffect(() => {
@@ -1096,7 +1099,7 @@ export default function DashboardPage() {
                 DetailView 「回報這個會議」: 自動帶 meeting_id 讓 IT 精準 debug */}
             <FeedbackModal
                 isOpen={feedbackContext !== null}
-                onClose={() => setFeedbackContext(null)}
+                onClose={handleCloseFeedback}
                 userUpn={session?.user?.email || 'anonymous@meetchi.test'}
                 meetingId={feedbackContext?.meetingId}
             />
