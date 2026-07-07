@@ -38,7 +38,7 @@ import { AudioHealthReport } from './detail/AudioHealthReport';
 import { SecurityWrapper } from './SecurityWrapper';
 import { MeetingGlossaryPanel } from './MeetingGlossaryPanel';
 import { FloatingGlossaryPanel } from './FloatingGlossaryPanel';
-import { DETAIL_COACHMARK_KEY } from '@/lib/config';
+import { DETAIL_COACHMARK_KEY, getTemplateCategoryLabel } from '@/lib/config';
 
 interface DetailViewProps {
     meeting: Meeting | null;
@@ -498,7 +498,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                                 }`}
                                             >
                                                 <span className="flex-1 truncate">{t.display_name}</span>
-                                                <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 bg-muted rounded">{t.category}</span>
+                                                <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 bg-muted rounded">{getTemplateCategoryLabel(t.category)}</span>
                                             </button>
                                         ))}
                                     </div>

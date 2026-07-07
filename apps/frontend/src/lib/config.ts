@@ -8,3 +8,17 @@ export const TOUR_DISMISSED_KEY = 'meetchi_tour_dismissed_v1';
 export const DETAIL_COACHMARK_KEY = 'meetchi_detail_coachmark_v1';
 export const RAG_INACTIVITY_MS = 30 * 60 * 1000; // 30 minutes
 
+
+// 模板領域分類 → 中文標籤（單一來源）。
+// DetailView 右上角模板下拉 & TemplateGallery 皆共用，避免顯示不一致
+// （曾發生詳情頁下拉直接秀英文碼 general，與模板管理頁的「通用」不一致，造成混淆）。
+export const TEMPLATE_CATEGORY_LABELS: Record<string, string> = {
+    all: '全部',
+    general: '通用',
+    sales: '業務',
+    hr: '人資',
+    engineering: '工程',
+    custom: '自訂',
+};
+export const getTemplateCategoryLabel = (category?: string): string =>
+    (category && TEMPLATE_CATEGORY_LABELS[category]) || category || '通用';

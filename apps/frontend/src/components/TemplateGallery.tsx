@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, TemplateDTO, TemplateSectionDTO, UpdateTemplateDTO } from '@/lib/api';
+import { TEMPLATE_CATEGORY_LABELS } from '@/lib/config';
 import { ErrorState } from './ui/error-state';
 import { useEscape } from '@/hooks/useEscape';
 
@@ -44,15 +45,8 @@ const broadcastTemplatesChanged = () => {
     try { window.dispatchEvent(new CustomEvent(TEMPLATES_CHANGED_EVENT)); } catch { /* ignore */ }
 };
 
-// Category labels
-const CATEGORIES: Record<string, string> = {
-    all: '全部',
-    general: '通用',
-    sales: '業務',
-    hr: '人資',
-    engineering: '工程',
-    custom: '自訂',
-};
+// Category labels（改用共用來源 TEMPLATE_CATEGORY_LABELS，避免與詳情頁下拉不一致）
+const CATEGORIES: Record<string, string> = TEMPLATE_CATEGORY_LABELS;
 
 const OUTPUT_TYPE_LABELS: Record<string, string> = {
     string: '一段文字',
