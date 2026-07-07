@@ -10,6 +10,10 @@ interface FloatingGlossaryPanelProps {
     userUpn: string;
     /** 可選：預設開啟狀態 */
     defaultOpen?: boolean;
+    /** 可選：外部控制開啟狀態 */
+    isOpen?: boolean;
+    /** 可選：關閉時回調 */
+    onClose?: () => void;
     /** 可選：初始位置 */
     defaultPosition?: { x: number; y: number };
     /** 可選：初始大小 */
@@ -56,10 +60,14 @@ export const FloatingGlossaryPanel: React.FC<FloatingGlossaryPanelProps> = ({
     meetingId,
     userUpn,
     defaultOpen = true,
+    isOpen: externalIsOpen,
+    onClose,
     defaultPosition = { x: window?.innerWidth ? window.innerWidth - 320 : 400, y: 60 },
     defaultSize = { width: 300, height: 450 },
 }) => {
     const [isOpen, setIsOpen] = useState(defaultOpen);
+    // 如果提供了外部 isOpen prop，則使用外部狀態
+    const shouldBeOpen = externalIsOpen !== undefined ? externalIsOpen : isOpen;
     const [isMinimized, setIsMinimized] = useState(false);
     const [position, setPosition] = useState<Position>(defaultPosition);
     const [size, setSize] = useState<Size>(defaultSize);
@@ -247,7 +255,7 @@ export const FloatingGlossaryPanel: React.FC<FloatingGlossaryPanelProps> = ({
         }
     };
 
-    if (!isOpen) return null;
+    if (!shouldBeOpen) return null;
 
     const content = (
         <div
@@ -281,7 +289,13 @@ export const FloatingGlossaryPanel: React.FC<FloatingGlossaryPanelProps> = ({
                     <ChevronDown size={14} className={`transition-transform ${isMinimized ? 'rotate-180' : ''}`} />
                 </button>
                 <button
-                    onClick={() => setIsOpen(false)}
+                    onClick={() => {
+                        if (externalIsOpen !== undefined && onClose) {
+                            onClose();
+                        } else {
+                            setIsOpen(false);
+                        }
+                    }}
                     className="p-1 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                     title="關閉"
                 >

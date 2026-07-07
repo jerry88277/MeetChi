@@ -150,6 +150,9 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     const [localSpeakerMappings, setLocalSpeakerMappings] = useState(meeting?.speakerMappings);
     useEffect(() => { setLocalSpeakerMappings(meeting?.speakerMappings); }, [meeting?.speakerMappings]);
 
+    // 2026-07-07：浮窗專有名詞面板狀態控制
+    const [glossaryPanelOpen, setGlossaryPanelOpen] = useState(true);
+
     // 2026-07-06 #1：轉錄「卡住」偵測 watchdog。
     // 使用者曾被告知 ETA，但等待超時後畫面仍停在「處理中/排隊中」而無任何指引，
     // 造成等待焦慮。這裡用一個只在 pending/processing 時運作的計時器，
@@ -1070,7 +1073,8 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                         <FloatingGlossaryPanel 
                             meetingId={meeting.id} 
                             userUpn={userUpn} 
-                            defaultOpen={true}
+                            isOpen={glossaryPanelOpen}
+                            onClose={() => setGlossaryPanelOpen(false)}
                         />
                     )}
 
@@ -1089,10 +1093,24 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                         ({meeting.transcript?.length ?? 0} 段)
                                     </span>
                                 </div>
-                                <ChevronDown
-                                    size={18}
-                                    className={`text-muted-foreground transition-transform ${showTranscript ? 'rotate-180' : ''}`}
-                                />
+                                <div className="flex items-center gap-2">
+                                    {isCompleted && userUpn && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setGlossaryPanelOpen(!glossaryPanelOpen);
+                                            }}
+                                            className="px-2 py-1 text-xs bg-muted hover:bg-muted/80 text-foreground rounded transition-colors"
+                                            title="開啟/關閉專有名詞面板"
+                                        >
+                                            {glossaryPanelOpen ? '隱藏' : '顯示'}詞彙
+                                        </button>
+                                    )}
+                                    <ChevronDown
+                                        size={18}
+                                        className={`text-muted-foreground transition-transform ${showTranscript ? 'rotate-180' : ''}`}
+                                    />
+                                </div>
                             </button>
 
                             {showTranscript && (
