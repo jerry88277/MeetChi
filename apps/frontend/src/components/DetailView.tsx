@@ -37,6 +37,7 @@ import { QuoteCard } from './detail/QuoteCard';
 import { AudioHealthReport } from './detail/AudioHealthReport';
 import { SecurityWrapper } from './SecurityWrapper';
 import { MeetingGlossaryPanel } from './MeetingGlossaryPanel';
+import { FloatingGlossaryPanel } from './FloatingGlossaryPanel';
 import { DETAIL_COACHMARK_KEY } from '@/lib/config';
 
 interface DetailViewProps {
@@ -1064,9 +1065,13 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                         </section>
                     )}
 
-                    {/* === Section 4.5: 本會議專有名詞對照表 === */}
+                    {/* === Section 4.5: 本會議專有名詞對照表（浮動視窗）=== */}
                     {isCompleted && userUpn && (
-                        <MeetingGlossaryPanel meetingId={meeting.id} userUpn={userUpn} />
+                        <FloatingGlossaryPanel 
+                            meetingId={meeting.id} 
+                            userUpn={userUpn} 
+                            defaultOpen={true}
+                        />
                     )}
 
                     {/* === Section 5: 完整逐字稿（折疊） === */}
@@ -1209,12 +1214,25 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                         )}
                                     </div>
 
-                                    {/* Feature #3：同步結果提示 */}
+                                    {/* Feature #3：同步結果提示
+                                        邏輯說明（互斥）：
+                                        1. error → 顯示錯誤
+                                        2. updated=true → 顯示成功，不顯示建議（已完成任務）
+                                        3. updated=false ∧ recommend_regenerate=true → 顯示建議重生（有檢測到變動）
+                                        4. updated=false ∧ recommend_regenerate=false → 顯示無需修改
+                                    */}
                                     {resyncResult && (
-                                        <div className={`px-4 py-3 border-b border-border text-xs ${resyncResult.error ? 'bg-status-error/5' : resyncResult.recommend_regenerate ? 'bg-status-warning/5' : 'bg-status-success/5'}`}>
+                                        <div className={`px-4 py-3 border-b border-border text-xs ${
+                                            resyncResult.error ? 'bg-status-error/5' 
+                                            : resyncResult.updated ? 'bg-status-success/5'
+                                            : resyncResult.recommend_regenerate ? 'bg-status-warning/5'
+                                            : 'bg-status-success/5'
+                                        }`}>
                                             <div className="flex items-start gap-2">
                                                 {resyncResult.error ? (
                                                     <AlertCircle size={14} className="text-status-error mt-0.5 flex-shrink-0" />
+                                                ) : resyncResult.updated ? (
+                                                    <Check size={14} className="text-status-success mt-0.5 flex-shrink-0" />
                                                 ) : resyncResult.recommend_regenerate ? (
                                                     <AlertTriangle size={14} className="text-status-warning mt-0.5 flex-shrink-0" />
                                                 ) : (
@@ -1226,10 +1244,12 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                                             ? (resyncResult.reason || '摘要同步失敗，請稍後再試。')
                                                             : resyncResult.updated
                                                                 ? '已用最新說話者標籤修正摘要中的名稱引用。'
-                                                                : '摘要中的說話者名稱已與最新標籤一致，無需修改。'}
+                                                                : resyncResult.recommend_regenerate
+                                                                    ? '偵測到說話者標籤有重大調整，建議整份重生摘要以完整反映結果。'
+                                                                    : '摘要中的說話者名稱已與最新標籤一致，無需修改。'}
                                                     </p>
                                                     {resyncResult.recommend_regenerate && resyncResult.reason && (
-                                                        <p className="text-status-warning">{resyncResult.reason}</p>
+                                                        <p className="text-xs text-status-warning/90">{resyncResult.reason}</p>
                                                     )}
                                                     <div className="flex flex-wrap gap-2 pt-0.5">
                                                         {resyncResult.updated && (
