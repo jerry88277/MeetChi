@@ -129,7 +129,9 @@ export const FloatingGlossaryPanel: React.FC<FloatingGlossaryPanelProps> = ({
 
     // 拖拉邏輯
     const handleDragStart = (e: React.MouseEvent<HTMLDivElement>) => {
-        if ((e.target as HTMLElement).closest('[data-no-drag]')) return;
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'BUTTON' || target.closest('button')) return;
+        if (target.closest('[data-no-drag]')) return;
         dragState.current = {
             isDragging: true,
             startX: e.clientX,
@@ -140,15 +142,15 @@ export const FloatingGlossaryPanel: React.FC<FloatingGlossaryPanelProps> = ({
     };
 
     useEffect(() => {
-        if (!dragState.current.isDragging) return;
-
         const handleMouseMove = (e: MouseEvent) => {
+            if (!dragState.current.isDragging) return;
             const newX = e.clientX - dragState.current.offsetX;
             const newY = e.clientY - dragState.current.offsetY;
             setPosition({ x: Math.max(0, newX), y: Math.max(0, newY) });
         };
 
         const handleMouseUp = () => {
+            if (!dragState.current.isDragging) return;
             dragState.current.isDragging = false;
             saveState(position, size, isMinimized);
         };
@@ -159,7 +161,7 @@ export const FloatingGlossaryPanel: React.FC<FloatingGlossaryPanelProps> = ({
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [position, size, isMinimized, saveState]);
+    }, [saveState, position, size, isMinimized]);
 
     // 縮放邏輯（右下角）
     const handleResizeStart = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -174,9 +176,8 @@ export const FloatingGlossaryPanel: React.FC<FloatingGlossaryPanelProps> = ({
     };
 
     useEffect(() => {
-        if (!resizeState.current.isResizing) return;
-
         const handleMouseMove = (e: MouseEvent) => {
+            if (!resizeState.current.isResizing) return;
             const deltaX = e.clientX - resizeState.current.startX;
             const deltaY = e.clientY - resizeState.current.startY;
             const newWidth = Math.max(280, resizeState.current.startWidth + deltaX);
@@ -185,6 +186,7 @@ export const FloatingGlossaryPanel: React.FC<FloatingGlossaryPanelProps> = ({
         };
 
         const handleMouseUp = () => {
+            if (!resizeState.current.isResizing) return;
             resizeState.current.isResizing = false;
             saveState(position, size, isMinimized);
         };
@@ -195,7 +197,7 @@ export const FloatingGlossaryPanel: React.FC<FloatingGlossaryPanelProps> = ({
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [position, size, isMinimized, saveState]);
+    }, [saveState, position, size, isMinimized]);
 
     const loadEntries = useCallback(async () => {
         try {
