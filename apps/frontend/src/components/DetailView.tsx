@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     ChevronRight,
     FileText,
@@ -154,6 +154,29 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     // 預設「關閉」——避免浮窗載入時遮住 header 右上角的「重新生成/換模板/匯出」控制列。
     // 使用者需要時，按逐字稿區塊的「顯示詞彙」按鈕開啟。
     const [glossaryPanelOpen, setGlossaryPanelOpen] = useState(false);
+
+    // 2026-07-07：套用專有名詞修正後的即時覆蓋層。
+    // 後端已把修正持久化到 DB，但當前畫面的 meeting.transcript 是舊的；
+    // 這裡以相同的 wrong→correct 字串替換即時套用於顯示，免使用者手動重整。
+    // 重整後 meeting.transcript 會帶回已修正內容，此覆蓋層重置為空、不會重複套用。
+    const [glossaryCorrections, setGlossaryCorrections] = useState<{ wrong: string; correct: string }[]>([]);
+    const applyGlossaryOverlay = useCallback((text: string): string => {
+        if (!text || glossaryCorrections.length === 0) return text;
+        let out = text;
+        for (const { wrong, correct } of glossaryCorrections) {
+            if (wrong && out.includes(wrong)) out = out.split(wrong).join(correct);
+        }
+        return out;
+    }, [glossaryCorrections]);
+    const handleCorrectionApplied = useCallback((corrections: { wrong: string; correct: string }[]) => {
+        setGlossaryCorrections(prev => {
+            const map = new Map(prev.map(c => [c.wrong, c]));
+            for (const c of corrections) map.set(c.wrong, c);
+            return Array.from(map.values());
+        });
+    }, []);
+    // 切換到不同會議時清空覆蓋層（新會議的 transcript 已是最新狀態）
+    useEffect(() => { setGlossaryCorrections([]); }, [meeting?.id]);
 
     // 2026-07-06 #1：轉錄「卡住」偵測 watchdog。
     // 使用者曾被告知 ETA，但等待超時後畫面仍停在「處理中/排隊中」而無任何指引，
@@ -1079,6 +1102,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                             userUpn={userUpn} 
                             isOpen={glossaryPanelOpen}
                             onClose={() => setGlossaryPanelOpen(false)}
+                            onCorrectionApplied={handleCorrectionApplied}
                             defaultPosition={{ x: typeof window !== 'undefined' ? window.innerWidth - 340 : 400, y: 180 }}
                         />
                     )}
@@ -1339,7 +1363,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                                                     className="text-foreground/80 text-sm leading-relaxed px-2 -ml-2"
                                                                     style={{ borderLeft: `2px solid ${disp.color}30`, paddingLeft: '10px' }}
                                                                 >
-                                                                    {seg.text}
+                                                                    {applyGlossaryOverlay(seg.text)}
                                                                 </p>
                                                             </div>
                                                         </div>
@@ -1380,7 +1404,7 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                                                 onClick={() => handleTimestampClick(line.time)}
                                                                 title="點擊播放這段發言"
                                                             >
-                                                                {line.text}
+                                                                {applyGlossaryOverlay(line.text)}
                                                             </p>
                                                         </div>
                                                     </div>

@@ -14,6 +14,8 @@ interface FloatingGlossaryPanelProps {
     isOpen?: boolean;
     /** 可選：關閉時回調 */
     onClose?: () => void;
+    /** 可選：套用修正成功後回調（讓父層即時覆蓋逐字稿顯示，免重整） */
+    onCorrectionApplied?: (corrections: { wrong: string; correct: string }[]) => void;
     /** 可選：初始位置 */
     defaultPosition?: { x: number; y: number };
     /** 可選：初始大小 */
@@ -62,6 +64,7 @@ export const FloatingGlossaryPanel: React.FC<FloatingGlossaryPanelProps> = ({
     defaultOpen = true,
     isOpen: externalIsOpen,
     onClose,
+    onCorrectionApplied,
     defaultPosition = { x: window?.innerWidth ? window.innerWidth - 320 : 400, y: 60 },
     defaultSize = { width: 300, height: 450 },
 }) => {
@@ -248,6 +251,14 @@ export const FloatingGlossaryPanel: React.FC<FloatingGlossaryPanelProps> = ({
         try {
             const result = await api.applyGlossaryCorrection(meetingId, userUpn);
             setApplyResult(`已修正 ${result.segments_corrected} 個段落`);
+            // 即時覆蓋父層逐字稿顯示，免使用者手動重整。
+            // 後端已將修正持久化至 DB；此處以相同的字串替換套用於當前畫面，
+            // 兩者結果一致（idempotent），重整後仍正確。
+            if (onCorrectionApplied && entries.length > 0) {
+                onCorrectionApplied(
+                    entries.map(e => ({ wrong: e.wrong_text, correct: e.correct_text }))
+                );
+            }
             setTimeout(() => setApplyResult(null), 5000);
         } catch (e) {
             console.error('Apply failed:', e);
