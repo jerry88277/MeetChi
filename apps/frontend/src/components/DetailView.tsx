@@ -151,7 +151,9 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     useEffect(() => { setLocalSpeakerMappings(meeting?.speakerMappings); }, [meeting?.speakerMappings]);
 
     // 2026-07-07：浮窗專有名詞面板狀態控制
-    const [glossaryPanelOpen, setGlossaryPanelOpen] = useState(true);
+    // 預設「關閉」——避免浮窗載入時遮住 header 右上角的「重新生成/換模板/匯出」控制列。
+    // 使用者需要時，按逐字稿區塊的「顯示詞彙」按鈕開啟。
+    const [glossaryPanelOpen, setGlossaryPanelOpen] = useState(false);
 
     // 2026-07-06 #1：轉錄「卡住」偵測 watchdog。
     // 使用者曾被告知 ETA，但等待超時後畫面仍停在「處理中/排隊中」而無任何指引，
@@ -1068,13 +1070,16 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                         </section>
                     )}
 
-                    {/* === Section 4.5: 本會議專有名詞對照表（浮動視窗）=== */}
+                    {/* === Section 4.5: 本會議專有名詞對照表（浮動視窗）===
+                        defaultPosition 下移至 y=180，避開 header 右上角的重新生成/匯出控制列，
+                        即使開啟浮窗也不會遮住這些操作。 */}
                     {isCompleted && userUpn && (
                         <FloatingGlossaryPanel 
                             meetingId={meeting.id} 
                             userUpn={userUpn} 
                             isOpen={glossaryPanelOpen}
                             onClose={() => setGlossaryPanelOpen(false)}
+                            defaultPosition={{ x: typeof window !== 'undefined' ? window.innerWidth - 340 : 400, y: 180 }}
                         />
                     )}
 
