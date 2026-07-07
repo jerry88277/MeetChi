@@ -111,6 +111,17 @@ export interface Meeting {
     nextSteps?: NextStep[];
     crossMeetingRefs?: CrossMeetingRef[];
     audioStats?: AudioStats | null;     // 2026-07-03：上傳音檔健康報告
+    // 2026-07-07 策略(a)：模板專屬區塊。summary_json 中非 V2 通用欄位的額外 output_key，
+    // 例如 training 的 key_learnings/qa_summary、brainstorm 的 ideas/top_picks。
+    // key=output_key，value 為原始值（string / string[] / object[] / object）。
+    extraSections?: Record<string, unknown>;
+}
+
+// 2026-07-07：模板專屬區塊的顯示描述（由模板定義 sections 對照 output_key→title/type）
+export interface TemplateSectionMeta {
+    outputKey: string;
+    title: string;
+    outputType: "string" | "list" | "object";
 }
 
 // 2026-07-03：上傳音檔「原始狀態」健康報告（後端 app/audio_stats.py 產生）

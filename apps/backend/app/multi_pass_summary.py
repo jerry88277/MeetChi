@@ -328,6 +328,80 @@ def _pass2_merge(client, chapters: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 # ============================================
+# Pass 2b: Template-Specific Sections (2026-07-07 策略a)
+# ============================================
+# 長會議走 multi-pass 時，Pass 2 只產固定 V2 meta 欄位，模板專屬欄位（如教育訓練的
+# key_learnings/qa_summary）會遺失，導致換模板毫無效果。這裡在 Pass 2 之後加一步：
+# 給定各章節摘要 + 模板專屬 sections 定義，生成對應的 output_key。
+# 失敗時回傳 {}，絕不影響主摘要（fail-safe）。
+
+def _pass2b_template_sections(
+    client,
+    chapters: List[Dict[str, Any]],
+    sections: List[Any],
+) -> Dict[str, Any]:
+    """Generate template-specific output_keys for long (multi-pass) meetings."""
+    if not sections:
+        return {}
+
+    # Build chapter context (reuse the same concise format as Pass 2)
+    parts = []
+    for i, ch in enumerate(chapters):
+        p = f"### 主題 {i+1}: {ch.get('title', '未命名')}\n摘要：{ch.get('summary', '無')}\n"
+        bullets = ch.get("bullets", [])
+        if bullets:
+            p += "重點：" + " / ".join(bullets[:5]) + "\n"
+        parts.append(p)
+    chapters_summary = "\n".join(parts)
+
+    # Build the requested-fields spec + a JSON skeleton
+    field_lines = []
+    skeleton_lines = []
+    for s in sections:
+        otype = getattr(s, "output_type", "list")
+        json_hint = {
+            "string": '"..."',
+            "list": '["...", "..."]',
+            "object": '{"欄位": "值"}',
+        }.get(otype, '["...", "..."]')
+        field_lines.append(
+            f"- `{s.output_key}` ({otype})：{getattr(s, 'instruction', s.title)}"
+        )
+        skeleton_lines.append(f'  "{s.output_key}": {json_hint}')
+
+    prompt = (
+        "你是專業會議記錄助手。根據以下各主題摘要，生成指定欄位的內容。\n\n"
+        f"## 各主題摘要\n{chapters_summary}\n\n"
+        "## 需要生成的欄位\n" + "\n".join(field_lines) + "\n\n"
+        "## 輸出格式（僅輸出 JSON，且只含下列 key）\n{\n"
+        + ",\n".join(skeleton_lines) + "\n}\n\n"
+        "## 規則\n"
+        "- 只根據會議內容生成，沒有對應內容的欄位給空陣列或空字串，嚴禁瞎掰\n"
+        "- 使用繁體中文\n"
+    )
+
+    try:
+        response = client.models.generate_content(
+            model=_get_model(),
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json",
+                "temperature": 0.2,
+                "max_output_tokens": 4096,
+            },
+        )
+        result = _safe_json_parse(response.text)
+        # Only keep the requested keys (defensive)
+        wanted = {s.output_key for s in sections}
+        cleaned = {k: v for k, v in (result or {}).items() if k in wanted}
+        logger.info(f"[MultiPass] Pass 2b: generated {list(cleaned.keys())}")
+        return cleaned
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[MultiPass] Pass 2b (template sections) failed, skipping: {e}")
+        return {}
+
+
+# ============================================
 # Main Orchestrator
 # ============================================
 
@@ -336,6 +410,7 @@ def generate_multi_pass_summary(
     transcript_text: str,
     template_name: str = "general",
     extra_instructions: str = "",
+    template: Any = None,
 ) -> Dict[str, Any]:
     """
     Multi-pass summarization pipeline.
@@ -390,6 +465,19 @@ def generate_multi_pass_summary(
     meta = _pass2_merge(client, chapters)
     logger.info(f"[MultiPass] Pass 2 completed in {time.time()-t2:.1f}s")
 
+    # --- Pass 2b: Template-specific sections (2026-07-07 策略a) ---
+    # 只針對模板專屬（非 V2 通用）欄位生成；general 模板沒有專屬欄位 → 跳過。
+    template_extra: Dict[str, Any] = {}
+    try:
+        from app.template_engine import get_template_specific_sections
+        specific_sections = get_template_specific_sections(template)
+        if specific_sections:
+            t2b = time.time()
+            template_extra = _pass2b_template_sections(client, chapters, specific_sections)
+            logger.info(f"[MultiPass] Pass 2b completed in {time.time()-t2b:.1f}s")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[MultiPass] Pass 2b skipped due to error: {e}")
+
     # --- Assemble final output (same schema as single-shot) ---
     # Strip per-chapter decisions/actions/risks (they're merged into top-level)
     clean_chapters = []
@@ -421,6 +509,11 @@ def generate_multi_pass_summary(
         "action_items": meta.get("action_items", []),
         "risks": meta.get("risks", []),
     }
+
+    # 模板專屬欄位併入頂層（不覆蓋既有 V2 通用欄位）
+    for k, v in template_extra.items():
+        if k not in result:
+            result[k] = v
 
     total_time = time.time() - start_time
     logger.info(

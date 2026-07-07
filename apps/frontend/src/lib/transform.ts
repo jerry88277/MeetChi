@@ -43,6 +43,8 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
     let speakerContributions: import('@/types/meeting').SpeakerContribution[] = [];
     let nextSteps: import('@/types/meeting').NextStep[] = [];
     let crossMeetingRefs: import('@/types/meeting').CrossMeetingRef[] = [];
+    // 2026-07-07 策略(a)：模板專屬區塊（非 V2 通用欄位）
+    let extraSections: Record<string, unknown> = {};
 
     if (apiMeeting.summary_json) {
         try {
@@ -116,6 +118,22 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
                 url: r.url,
                 similarity: r.similarity,
             }));
+
+            // 2026-07-07 策略(a)：擷取模板專屬區塊。
+            // V2 通用欄位由上方明確處理；其餘 output_key（模板自訂）收進 extraSections，
+            // 供 DetailView 依模板定義動態渲染。空值/空陣列略過避免渲染空區塊。
+            const UNIVERSAL_KEYS = new Set([
+                'summary', 'action_items', 'tldr', 'decisions', 'risks', 'key_quotes',
+                'chapters', 'speaker_contributions', 'next_steps', 'next_steps_v2',
+                'cross_meeting_refs', 'speaker_roles',
+            ]);
+            for (const [k, v] of Object.entries(summaryData)) {
+                if (UNIVERSAL_KEYS.has(k)) continue;
+                if (v === null || v === undefined || v === '') continue;
+                if (Array.isArray(v) && v.length === 0) continue;
+                if (typeof v === 'object' && !Array.isArray(v) && Object.keys(v as object).length === 0) continue;
+                extraSections[k] = v;
+            }
         } catch {
             summary = apiMeeting.summary_json;
         }
@@ -252,5 +270,6 @@ export function transformMeeting(apiMeeting: ApiMeeting): Meeting {
         speakerContributions,
         nextSteps,
         crossMeetingRefs,
+        extraSections,
     };
 }

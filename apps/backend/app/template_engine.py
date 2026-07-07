@@ -266,6 +266,62 @@ def get_all_system_templates() -> List[TemplateSchema]:
     return SYSTEM_TEMPLATES
 
 
+# 2026-07-07 策略(a)：V2 通用欄位（所有模板共用，由固定流程生成）。
+# 模板自訂的 output_key 若不在此集合，即為「模板專屬欄位」，需另行生成/渲染。
+UNIVERSAL_OUTPUT_KEYS = frozenset({
+    "summary", "action_items", "tldr", "decisions", "risks", "key_quotes",
+    "chapters", "speaker_contributions", "next_steps", "cross_meeting_refs",
+    "speaker_roles",
+})
+
+
+def get_template_specific_sections(template: Optional[TemplateSchema]) -> List[TemplateSection]:
+    """Return only the template's non-universal sections (the ones that make a
+    template visually distinct from '一般會議')."""
+    if not template:
+        return []
+    return [s for s in template.sections if s.output_key not in UNIVERSAL_OUTPUT_KEYS]
+
+
+def template_from_db_row(row: Any) -> Optional[TemplateSchema]:
+    """Build a TemplateSchema from a SummaryTemplateModel DB row (custom template).
+
+    Lets user-created templates actually drive generation instead of silently
+    falling back to 'general'. Returns None if the row has no usable sections.
+    """
+    try:
+        raw_sections = row.sections or []
+        sections: List[TemplateSection] = []
+        for s in raw_sections:
+            if not isinstance(s, dict):
+                continue
+            ok = s.get("output_key")
+            title = s.get("title")
+            if not ok or not title:
+                continue
+            sections.append(TemplateSection(
+                title=title,
+                instruction=s.get("instruction", title),
+                output_key=ok,
+                output_type=s.get("output_type", "list"),
+            ))
+        if not sections:
+            return None
+        return TemplateSchema(
+            id=str(row.id),
+            name=row.name,
+            display_name=row.display_name,
+            description=row.description or "",
+            category=row.category or "custom",
+            sections=sections,
+            is_system=False,
+            is_active=bool(row.is_active),
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[Template] Failed to build schema from DB row: {e}")
+        return None
+
+
 # ============================================
 # 摘要規格 V2 (SUMMARY_FINAL_SPEC.md, 2026-05-11)
 # Q1+Q2 章節 + 時序子段；Q3 結論視情況才列；Q4 引言要帶 time；Q7 三個新欄位

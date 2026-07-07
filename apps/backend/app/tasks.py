@@ -1141,11 +1141,27 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
             if not client:
                 raise Exception("Gemini Client initialization failed")
 
+            # 2026-07-07 策略(a)：解析模板物件（系統或 DB 自訂），讓模板專屬欄位真正生效。
+            from app.template_engine import get_template_by_name, template_from_db_row
+            resolved_template = get_template_by_name(llm_template)
+            if not resolved_template:
+                try:
+                    db_tpl = db.query(models.SummaryTemplateModel).filter(
+                        models.SummaryTemplateModel.name == llm_template,
+                        models.SummaryTemplateModel.is_active == True,  # noqa: E712
+                    ).first()
+                    if db_tpl:
+                        resolved_template = template_from_db_row(db_tpl)
+                        logger.info(f"[Template] Resolved custom template '{llm_template}' from DB")
+                except Exception as _te:
+                    logger.warning(f"[Template] Custom template lookup failed: {_te}")
+
             summary_data = generate_summary(
                 client=client,
                 text=transcript_text,
                 template_name=llm_template,
-                extra_instructions=extra_instructions_str
+                extra_instructions=extra_instructions_str,
+                template_obj=resolved_template,
             )
             
             # Check for error in response (covers both {"error": ...} and {"error": ..., "raw_text": ...})

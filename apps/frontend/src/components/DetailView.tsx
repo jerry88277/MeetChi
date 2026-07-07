@@ -33,6 +33,7 @@ import { ChapterSection } from './detail/ChapterSection';
 import { SpeakerContributionsBar } from './detail/SpeakerContributionsBar';
 import { NextStepsTable } from './detail/NextStepsTable';
 import { CrossMeetingRefList } from './detail/CrossMeetingRefList';
+import { TemplateSections } from './detail/TemplateSections';
 import { QuoteCard } from './detail/QuoteCard';
 import { AudioHealthReport } from './detail/AudioHealthReport';
 import { SecurityWrapper } from './SecurityWrapper';
@@ -442,6 +443,22 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     const actionItems = meeting.actionItems ?? [];
     const keyQuotes = meeting.keyQuotes ?? [];
     const isCompleted = meeting.status === 'completed';
+
+    // 2026-07-07 策略(a)：模板專屬區塊的顯示對照（output_key → title/type）。
+    // 以會議實際套用的模板定義為準；查不到（自訂/停用模板）時，TemplateSections
+    // 會 fallback 用 humanizeKey 顯示 output_key。
+    const templateSectionMeta = useMemo(() => {
+        const meta: Record<string, import('@/types/meeting').TemplateSectionMeta> = {};
+        const tpl = templates.find(t => t.name === meeting.templateName);
+        for (const s of tpl?.sections ?? []) {
+            meta[s.output_key] = {
+                outputKey: s.output_key,
+                title: s.title,
+                outputType: (s.output_type as 'string' | 'list' | 'object') ?? 'list',
+            };
+        }
+        return meta;
+    }, [templates, meeting.templateName]);
     const isTranscribed = meeting.status === 'transcribed';
 
     // 2026-05-12 (feedback 4504f2e3): 把 SecurityWrapper 從 dashboard/layout.tsx
@@ -509,7 +526,10 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                     <ChevronDown size={12} />
                                 </button>
                                 {showTemplateSelector && (
-                                    <div className="absolute right-0 top-full mt-1 w-56 max-h-60 overflow-y-auto bg-card border border-border rounded-xl shadow-lg z-30">
+                                    <div className="absolute right-0 top-full mt-1 w-64 max-h-72 overflow-y-auto bg-card border border-border rounded-xl shadow-lg z-30">
+                                        <div className="px-4 py-2 text-[11px] text-muted-foreground border-b border-border bg-muted/30 leading-snug">
+                                            換模板並「重新生成」後，會依模板產出專屬整理段落（例：教育訓練→學習要點/Q&amp;A）。通用的章節、決策、風險維持不變。
+                                        </div>
                                         {templates.filter(t => t.is_active).map(t => (
                                             <button
                                                 key={t.id}
@@ -992,6 +1012,14 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                     {/* === Section 2.8 (V2 / 2026-05-11): 跨會議參照 (Q7) === */}
                     {isCompleted && meeting.crossMeetingRefs && meeting.crossMeetingRefs.length > 0 && (
                         <CrossMeetingRefList refs={meeting.crossMeetingRefs} />
+                    )}
+
+                    {/* === Section 2.9 (2026-07-07 策略a): 模板專屬區塊（V2 核心之後的加值層） === */}
+                    {isCompleted && meeting.extraSections && Object.keys(meeting.extraSections).length > 0 && (
+                        <TemplateSections
+                            extraSections={meeting.extraSections}
+                            sectionMeta={templateSectionMeta}
+                        />
                     )}
 
                     {/* === Section 3: 完整摘要 === */}

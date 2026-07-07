@@ -119,6 +119,8 @@ export interface MeetingSummary {
     // rd 額外
     technical_decisions?: unknown[];
     challenges?: unknown[];
+    // 2026-07-07 策略(a)：允許模板自訂 output_key（key_learnings/qa_summary/ideas...）
+    [key: string]: unknown;
 }
 
 export interface MeetingCreate {

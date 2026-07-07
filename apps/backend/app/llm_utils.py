@@ -452,13 +452,17 @@ def generate_summary(
     client: genai.Client,
     text: str,
     template_name: str = "general",
-    extra_instructions: str = ""
+    extra_instructions: str = "",
+    template_obj: Any = None,
 ) -> Dict[str, Any]:
     """Generate summary using Gemini API with Sandwich Defense.
     
     2026-06-12: For long transcripts (>15K chars), automatically routes to
     multi-pass summarization to preserve full granularity without hitting
     the 65K output token limit.
+
+    2026-07-07 策略(a): template_obj 讓自訂模板（DB）與模板專屬欄位真正生效。
+    若提供則優先使用（含 multi-pass 的 Pass 2b）；否則回退 get_template_by_name。
     """
     
     # Sanitize transcript
@@ -476,6 +480,7 @@ def generate_summary(
             transcript_text=sanitized_text,
             template_name=template_name,
             extra_instructions=extra_instructions,
+            template=template_obj or get_template_by_name(template_name),
         )
 
     # 2026-06-03 fix: 391-seg (2h16m) meeting → Gemini output 147k chars →
@@ -514,7 +519,8 @@ def generate_summary(
             extra_instructions = ""  # Strip unsafe instructions, proceed with default
     
     # Get template from engine (Phase 8.2)
-    tpl = get_template_by_name(template_name)
+    # 2026-07-07 策略(a)：優先使用傳入的 template_obj（含 DB 自訂模板）。
+    tpl = template_obj or get_template_by_name(template_name)
     if tpl:
         system_prompt, user_prompt_suffix = build_prompt_from_template(tpl, sanitized_text, extra_instructions)
         schema_class = build_schema_from_template(tpl)

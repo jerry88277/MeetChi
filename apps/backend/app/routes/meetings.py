@@ -448,6 +448,7 @@ async def regenerate_summary(
         )
 
     meeting.summary_json = None
+    meeting.template_name = request.template_name  # 2026-07-07: 重生時回寫模板，讓詳情頁專屬區塊標題正確對照
     meeting.status = MeetingStatus.PROCESSING
     meeting.updated_at = datetime.utcnow()
     db.commit()
