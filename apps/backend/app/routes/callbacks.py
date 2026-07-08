@@ -18,6 +18,56 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/callbacks", tags=["Callbacks"])
 
+
+async def verify_asr_callback(request: Request) -> bool:
+    """驗證 /asr-done 回呼確實來自我方 GPU 服務（service-to-service）。
+
+    GPU 服務已用 `google.oauth2.id_token.fetch_id_token(audience=callback_url)`
+    附上 Google 簽發的 OIDC ID token。此處驗證該 token 的簽章與 audience。
+
+    以 env `CALLBACK_AUTH_REQUIRED` 閘控（預設 false）：
+      - false：向後相容，不強制（僅記錄），供既有部署平滑過渡。
+      - true ：無有效 OIDC token 一律 401，杜絕任意人偽造 ASR 結果寫入會議。
+    """
+    enforce = os.getenv("CALLBACK_AUTH_REQUIRED", "false").lower() == "true"
+    auth = request.headers.get("authorization") or request.headers.get("Authorization")
+    if not auth or not auth.lower().startswith("bearer "):
+        if enforce:
+            raise HTTPException(status_code=401, detail="Missing callback credentials")
+        logger.warning("[Callback] no bearer token (enforcement off — allowing)")
+        return True
+
+    token = auth.split(" ", 1)[1].strip()
+    try:
+        import google.auth.transport.requests
+        import google.oauth2.id_token
+        google_req = google.auth.transport.requests.Request()
+        # 不用 request.url 當 audience：Cloud Run 內部轉發可能是 http/不同 host，
+        # 會與 GPU 簽發時的 audience（= BACKEND_PUBLIC_URL + callback path）不符。
+        # 改為先驗簽章（audience=None），再手動比對 aud / SA email。
+        claims = google.oauth2.id_token.verify_token(token, google_req, audience=None)
+        iss = claims.get("iss", "")
+        if iss not in ("https://accounts.google.com", "accounts.google.com"):
+            raise ValueError(f"unexpected issuer {iss}")
+        backend_url = (os.getenv("BACKEND_PUBLIC_URL", "") or "").rstrip("/")
+        expected_aud = f"{backend_url}/api/v1/callbacks/asr-done" if backend_url else None
+        aud = claims.get("aud", "")
+        email = claims.get("email", "")
+        # 通過條件（任一）：audience 與設定的 callback URL 相符；或 email 為本專案的
+        # Cloud Run 服務帳號（service-to-service）。兩者皆為我方 GPU 才可能成立。
+        aud_ok = expected_aud is not None and aud == expected_aud
+        sa_ok = email.endswith(".iam.gserviceaccount.com") and os.getenv("GCP_PROJECT", "") in email
+        if not (aud_ok or sa_ok):
+            raise ValueError(f"aud/email not trusted (aud={aud}, email={email})")
+        return True
+    except Exception as e:  # noqa: BLE001
+        if enforce:
+            logger.error(f"[Callback] OIDC verification failed: {e}")
+            raise HTTPException(status_code=401, detail="Invalid callback credentials")
+        logger.warning(f"[Callback] OIDC verification failed (enforcement off — allowing): {e}")
+        return True
+
+
 class SegmentData(BaseModel):
     start: float
     end: float
@@ -33,7 +83,7 @@ class ASRDonePayload(BaseModel):
     error: Optional[str] = None
 
 @router.post("/asr-done", status_code=200)
-async def handle_asr_done(payload: ASRDonePayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def handle_asr_done(payload: ASRDonePayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db), _auth: bool = Depends(verify_asr_callback)):
     """
     Webhook receiver for GPU ASR completion.
     """

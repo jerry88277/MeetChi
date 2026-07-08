@@ -1,4 +1,14 @@
 # ============================================
+# ⚠️ DRIFT NOTICE (2026-07-08)
+# 目前線上 meetchi-backend / meetchi-frontend / meetchi-gpu-asr 服務**並非**由此
+# tfstate 管理（`terraform state list` 無這些資源），且線上 env 遠多於此檔（AUTH_SECRET、
+# ADMIN_EMAILS、SMTP_*、GPU_* 等由 gcloud 增量設定）。因此**請勿**直接 `terraform apply`
+# 本檔——會以不完整的 env 覆蓋線上服務造成中斷。此檔目前作為 Source-of-Truth 文件同步；
+# 環境變更以 `gcloud run services update --update-env-vars`（增量、非 --set-*）套用，
+# 並回填此檔。完整 terraform import/reconcile 為另案 remediation（見 devlog 2026-07-08）。
+# ============================================
+
+# ============================================
 # Service Account for Cloud Run
 # ============================================
 
@@ -115,12 +125,37 @@ resource "google_cloud_run_v2_service" "backend" {
 
       env {
         name  = "GPU_ASR_SERVICE_URL"
-        value = "https://meetchi-gpu-asr-705495828555.asia-southeast1.run.app"
+        value = "https://meetchi-gpu-asr-atro34poxq-as.a.run.app"
       }
 
       env {
         name  = "BACKEND_PUBLIC_URL"
-        value = "https://meetchi-backend-705495828555.asia-southeast1.run.app"
+        value = "https://meetchi-backend-315688033208.asia-southeast1.run.app"
+      }
+
+      # 2026-07-08 安全加固（UAT）：關閉「未認證即回 mock admin」的漏洞。
+      # AUTH_REQUIRED=true → get_current_user 強制驗證 token（前端已送 UAT HS256
+      # token，AUTH_SECRET 已設可驗）。AUTH_ALLOWED_DOMAIN 限制正式 OAuth 登入網域
+      # （UAT token 仍 bypass 供測試）。CALLBACK_AUTH_REQUIRED=true 啟用 GPU 回呼
+      # 的 OIDC 驗證，杜絕偽造 ASR 結果寫入。
+      # 註：實際生效以 gcloud --update-env-vars 增量套用（現行服務非由此 tfstate
+      # 管理，見檔尾 DRIFT 說明）；本區塊為 Source-of-Truth 同步。
+      env {
+        name  = "AUTH_REQUIRED"
+        value = "true"
+      }
+
+      env {
+        name  = "AUTH_ALLOWED_DOMAIN"
+        value = "mail.chimei.com.tw"
+      }
+
+      # CALLBACK_AUTH_REQUIRED：GPU 回呼 OIDC 驗證開關。程式碼已就緒（robust：
+      # 驗 Google 簽章 + aud/SA email 比對），但**尚未經真實短音檔上傳實測**，
+      # 故暫設 false（enforcement off）。實測通過後改 true。
+      env {
+        name  = "CALLBACK_AUTH_REQUIRED"
+        value = "false"
       }
 
       env {

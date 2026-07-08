@@ -14,7 +14,15 @@ interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
+import { ApiTokenSync } from "@/components/ApiTokenSync";
+
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   // Per-meeting confidential 保護移到 DetailView。
-  return <>{children}</>;
+  // 2026-07-08：全域佈線 API token（涵蓋 deep-link 詳情頁），供 AUTH_REQUIRED=true 後使用。
+  return (
+    <>
+      <ApiTokenSync />
+      {children}
+    </>
+  );
 }
