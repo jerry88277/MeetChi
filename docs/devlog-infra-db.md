@@ -253,3 +253,63 @@ gcloud run services update meetchi-backend \
   --region=$REGION --project=$PROJECT \
   "--update-env-vars=^||^DATABASE_URL=${DATABASE_URL}"
 ```
+
+---
+
+## 五、GCP 環境參數真相表（Source of Truth）— 供專案環境搬遷使用
+
+> **背景（2026-07-08）**：部署詳情頁路由統一（方案 2）時發現，各文件對 GCP
+> 專案的識別碼**嚴重不一致**。`grep` 全 repo 統計：
+> `project-51769b5e-7f0f-4a2f-80c`×45、`prj-ai-meetchi-du`×36、
+> `705495828555`×25、`atro34poxq`×22、`315688033208`×20。
+> 其中 `.agent/workflows/gcp-deploy.md` 內的 project ID 與 `705495828555` URL
+> **已過時**，若照抄會部署到錯誤/不存在的目標。為避免後續環境搬遷再次踩雷，
+> 於此建立單一真相表。
+
+### 5.1 目前正式環境（2026-07-08 由 live `gcloud` 實測確認）
+
+| 參數 | 現行正確值 |
+|------|-----------|
+| GCP Project ID | `prj-ai-meetchi-du` |
+| GCP Project Number | `315688033208` |
+| Region | `asia-southeast1` |
+| Artifact Registry | `asia-southeast1-docker.pkg.dev/prj-ai-meetchi-du/meetchi` |
+| Frontend Service | `meetchi-frontend` |
+| Backend Service | `meetchi-backend` |
+| GPU ASR Service | `meetchi-gpu-asr` |
+| Frontend URL（hash） | `https://meetchi-frontend-atro34poxq-as.a.run.app` |
+| Frontend URL（proj-num） | `https://meetchi-frontend-315688033208.asia-southeast1.run.app` |
+| Backend URL（hash） | `https://meetchi-backend-atro34poxq-as.a.run.app` |
+| Backend URL（proj-num） | `https://meetchi-backend-315688033208.asia-southeast1.run.app` |
+| Cloud SQL Instance | `meetchi-db-pg`（POSTGRES_15）|
+| Cloud SQL Connection Name | `prj-ai-meetchi-du:asia-southeast1:meetchi-db-pg` |
+
+> 註：同一 Cloud Run 服務同時有「hash 形式」（`-atro34poxq-as.a.run.app`）與
+> 「project-number 形式」（`-315688033208.asia-southeast1.run.app`）兩種 URL，
+> 兩者皆有效、皆導向同一服務（health 實測皆 200）。`cloudbuild-frontend.yaml`
+> 的 `NEXT_PUBLIC_API_URL` 用 project-number 形式，Dockerfile ARG 預設用 hash
+> 形式，兩者等價（Belt & Suspenders）。
+
+### 5.2 ⛔ 已過時、禁止再使用的識別碼
+
+| 過時值 | 出處（需清理） | 說明 |
+|--------|---------------|------|
+| `project-51769b5e-7f0f-4a2f-80c` | `.agent/workflows/gcp-deploy.md` 等 | 舊 project ID，已非現行環境 |
+| `705495828555` | `gcp-deploy.md` 內所有 `*.run.app` URL | 舊 project number，URL 已失效 |
+
+> **教訓**：部署前**一律**先 `gcloud run services list --project prj-ai-meetchi-du`
+> 用實測結果核對，不可盲信 workflow 文件內寫死的 project/URL。
+
+### 5.3 專案環境搬遷檢查清單（下次 migration 時逐項執行）
+
+搬遷到新 GCP 專案時，以下位置的識別碼**全部**要同步更新（以本表為準）：
+
+1. `terraform/**/*.tf` + `terraform.tfvars`（env var / secret 的 Source of Truth）。
+2. `apps/frontend/cloudbuild-frontend.yaml` 的 `NEXT_PUBLIC_API_URL`。
+3. `apps/frontend/Dockerfile` 的 `ARG NEXT_PUBLIC_API_URL` 預設值。
+4. `.agent/workflows/gcp-deploy.md`（Project ID / Project Number / 所有 `*.run.app` URL / Artifact Registry 路徑）。
+5. Backend `DATABASE_URL` → 新的 Cloud SQL Connection Name。
+6. OAuth redirect URI / NextAuth callback（見 `devlog-ms-oauth.md`）需登記新網域。
+7. 搬遷後跑 §四維運指令 + `/api/health`、`/health` 雙端 smoke test，並確認流量鎖在最新 revision（`--to-latest`）。
+
+> 完成搬遷後，回來更新本 §5.1 表格為新環境值，並把舊值移入 §5.2。
