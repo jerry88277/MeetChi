@@ -157,26 +157,26 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     // 使用者需要時，按逐字稿區塊的「顯示詞彙」按鈕開啟。
     const [glossaryPanelOpen, setGlossaryPanelOpen] = useState(false);
 
-    // 2026-07-08：首次進入「已完成」會議詳情時，主動提示是否新增專有名詞。
-    // 以 localStorage 記住「已提示過」（per meeting），第二次進入同一會議不再詢問。
-    const [showGlossaryPrompt, setShowGlossaryPrompt] = useState(false);
+    // 2026-07-08：首次進入「已完成」會議詳情時，顯示「完成後三步」審稿引導卡
+    // （審稿 → 新增專有名詞 → 按套用修正）。以 localStorage per-meeting 記憶，
+    // 第二次進入同一會議不再顯示。取代舊的獨立 glossary 提示，避免與 CS-6 競爭。
+    const [showReviewGuide, setShowReviewGuide] = useState(false);
     useEffect(() => {
         if (typeof window === 'undefined') return;
         if (!meeting?.id || meeting.status !== 'completed' || !userUpn) return;
-        const key = `meetchi:glossary-prompt-seen:${meeting.id}`;
+        const key = `meetchi:review-guide-seen:${meeting.id}`;
         try {
             if (!localStorage.getItem(key)) {
-                setShowGlossaryPrompt(true);
+                setShowReviewGuide(true);
                 localStorage.setItem(key, '1');
             }
         } catch {
-            // localStorage 不可用時：僅本次 session 顯示一次
-            setShowGlossaryPrompt(true);
+            setShowReviewGuide(true);
         }
     }, [meeting?.id, meeting?.status, userUpn]);
-    const openGlossaryFromPrompt = useCallback(() => {
+    const openGlossaryFromGuide = useCallback(() => {
         setGlossaryPanelOpen(true);
-        setShowGlossaryPrompt(false);
+        setShowReviewGuide(false);
     }, []);
 
     // 2026-07-07：套用專有名詞修正後的即時覆蓋層。
@@ -679,34 +679,6 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                 )}
             </div>
 
-            {/* 2026-07-08：首次進入已完成會議時，主動提示是否新增專有名詞。
-                第二次進入同一會議（localStorage 已記錄）不再顯示。 */}
-            {showGlossaryPrompt && (
-                <div className="border-b border-brand-cta/20 bg-brand-cta/5 px-6 py-3 flex items-center gap-3">
-                    <BookMarked size={18} className="text-brand-cta shrink-0" />
-                    <div className="flex-1 min-w-0 text-sm text-foreground">
-                        <span className="font-semibold">需要修正專有名詞嗎？</span>
-                        <span className="text-muted-foreground ml-1">
-                            公司名、人名或術語若被聽錯，可在此新增對照，系統會自動修正逐字稿與摘要。
-                        </span>
-                    </div>
-                    <button
-                        onClick={openGlossaryFromPrompt}
-                        className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-brand-cta rounded-lg hover:bg-brand-cta/90 transition-colors"
-                    >
-                        <BookMarked size={13} /> 新增專有名詞
-                    </button>
-                    <button
-                        onClick={() => setShowGlossaryPrompt(false)}
-                        className="shrink-0 p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
-                        title="暫不需要"
-                        aria-label="暫不需要"
-                    >
-                        <X size={16} />
-                    </button>
-                </div>
-            )}
-
             {/* Single-column scroll body — RWD widening:
                   mobile/md: max-w-3xl 保持 reading layout（行長 60-80 字符最佳）
                   xl (≥1280): max-w-5xl  — 1920×1080 的 sweet spot
@@ -714,8 +686,8 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
             <div className="flex-1 overflow-y-auto bg-surface">
                 <div className="max-w-3xl xl:max-w-5xl 2xl:max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-6 md:py-8 space-y-6 pb-32">
 
-                    {/* CS-6：首次開啟會議詳情的引導——點出這頁能做什麼，看完關掉不再出現 */}
-                    {showCoachmark && (
+                    {/* CS-6：非完成狀態的通用引導（完成狀態改用下方「完成後三步」卡） */}
+                    {showCoachmark && !isCompleted && (
                         <div className="bg-brand-cta/5 border border-brand-cta/20 rounded-xl p-4 flex items-start gap-3">
                             <div className="w-8 h-8 rounded-lg bg-brand-cta/15 flex items-center justify-center text-brand-cta shrink-0">💡</div>
                             <div className="flex-1 min-w-0">
@@ -728,6 +700,53 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                             <button onClick={dismissCoachmark} aria-label="知道了，關閉提示" className="p-1.5 hover:bg-brand-cta/10 rounded-lg text-muted-foreground shrink-0">
                                 <X size={16} />
                             </button>
+                        </div>
+                    )}
+
+                    {/* 2026-07-08：完成後「審稿三步」引導卡（首次進入該已完成會議時顯示，
+                        第二次進入同一會議不再出現）。把散落的動作收斂成一條可見流程，
+                        讓新手知道「轉錄完成 ≠ 結束」，還要審稿→新增專有名詞→按套用修正。 */}
+                    {showReviewGuide && isCompleted && (
+                        <div className="bg-brand-cta/5 border border-brand-cta/30 rounded-xl p-4">
+                            <div className="flex items-start gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-brand-cta/15 flex items-center justify-center text-brand-cta shrink-0">✍️</div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-foreground mb-2">
+                                        轉錄完成了！建議花 1 分鐘審稿，讓內容更準確
+                                    </p>
+                                    <ol className="space-y-1.5 text-sm text-muted-foreground">
+                                        <li className="flex gap-2">
+                                            <span className="shrink-0 w-4 h-4 rounded-full bg-brand-cta/20 text-brand-cta text-[10px] font-bold flex items-center justify-center mt-0.5">1</span>
+                                            <span><span className="text-foreground font-medium">審稿</span>：往下看摘要、展開逐字稿，留意公司名／人名／術語是否被聽錯。</span>
+                                        </li>
+                                        <li className="flex gap-2">
+                                            <span className="shrink-0 w-4 h-4 rounded-full bg-brand-cta/20 text-brand-cta text-[10px] font-bold flex items-center justify-center mt-0.5">2</span>
+                                            <span><span className="text-foreground font-medium">新增專有名詞</span>：點右上角或逐字稿區的「<span className="text-brand-cta font-medium">專有名詞</span>」，填入「錯誤 → 正確」。</span>
+                                        </li>
+                                        <li className="flex gap-2">
+                                            <span className="shrink-0 w-4 h-4 rounded-full bg-brand-cta/20 text-brand-cta text-[10px] font-bold flex items-center justify-center mt-0.5">3</span>
+                                            <span><span className="text-foreground font-medium">按「套用修正」</span>：系統會自動修正逐字稿與摘要，不必整份重新生成。</span>
+                                        </li>
+                                    </ol>
+                                    <div className="mt-3 flex items-center gap-2">
+                                        <button
+                                            onClick={openGlossaryFromGuide}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-brand-cta rounded-lg hover:bg-brand-cta/90 transition-colors"
+                                        >
+                                            <BookMarked size={13} /> 開始新增專有名詞
+                                        </button>
+                                        <button
+                                            onClick={() => setShowReviewGuide(false)}
+                                            className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
+                                        >
+                                            稍後再說
+                                        </button>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowReviewGuide(false)} aria-label="關閉引導" className="p-1.5 hover:bg-brand-cta/10 rounded-lg text-muted-foreground shrink-0">
+                                    <X size={16} />
+                                </button>
+                            </div>
                         </div>
                     )}
 
@@ -1246,6 +1265,15 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
 
                             {showTranscript && (
                                 <div className="mt-3 bg-card rounded-xl border border-border overflow-hidden">
+                                    {/* 2026-07-08：審稿提示——展開逐字稿時提醒新手修正流程 */}
+                                    {isCompleted && userUpn && (
+                                        <div className="px-4 py-2.5 border-b border-brand-cta/15 bg-brand-cta/5 flex items-center gap-2 text-xs text-muted-foreground">
+                                            <BookMarked size={13} className="text-brand-cta shrink-0" />
+                                            <span>
+                                                審稿提示：發現錯字 → 按<button onClick={() => setGlossaryPanelOpen(true)} className="text-brand-cta font-medium hover:underline mx-0.5">專有名詞</button>新增「錯誤 → 正確」→ 按「套用修正」，逐字稿與摘要會一起更新。
+                                            </span>
+                                        </div>
+                                    )}
                                     {/* Speaker legend */}
                                     {localSpeakerMappings && Object.keys(localSpeakerMappings).length > 0 && (
                                         <div className="px-4 py-3 border-b border-border bg-muted/20">

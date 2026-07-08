@@ -82,6 +82,8 @@ export const FloatingGlossaryPanel: React.FC<FloatingGlossaryPanelProps> = ({
     const [adding, setAdding] = useState(false);
     const [applying, setApplying] = useState(false);
     const [applyResult, setApplyResult] = useState<string | null>(null);
+    // 2026-07-08：新增/刪除詞後標記「待套用」，讓「套用修正」鈕高亮提示新手記得按。
+    const [needsApply, setNeedsApply] = useState(false);
     const [error, setError] = useState('');
 
     const windowRef = useRef<HTMLDivElement>(null);
@@ -227,6 +229,7 @@ export const FloatingGlossaryPanel: React.FC<FloatingGlossaryPanelProps> = ({
             await api.createMeetingEntry(meetingId, wrongText.trim(), correctText.trim());
             setWrongText('');
             setCorrectText('');
+            setNeedsApply(true);
             await loadEntries();
         } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : '新增失敗';
@@ -240,6 +243,7 @@ export const FloatingGlossaryPanel: React.FC<FloatingGlossaryPanelProps> = ({
         try {
             await api.deleteMeetingEntry(meetingId, entryId);
             setEntries(prev => prev.filter(e => e.id !== entryId));
+            setNeedsApply(true);
         } catch (e) {
             console.error('Delete failed:', e);
         }
@@ -251,6 +255,7 @@ export const FloatingGlossaryPanel: React.FC<FloatingGlossaryPanelProps> = ({
         try {
             const result = await api.applyGlossaryCorrection(meetingId, userUpn);
             setApplyResult(`已修正 ${result.segments_corrected} 個段落`);
+            setNeedsApply(false);
             // 即時覆蓋父層逐字稿顯示，免使用者手動重整。
             // 後端已將修正持久化至 DB；此處以相同的字串替換套用於當前畫面，
             // 兩者結果一致（idempotent），重整後仍正確。
@@ -382,10 +387,19 @@ export const FloatingGlossaryPanel: React.FC<FloatingGlossaryPanelProps> = ({
 
                     {/* Footer buttons */}
                     <div className="p-3 border-t border-border space-y-2" data-no-drag>
+                        {needsApply && (
+                            <p className="text-[11px] text-brand-cta font-medium text-center">
+                                新增後記得按「套用修正」——逐字稿與摘要會一起更新
+                            </p>
+                        )}
                         <button
                             onClick={handleApply}
                             disabled={applying}
-                            className="w-full flex items-center justify-center gap-1 px-3 py-1.5 text-xs bg-muted hover:bg-muted/80 text-foreground rounded transition-colors disabled:opacity-50"
+                            className={`w-full flex items-center justify-center gap-1 px-3 py-1.5 text-xs rounded transition-colors disabled:opacity-50 ${
+                                needsApply
+                                    ? 'bg-brand-cta text-white hover:bg-brand-cta/90 font-semibold shadow-sm animate-pulse'
+                                    : 'bg-muted hover:bg-muted/80 text-foreground'
+                            }`}
                         >
                             {applying ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
                             套用修正

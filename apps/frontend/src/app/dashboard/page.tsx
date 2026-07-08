@@ -237,7 +237,7 @@ export default function DashboardPage() {
         // transcript_segments，避免 list 資料缺逐字稿
         const completedId = completedMeeting?.id;
         toast.success('會議摘要已生成完成！', {
-            description: completedId ? '點選「查看」即可進入詳情頁。' : undefined,
+            description: completedId ? '建議進入詳情頁審稿，並修正專有名詞讓內容更準確。點「查看」開始。' : undefined,
             action: completedId
                 ? {
                       label: '查看',
