@@ -21,6 +21,7 @@ import {
     MessageSquare,
     Users,
     Save,
+    BookMarked,
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -155,6 +156,28 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     // 預設「關閉」——避免浮窗載入時遮住 header 右上角的「重新生成/換模板/匯出」控制列。
     // 使用者需要時，按逐字稿區塊的「顯示詞彙」按鈕開啟。
     const [glossaryPanelOpen, setGlossaryPanelOpen] = useState(false);
+
+    // 2026-07-08：首次進入「已完成」會議詳情時，主動提示是否新增專有名詞。
+    // 以 localStorage 記住「已提示過」（per meeting），第二次進入同一會議不再詢問。
+    const [showGlossaryPrompt, setShowGlossaryPrompt] = useState(false);
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (!meeting?.id || meeting.status !== 'completed' || !userUpn) return;
+        const key = `meetchi:glossary-prompt-seen:${meeting.id}`;
+        try {
+            if (!localStorage.getItem(key)) {
+                setShowGlossaryPrompt(true);
+                localStorage.setItem(key, '1');
+            }
+        } catch {
+            // localStorage 不可用時：僅本次 session 顯示一次
+            setShowGlossaryPrompt(true);
+        }
+    }, [meeting?.id, meeting?.status, userUpn]);
+    const openGlossaryFromPrompt = useCallback(() => {
+        setGlossaryPanelOpen(true);
+        setShowGlossaryPrompt(false);
+    }, []);
 
     // 2026-07-07：套用專有名詞修正後的即時覆蓋層。
     // 後端已把修正持久化到 DB，但當前畫面的 meeting.transcript 是舊的；
@@ -461,6 +484,14 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
     }, [templates, meeting.templateName]);
     const isTranscribed = meeting.status === 'transcribed';
 
+    // 2026-07-08：專有名詞入口的共用視覺樣式（上方 header + 下方逐字稿區一致、醒目）。
+    // active（面板開啟）時實心 brand 底，未開時淺 brand 底 + 邊框，均比舊版更突出。
+    const glossaryBtnClass = `inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+        glossaryPanelOpen
+            ? 'bg-brand-cta text-white border-brand-cta shadow-sm'
+            : 'text-brand-cta bg-brand-cta/10 border-brand-cta/40 hover:bg-brand-cta/20'
+    }`;
+
     // 2026-05-12 (feedback 4504f2e3): 把 SecurityWrapper 從 dashboard/layout.tsx
     // 移下來，只在 is_confidential=true 時才包，避免全域鎖住一般會議的複製功能。
     const content = (
@@ -612,6 +643,19 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                         </>
                     )}
                 </div>
+                {/* 2026-07-08：上方專有名詞入口（詳情頁置頂區域）。與下方逐字稿區入口
+                    視覺一致、更醒目；只在已完成會議顯示。 */}
+                {isCompleted && userUpn && (
+                    <button
+                        onClick={() => setGlossaryPanelOpen(v => !v)}
+                        className={glossaryBtnClass}
+                        title="新增／管理本會議專有名詞，修正 ASR 誤字"
+                        aria-pressed={glossaryPanelOpen}
+                    >
+                        <BookMarked size={13} />
+                        <span className="hidden sm:inline">專有名詞</span>
+                    </button>
+                )}
                 {onReportThisMeeting && (
                     <button
                         onClick={() => onReportThisMeeting(meeting.id)}
@@ -634,6 +678,34 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                     </button>
                 )}
             </div>
+
+            {/* 2026-07-08：首次進入已完成會議時，主動提示是否新增專有名詞。
+                第二次進入同一會議（localStorage 已記錄）不再顯示。 */}
+            {showGlossaryPrompt && (
+                <div className="border-b border-brand-cta/20 bg-brand-cta/5 px-6 py-3 flex items-center gap-3">
+                    <BookMarked size={18} className="text-brand-cta shrink-0" />
+                    <div className="flex-1 min-w-0 text-sm text-foreground">
+                        <span className="font-semibold">需要修正專有名詞嗎？</span>
+                        <span className="text-muted-foreground ml-1">
+                            公司名、人名或術語若被聽錯，可在此新增對照，系統會自動修正逐字稿與摘要。
+                        </span>
+                    </div>
+                    <button
+                        onClick={openGlossaryFromPrompt}
+                        className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-brand-cta rounded-lg hover:bg-brand-cta/90 transition-colors"
+                    >
+                        <BookMarked size={13} /> 新增專有名詞
+                    </button>
+                    <button
+                        onClick={() => setShowGlossaryPrompt(false)}
+                        className="shrink-0 p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
+                        title="暫不需要"
+                        aria-label="暫不需要"
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
+            )}
 
             {/* Single-column scroll body — RWD widening:
                   mobile/md: max-w-3xl 保持 reading layout（行長 60-80 字符最佳）
@@ -1157,10 +1229,12 @@ export const DetailView = ({ meeting, onBack, onRegenerateSummary, onRegenerateT
                                                 e.stopPropagation();
                                                 setGlossaryPanelOpen(!glossaryPanelOpen);
                                             }}
-                                            className="px-2 py-1 text-xs bg-muted hover:bg-muted/80 text-foreground rounded transition-colors"
-                                            title="開啟/關閉專有名詞面板"
+                                            className={glossaryBtnClass}
+                                            title="新增／管理本會議專有名詞，修正 ASR 誤字"
+                                            aria-pressed={glossaryPanelOpen}
                                         >
-                                            {glossaryPanelOpen ? '隱藏' : '顯示'}詞彙
+                                            <BookMarked size={13} />
+                                            {glossaryPanelOpen ? '隱藏詞彙' : '專有名詞'}
                                         </button>
                                     )}
                                     <ChevronDown

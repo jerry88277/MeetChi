@@ -218,17 +218,22 @@ class BreezeASRProvider(OfflineASRProvider):
             f"(inter_threads={self.config.inter_threads})"
         )
 
-    def _transcribe_sync(self, audio_path: str, language: str) -> ASRResult:
+    def _transcribe_sync(self, audio_path: str, language: str, initial_prompt: str = "") -> ASRResult:
         """
         Synchronous transcription pipeline:
         1. faster-whisper transcription
         2. WhisperX alignment (if available)
         3. pyannote diarization (if enabled and available)
+
+        initial_prompt: glossary hotwords biasing (≤224 tokens, Whisper hard cap).
         """
         self._load_model()
 
         # --- Step 1: CTranslate2 Transcription ---
-        logger.info(f"[Breeze ASR] Step 1/3: Transcribing {audio_path}")
+        logger.info(
+            f"[Breeze ASR] Step 1/3: Transcribing {audio_path}"
+            + (f" (hotword prompt len={len(initial_prompt)})" if initial_prompt else "")
+        )
         segments_iter, info = self._model.transcribe(
             audio_path,
             language=language,
@@ -236,6 +241,7 @@ class BreezeASRProvider(OfflineASRProvider):
             vad_filter=self.config.vad_filter,
             vad_parameters=self.config.vad_parameters,
             word_timestamps=True,
+            initial_prompt=initial_prompt or None,
         )
 
         # Materialize iterator
@@ -409,11 +415,17 @@ class BreezeASRProvider(OfflineASRProvider):
         Async wrapper — runs the sync pipeline in a thread pool.
         
         GPU inference blocks the event loop, so we offload to a thread.
+
+        kwargs.initial_prompt: optional glossary hotwords (≤224 tokens).
         """
+        initial_prompt = kwargs.get("initial_prompt", "") or ""
         logger.info(
             f"[Breeze ASR] Starting offline transcription: {audio_path} (lang={language})"
+            + (f" +hotwords({len(initial_prompt)} chars)" if initial_prompt else "")
         )
-        return await asyncio.to_thread(self._transcribe_sync, audio_path, language)
+        return await asyncio.to_thread(
+            self._transcribe_sync, audio_path, language, initial_prompt
+        )
 
 
 # ============================================

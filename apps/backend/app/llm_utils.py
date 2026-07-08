@@ -904,3 +904,143 @@ def relabel_summary_speakers(
     except Exception as e:
         logger.error(f"[relabel] Error: {e}")
         return {"summary_json": summary_json_str, "changed": False, "error": str(e)}
+
+
+def correct_segments_glossary_llm(
+    client: "genai.Client",
+    candidate_segments: List[Dict[str, Any]],
+    glossary_pairs: Dict[str, str],
+) -> Dict[str, Any]:
+    """C1 (2026-07-08): context-aware glossary correction of transcript segments.
+
+    Replaces the previous naive ``str.replace`` post-correction. Given a set of
+    known wrong→correct term pairs, the LLM applies a correction **only where it
+    is contextually the same term** — avoiding false positives such as blindly
+    turning a legitimate「油桶」into「郵筒」just because that pair exists.
+
+    Args:
+        candidate_segments: list of {"id": str, "text": str} — only segments that
+            already contain at least one wrong term (keeps prompt small).
+        glossary_pairs: {wrong_text: correct_text}.
+
+    Returns dict: {"corrections": [{"id","text"}], "error": <optional>}.
+        ``corrections`` only contains segments the LLM actually changed. On any
+        failure returns {"corrections": [], "error": ...} so the caller can fall
+        back to deterministic replacement.
+    """
+    if not candidate_segments or not glossary_pairs:
+        return {"corrections": []}
+
+    pairs_lines = "\n".join(f"- 「{w}」→「{c}」" for w, c in glossary_pairs.items() if w and c)
+    seg_json = json.dumps(
+        [{"id": s["id"], "text": s.get("text", "")} for s in candidate_segments],
+        ensure_ascii=False,
+    )
+
+    system_prompt = (
+        "你是嚴謹的會議逐字稿校對助手。任務：依『專有名詞對照表』修正 ASR 誤字。\n"
+        "嚴格規則：\n"
+        "1. 只在『語意上確實是該詞被聽錯』時才替換；若原文的詞在該語境本來就正確，"
+        "不得替換（例如對照表有「油桶→郵筒」，但句子講的真的是裝油的油桶時，保持原樣）。\n"
+        "2. 除了修正對照表涵蓋的誤字，不得改寫、增刪、重排任何其他文字或標點。\n"
+        "3. 逐段處理；只回傳『你有實際修改』的段落。\n"
+        "4. 僅輸出 JSON：{\"corrections\":[{\"id\":\"...\",\"text\":\"修正後全文\"}]}，不要加解說。"
+    )
+    user_prompt = (
+        f"【專有名詞對照表（wrong→correct）】\n{pairs_lines}\n\n"
+        f"【待校對段落（JSON 陣列）】\n{seg_json}\n\n"
+        "請輸出僅含被修改段落的 JSON。"
+    )
+
+    try:
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=f"{system_prompt}\n\n{user_prompt}",
+            config={
+                "response_mime_type": "application/json",
+                "temperature": 0.0,
+                "max_output_tokens": min(int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "65535")), 65535),
+            },
+        )
+        resp_text = (response.text or "").strip()
+        if not resp_text:
+            return {"corrections": [], "error": "empty LLM response"}
+        parsed = json.loads(resp_text)
+        raw = parsed.get("corrections", []) if isinstance(parsed, dict) else []
+        valid_ids = {s["id"] for s in candidate_segments}
+        corrections = [
+            {"id": c["id"], "text": c["text"]}
+            for c in raw
+            if isinstance(c, dict) and c.get("id") in valid_ids and isinstance(c.get("text"), str)
+        ]
+        return {"corrections": corrections}
+    except json.JSONDecodeError as je:
+        logger.error(f"[glossary-llm] JSON parse failed: {je}")
+        return {"corrections": [], "error": "invalid JSON from LLM"}
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"[glossary-llm] Error: {e}")
+        return {"corrections": [], "error": str(e)}
+
+
+def patch_summary_glossary_llm(
+    client: "genai.Client",
+    summary_json_str: str,
+    glossary_pairs: Dict[str, str],
+) -> Dict[str, Any]:
+    """C1 (2026-07-08): context-aware glossary patch of an existing summary_json.
+
+    Lets a user's glossary fixes flow into the already-generated summary WITHOUT
+    a full multi-pass regeneration. Only proper-noun字串會被替換；結構、鍵名、
+    要點語意一律不動。Mirrors ``relabel_summary_speakers`` safety checks.
+
+    Returns dict: {"summary_json": <str>, "changed": <bool>, "error": <optional>}.
+    """
+    if not summary_json_str or not summary_json_str.strip():
+        return {"summary_json": summary_json_str, "changed": False, "error": "empty summary"}
+    if not glossary_pairs:
+        return {"summary_json": summary_json_str, "changed": False, "error": "no glossary"}
+
+    pairs_lines = "\n".join(f"- 「{w}」→「{c}」" for w, c in glossary_pairs.items() if w and c)
+    system_prompt = (
+        "你是嚴謹的會議摘要校對助手。唯一任務：依『專有名詞對照表』修正摘要 JSON 中"
+        "的誤字。\n嚴格規則：\n"
+        "1. 只替換語意上確實是該專有名詞的字串；語境本來就正確者不動。\n"
+        "2. 不得改寫、增刪、重排任何其他文字、要點、決議、行動項或章節。\n"
+        "3. JSON 結構、鍵名、陣列順序、非相關欄位一律原封不動。\n"
+        "4. 只輸出修正後的 JSON，不要加任何解說。"
+    )
+    user_prompt = (
+        f"【專有名詞對照表（wrong→correct）】\n{pairs_lines}\n\n"
+        f"【待校對的摘要 JSON】\n{summary_json_str}\n\n"
+        "請輸出修正專有名詞後、其餘完全不變的 JSON。"
+    )
+
+    try:
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=f"{system_prompt}\n\n{user_prompt}",
+            config={
+                "response_mime_type": "application/json",
+                "temperature": 0.0,
+                "max_output_tokens": min(int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "65535")), 65535),
+            },
+        )
+        resp_text = (response.text or "").strip()
+        if not resp_text:
+            return {"summary_json": summary_json_str, "changed": False, "error": "empty LLM response"}
+        try:
+            orig = json.loads(summary_json_str)
+            new = json.loads(resp_text)
+        except json.JSONDecodeError as je:
+            logger.error(f"[glossary-summary-llm] JSON parse failed: {je}")
+            return {"summary_json": summary_json_str, "changed": False, "error": "invalid JSON from LLM"}
+        if isinstance(orig, dict) and isinstance(new, dict):
+            if set(orig.keys()) != set(new.keys()):
+                logger.warning("[glossary-summary-llm] top-level keys changed; rejecting.")
+                return {"summary_json": summary_json_str, "changed": False, "error": "structure changed"}
+        normalized = json.dumps(new, ensure_ascii=False)
+        changed = json.dumps(orig, ensure_ascii=False, sort_keys=True) != json.dumps(new, ensure_ascii=False, sort_keys=True)
+        return {"summary_json": normalized, "changed": changed}
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"[glossary-summary-llm] Error: {e}")
+        return {"summary_json": summary_json_str, "changed": False, "error": str(e)}

@@ -59,6 +59,10 @@ class ASRRefineRequest(BaseModel):
     audio_url: str  # GCS URL (gs://...) or local path
     language: str = "zh"
     callback_url: Optional[str] = None
+    # C1 (2026-07-08): glossary hotwords injected as Whisper initial_prompt.
+    # Whisper hard-caps initial_prompt at 224 tokens; caller (backend tasks.py)
+    # is responsible for token-budgeting before sending.
+    initial_prompt: str = ""
 
 class SegmentResponse(BaseModel):
     start: float
@@ -395,7 +399,11 @@ async def _run_asr_processing(request: ASRRefineRequest, start_time: float) -> A
                 audio_path = denoised
 
         # Run ASR synchronously
-        result = await provider.transcribe_with_diarization(audio_path, language=request.language)
+        result = await provider.transcribe_with_diarization(
+            audio_path,
+            language=request.language,
+            initial_prompt=request.initial_prompt or "",
+        )
 
         # Plan B: Low-confidence re-transcription with Breeze-ASR-26 (Taiwanese)
         # Only when language="zh-nan" (國台英混合 mode selected by user)

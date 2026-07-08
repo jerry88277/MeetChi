@@ -80,59 +80,214 @@ def get_glossary_map(db: Session, meeting_id: str, user_upn: str = None) -> dict
     return merged
 
 
-def get_whisper_prompt(db: Session, meeting_id: str, user_upn: str = None) -> str:
+def get_whisper_prompt(db: Session, meeting_id: str, user_upn: str = None, max_terms_chars: int = 180) -> str:
     """
     C1: Generate Whisper initial_prompt with glossary hotwords.
     Injects correct terms into prompt so ASR recognizes them better.
+
+    Whisper hard-caps initial_prompt at 224 tokens (half of its 448-token
+    context window); anything longer is silently truncated. For CJK a token
+    can be ≤1 char, so we budget conservatively by character count and
+    prioritise the most relevant terms:
+      1. Meeting-level terms first (most specific to this audio).
+      2. User-global terms next, by usage_count desc (proven-useful first).
+    Terms are de-duplicated and packed until the char budget is reached.
     """
-    glossary_map = get_glossary_map(db, meeting_id, user_upn)
-    if not glossary_map:
+    from app.models import UserGlossary, MeetingGlossary
+
+    prefix = "以下是本次會議可能出現的專有名詞："
+
+    # Meeting-level (highest priority).
+    ordered_terms: list[str] = []
+    seen: set[str] = set()
+
+    def _push(term: str):
+        t = (term or "").strip()
+        if t and t not in seen:
+            seen.add(t)
+            ordered_terms.append(t)
+
+    for e in db.query(MeetingGlossary).filter(
+        MeetingGlossary.meeting_id == meeting_id
+    ).all():
+        _push(e.correct_text)
+
+    if user_upn:
+        user_entries = db.query(UserGlossary).filter(
+            UserGlossary.user_upn == user_upn.lower().strip()
+        ).order_by(UserGlossary.usage_count.desc()).all()
+        for e in user_entries:
+            _push(e.correct_text)
+
+    if not ordered_terms:
         return ""
-    
-    correct_terms = list(set(glossary_map.values()))
-    return "以下是本次會議可能出現的專有名詞：" + "、".join(correct_terms)
+
+    # Pack terms within the char budget (proxy for the 224-token cap).
+    picked: list[str] = []
+    used = 0
+    for t in ordered_terms:
+        add = len(t) + (1 if picked else 0)  # "、" separator
+        if used + add > max_terms_chars:
+            break
+        picked.append(t)
+        used += add
+
+    if not picked:
+        return ""
+
+    return prefix + "、".join(picked)
 
 
-def apply_glossary_correction(db: Session, meeting_id: str, user_upn: str = None) -> int:
-    """
-    C1: Apply glossary-based post-correction to all segments of a meeting.
-    Replaces wrong_text with correct_text in content_raw and content_polished.
-    
-    Returns number of segments modified.
-    """
-    from app.models import TranscriptSegment
-    
-    glossary_map = get_glossary_map(db, meeting_id, user_upn)
-    if not glossary_map:
-        return 0
-    
-    segments = db.query(TranscriptSegment).filter(
-        TranscriptSegment.meeting_id == meeting_id
-    ).all()
-    
-    modified_count = 0
+def _apply_glossary_deterministic(segments, glossary_map) -> int:
+    """Naive but fast wrong→correct string replacement. Used as fallback when
+    LLM correction is disabled or fails. Returns segments modified (not committed)."""
+    modified = 0
     for seg in segments:
         changed = False
         raw = seg.content_raw or ""
         polished = seg.content_polished or ""
-        
         for wrong, correct in glossary_map.items():
-            if wrong in raw:
+            if wrong and wrong in raw:
                 raw = raw.replace(wrong, correct)
                 changed = True
-            if wrong in polished:
+            if wrong and wrong in polished:
                 polished = polished.replace(wrong, correct)
                 changed = True
-        
         if changed:
             seg.content_raw = raw
             seg.content_polished = polished
-            modified_count += 1
-    
+            modified += 1
+    return modified
+
+
+def patch_summary_after_correction(db: Session, meeting_id: str, glossary_map: dict) -> bool:
+    """C1 (P0-3): flow glossary fixes into the existing summary WITHOUT a full
+    regenerate. Context-aware LLM patch (safe fallback: deterministic replace on
+    summary string values). Returns True if summary changed."""
+    from app.models import Meeting as _Meeting
+
+    meeting = db.query(_Meeting).filter(_Meeting.id == meeting_id).first()
+    if not meeting or not meeting.summary_json or not meeting.summary_json.strip():
+        return False
+
+    use_llm = os.getenv("GLOSSARY_LLM_CORRECTION", "true").lower() in ("1", "true", "yes")
+    new_summary = None
+    if use_llm:
+        try:
+            from app.llm_utils import get_gemini_client, patch_summary_glossary_llm
+            client = get_gemini_client()
+            if client is not None:
+                res = patch_summary_glossary_llm(client, meeting.summary_json, glossary_map)
+                if res.get("changed") and not res.get("error"):
+                    new_summary = res["summary_json"]
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[Glossary] summary LLM patch failed (non-fatal): {e}")
+
+    if new_summary is None:
+        # Deterministic fallback: replace within the JSON string. Term swaps only.
+        patched = meeting.summary_json
+        for wrong, correct in glossary_map.items():
+            if wrong and wrong in patched:
+                patched = patched.replace(wrong, correct)
+        if patched != meeting.summary_json:
+            # Guard: must still parse as JSON with same top-level keys.
+            try:
+                orig = json.loads(meeting.summary_json)
+                new = json.loads(patched)
+                if not (isinstance(orig, dict) and isinstance(new, dict) and set(orig.keys()) == set(new.keys())):
+                    return False
+                new_summary = patched
+            except Exception:  # noqa: BLE001
+                return False
+
+    if new_summary and new_summary != meeting.summary_json:
+        meeting.summary_json = new_summary
+        db.commit()
+        logger.info(f"[Glossary] Summary patched in-place for {meeting_id} (no full regen)")
+        return True
+    return False
+
+
+def apply_glossary_correction(db: Session, meeting_id: str, user_upn: str = None) -> int:
+    """
+    C1: Apply glossary-based post-correction to a meeting's segments + summary.
+
+    P0-2 (2026-07-08): replaces the previous naive str.replace with an LLM
+    context-aware pass (avoids false positives like 油桶→郵筒 when 油桶 is right,
+    and can be extended to catch long-tail errors). Falls back to deterministic
+    replacement when LLM is disabled or fails.
+    P0-3: after correcting segments, patches the existing summary in place so the
+    user no longer needs to fully regenerate the summary after fixing terms.
+
+    Returns number of segments modified.
+    """
+    from app.models import TranscriptSegment
+
+    glossary_map = get_glossary_map(db, meeting_id, user_upn)
+    if not glossary_map:
+        return 0
+
+    segments = db.query(TranscriptSegment).filter(
+        TranscriptSegment.meeting_id == meeting_id
+    ).all()
+
+    use_llm = os.getenv("GLOSSARY_LLM_CORRECTION", "true").lower() in ("1", "true", "yes")
+    modified_count = 0
+    llm_ok = False
+
+    if use_llm:
+        # Only send segments that contain at least one wrong term (keeps prompt small).
+        candidates = []
+        for seg in segments:
+            hay = (seg.content_raw or "") + "\n" + (seg.content_polished or "")
+            if any(w and w in hay for w in glossary_map.keys()):
+                candidates.append(seg)
+
+        if candidates:
+            try:
+                from app.llm_utils import get_gemini_client, correct_segments_glossary_llm
+                client = get_gemini_client()
+                if client is not None:
+                    by_id = {seg.id: seg for seg in candidates}
+                    # Batch to bound prompt size (long meetings can have many candidates).
+                    batch_size = int(os.getenv("GLOSSARY_LLM_BATCH", "60"))
+                    corrected_ids = set()
+                    for i in range(0, len(candidates), batch_size):
+                        batch = candidates[i:i + batch_size]
+                        payload = [
+                            {"id": seg.id, "text": seg.content_polished or seg.content_raw or ""}
+                            for seg in batch
+                        ]
+                        res = correct_segments_glossary_llm(client, payload, glossary_map)
+                        if res.get("error"):
+                            raise RuntimeError(res["error"])
+                        for c in res.get("corrections", []):
+                            seg = by_id.get(c["id"])
+                            if seg is not None and c["text"] and c["text"] != (seg.content_polished or seg.content_raw or ""):
+                                seg.content_polished = c["text"]
+                                seg.content_raw = c["text"]
+                                corrected_ids.add(seg.id)
+                    modified_count = len(corrected_ids)
+                    llm_ok = True
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[Glossary] LLM correction failed, falling back to deterministic: {e}")
+
+    if not llm_ok:
+        modified_count = _apply_glossary_deterministic(segments, glossary_map)
+
     if modified_count > 0:
         db.commit()
-        logger.info(f"[Glossary] Applied corrections to {modified_count} segments for meeting {meeting_id}")
-    
+        logger.info(
+            f"[Glossary] Applied corrections to {modified_count} segments for meeting "
+            f"{meeting_id} (mode={'llm' if llm_ok else 'deterministic'})"
+        )
+
+    # P0-3: patch the existing summary in place (best-effort, non-fatal).
+    try:
+        patch_summary_after_correction(db, meeting_id, glossary_map)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[Glossary] summary patch failed (non-fatal): {e}")
+
     return modified_count
 
 
@@ -441,6 +596,21 @@ def _process_split_audio_sync(
             f"(global GPU queue, stagger={stagger_elapsed:.0f}s)"
         )
 
+        # C1 (2026-07-08): compute glossary hotword prompt ONCE for all chunks.
+        _meeting_row = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+        _whisper_prompt = ""
+        try:
+            _whisper_prompt = get_whisper_prompt(
+                db, meeting_id, _meeting_row.owner_upn if _meeting_row else None
+            )
+            if _whisper_prompt:
+                logger.info(
+                    f"[ParallelASR] {meeting_id[:8]} glossary hotword prompt "
+                    f"({len(_whisper_prompt)} chars) will bias ASR"
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[ParallelASR] get_whisper_prompt failed (non-fatal): {e}")
+
         # 2. Semaphore-limited POST：每個 chunk 一次 retry on failure
         async def call_gpu_once(chunk_url: str, offset: float, idx: int, attempt: int) -> dict:
             """單次 POST，connect timeout 90s (cold start), read timeout 3600s。"""
@@ -458,6 +628,7 @@ def _process_split_audio_sync(
                         "audio_url": chunk_url,
                         "language": language,
                         "callback_url": None,
+                        "initial_prompt": _whisper_prompt,
                     },
                 )
                 resp.raise_for_status()
@@ -1011,7 +1182,8 @@ def generate_summary_core(meeting_id: str, template_type: str = "general", conte
                                 "meeting_id": meeting_id,
                                 "audio_url": meeting.audio_url,
                                 "language": meeting.language or "zh",
-                                "callback_url": callback_url
+                                "callback_url": callback_url,
+                                "initial_prompt": get_whisper_prompt(db, meeting_id, meeting.owner_upn),
                             }
                         )
                         response.raise_for_status()
