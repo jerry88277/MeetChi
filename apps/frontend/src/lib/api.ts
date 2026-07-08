@@ -562,7 +562,12 @@ class ApiClient {
     ): Promise<void> {
         const CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB per chunk (was 2MB)
         const CONCURRENCY = 4;              // 4 parallel (was 2)
-        const MAX_RETRIES = 3;
+        const MAX_RETRIES = 5;              // was 3 — enterprise proxies drop often
+        // 2026-07-08 止血：企業透明 Proxy 常「hold 住連線但不回應」，XHR 既不 onload
+        // 也不 onerror → Promise 永久 pending → 重試不觸發 → 上傳靜默凍結（孤兒 PENDING）。
+        // 兩道防線：(1) xhr.timeout 硬上限；(2) 進度閒置看門狗（一段時間無 bytes 前進即 abort）。
+        const CHUNK_TIMEOUT_MS = 120_000;   // 單塊硬上限（8MB 於極慢線路 ~64s，留裕度）
+        const STALL_MS = 30_000;            // 30s 無任何進度即視為停滯 → abort → 重試
         const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
 
         const uploadedBytes = new Array<number>(totalChunks).fill(0);
@@ -582,15 +587,38 @@ class ApiClient {
                 const xhr = new XMLHttpRequest();
                 xhr.open('POST', url, true);
                 xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-                if (signal) signal.addEventListener('abort', () => xhr.abort(), { once: true });
+
+                // --- 停滯防護 ---
+                // 硬上限：整個請求超過 CHUNK_TIMEOUT_MS 未完成 → ontimeout。
+                xhr.timeout = CHUNK_TIMEOUT_MS;
+                // 閒置看門狗：追蹤最後一次「有進度」的時間，超過 STALL_MS 無進度即 abort。
+                // 針對「連線 hold 住但完全不傳輸」的 proxy 行為，比硬上限更快偵測。
+                let lastActivity = Date.now();
+                let settled = false;
+                const watchdog = setInterval(() => {
+                    if (settled) return;
+                    if (Date.now() - lastActivity > STALL_MS) {
+                        settled = true;
+                        clearInterval(watchdog);
+                        try { xhr.abort(); } catch { /* ignore */ }
+                        reject(new Error(`Stalled: no progress for ${Math.round(STALL_MS / 1000)}s`));
+                    }
+                }, 5_000);
+                const cleanup = () => { settled = true; clearInterval(watchdog); };
+
+                const onAbort = () => { try { xhr.abort(); } catch { /* ignore */ } };
+                if (signal) signal.addEventListener('abort', onAbort, { once: true });
 
                 xhr.upload.onprogress = (e: ProgressEvent) => {
+                    lastActivity = Date.now(); // 有 bytes 前進 → 重置看門狗
                     if (e.lengthComputable && e.total > 0) {
                         uploadedBytes[i] = e.loaded;
                         reportProgress();
                     }
                 };
                 xhr.onload = () => {
+                    if (settled) return;
+                    cleanup();
                     if (xhr.status >= 200 && xhr.status < 300) {
                         const start = i * CHUNK_SIZE;
                         const end = Math.min(start + CHUNK_SIZE, file.size);
@@ -601,8 +629,13 @@ class ApiClient {
                         reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText.slice(0, 200)}`));
                     }
                 };
-                xhr.onerror = () => reject(new Error('Network error'));
-                xhr.onabort = () => reject(new Error('Aborted'));
+                xhr.ontimeout = () => {
+                    if (settled) return;
+                    cleanup();
+                    reject(new Error(`Timeout after ${Math.round(CHUNK_TIMEOUT_MS / 1000)}s`));
+                };
+                xhr.onerror = () => { if (settled) return; cleanup(); reject(new Error('Network error')); };
+                xhr.onabort = () => { if (settled) return; cleanup(); reject(new Error('Aborted')); };
                 xhr.send(chunk);
             });
 
@@ -617,14 +650,19 @@ class ApiClient {
             for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
                 if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError');
                 if (attempt > 0) {
-                    // Exponential back-off: 1s, 2s
-                    await new Promise(r => setTimeout(r, 1000 * attempt));
+                    // 指數退避 + 抖動：1s,2s,4s,8s（上限 8s）+ 0–500ms jitter，
+                    // 避免多塊同時重試打爆 proxy。
+                    const backoff = Math.min(1000 * 2 ** (attempt - 1), 8000);
+                    const jitter = Math.floor(Math.random() * 500);
+                    await new Promise(r => setTimeout(r, backoff + jitter));
                     uploadedBytes[i] = 0; // reset progress for this chunk on retry
+                    reportProgress();
                 }
                 try {
                     await uploadChunkOnce(i, chunk, url);
                     return;
                 } catch (err) {
+                    if (err instanceof DOMException && err.name === 'AbortError') throw err;
                     lastErr = err as Error;
                     console.warn(`[MeetChi] Chunk ${i}/${totalChunks} attempt ${attempt + 1} failed:`, err);
                 }

@@ -44,6 +44,13 @@ router = APIRouter(prefix="/api/v1/ops", tags=["ops-admin"])
 _STUCK_STATUSES = ("PROCESSING", "REFINING", "TRANSCRIBED")
 _STUCK_THRESHOLD_MIN = 15
 
+# 2026-07-08：孤兒 PENDING 偵測。分塊上傳若在中途中斷（企業網路/proxy 停滯），
+# compose 只在最後一塊執行 → 音檔永不完成，會議卡在 PENDING、無 task_status、
+# 0 段落。正常 PENDING 會很快被 worker 認領轉 PROCESSING；故 PENDING 超過此門檻
+# 且無段落者，幾乎必為「上傳未完成」的孤兒，應標記 FAILED 給使用者可讀回饋。
+_ORPHAN_PENDING_THRESHOLD_MIN = 30
+_ORPHAN_FAILURE_REASON = "上傳未完成（可能因網路中斷）。請刪除本會議後，在網路穩定時重新上傳音檔。"
+
 # ============================================
 # Role Constants
 # ============================================
@@ -320,6 +327,13 @@ async def list_meetings_ops(
             if ref:
                 stuck_min = int((datetime.utcnow() - ref).total_seconds() // 60)
                 is_stuck = stuck_min >= _STUCK_THRESHOLD_MIN
+        elif cur_status == "PENDING":
+            # 孤兒 PENDING：上傳未完成而卡住。以 created_at 起算（PENDING 期間
+            # updated_at 不變），且無逐字稿段落者才視為孤兒。
+            ref = m.created_at
+            if ref and seg_counts.get(m.id, 0) == 0:
+                stuck_min = int((datetime.utcnow() - ref).total_seconds() // 60)
+                is_stuck = stuck_min >= _ORPHAN_PENDING_THRESHOLD_MIN
         results.append(MeetingOpsItem(
             id=m.id,
             title=m.title or "Untitled",
@@ -520,6 +534,84 @@ async def reset_stuck_meeting(
         + (" and re-enqueued transcription" if result["reenqueued"] else "")
     )
     return result
+
+
+@router.post("/cleanup-orphan-uploads")
+async def cleanup_orphan_uploads(
+    ttl_minutes: int = Query(_ORPHAN_PENDING_THRESHOLD_MIN, ge=5, description="PENDING 超過此分鐘數視為孤兒"),
+    dry_run: bool = Query(True, description="預設只列出、不改動；設 false 才實際標記 FAILED"),
+    limit: int = Query(200, ge=1, le=1000),
+    user: dict = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """管理者：掃描並清理「上傳未完成」的孤兒 PENDING 會議。
+
+    背景：分塊上傳若在中途因網路/proxy 停滯中斷，compose 只在最後一塊執行，
+    音檔永不完成，會議卡在 PENDING、無段落、無 task_status，使用者只會看到永久
+    「排隊中」。此端點把超過 TTL 且無逐字稿段落的 PENDING 會議標記為 FAILED 並
+    附可讀原因，讓使用者知道要重新上傳（非刪除，可還原/重試）。
+
+    安全：dry_run 預設 true，只回報將受影響的清單；確認後帶 dry_run=false 執行。
+    可由 Cloud Scheduler 定期呼叫（dry_run=false）以自動化 TTL 清理。
+    """
+    cutoff = datetime.utcnow() - timedelta(minutes=ttl_minutes)
+    candidates = (
+        db.query(Meeting)
+        .filter(
+            Meeting.deleted_at.is_(None),
+            Meeting.status == MeetingStatus.PENDING,
+            Meeting.created_at < cutoff,
+        )
+        .order_by(Meeting.created_at.asc())
+        .limit(limit)
+        .all()
+    )
+
+    orphans = []
+    for m in candidates:
+        seg_count = (
+            db.query(func.count(TranscriptSegment.id))
+            .filter(TranscriptSegment.meeting_id == m.id)
+            .scalar()
+        ) or 0
+        if seg_count > 0:
+            continue  # 有段落 → 不是上傳孤兒，跳過（保守）
+        age_min = int((datetime.utcnow() - m.created_at).total_seconds() // 60) if m.created_at else None
+        orphans.append((m, age_min))
+
+    affected = []
+    for m, age_min in orphans:
+        affected.append({
+            "meeting_id": m.id,
+            "title": m.title or "Untitled",
+            "owner_upn": m.owner_upn,
+            "age_minutes": age_min,
+        })
+        if not dry_run:
+            m.status = MeetingStatus.FAILED
+            m.failure_reason = _ORPHAN_FAILURE_REASON
+            m.processing_stage = None
+            m.updated_at = datetime.utcnow()
+
+    if not dry_run and affected:
+        db.commit()
+        logger.warning(
+            f"[Ops] cleanup-orphan-uploads: marked {len(affected)} orphan PENDING → FAILED "
+            f"(ttl={ttl_minutes}m) by {user.get('email')}"
+        )
+
+    return {
+        "dry_run": dry_run,
+        "ttl_minutes": ttl_minutes,
+        "found": len(affected),
+        "action": "listed" if dry_run else "marked_failed",
+        "meetings": affected,
+        "message": (
+            f"找到 {len(affected)} 筆孤兒 PENDING（dry_run，未改動）。帶 dry_run=false 才會標記 FAILED。"
+            if dry_run else
+            f"已將 {len(affected)} 筆孤兒 PENDING 標記為 FAILED。使用者可刪除後重新上傳。"
+        ),
+    }
 
 
 @router.get("/my-role")
