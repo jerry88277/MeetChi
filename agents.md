@@ -94,6 +94,40 @@ Download (parallel) → Security Gate → Upload to GCS
 - 原始 log 引用（作為證據保留原始 UTC 時間時），需額外標注對應的台北時間
 - 程式碼內部仍應使用 UTC 儲存，僅在「面向使用者的輸出」層做轉換
 
+## 7. GPU ASR Image 建置規則 (Diarization 模型不得遺漏)
+
+> **背景事故（2026-07-08）**：以 `cloudbuild-gpu-asr.yaml`（`Dockerfile.gpu-service`）
+> 重建 GPU image 修 zh-nan bug，該 build **未 bake pyannote 模型、未設 `PYANNOTE_MODEL_PATH`**
+> → 退回 runtime 從 HF 下載 → 撞上無效 `HF_TOKEN`（14 字元佔位值）→ diarization 全失敗 →
+> 整場會議 0 說話者標籤（`speaker_mappings=null`）。逐字稿正常但講者資訊全失。
+
+### 7.1 強制規則：GPU image 的唯一正確建置來源
+- **觸發條件**：任何需要重建 / 部署 `meetchi-gpu-asr` 服務的情境（修 ASR bug、改語言邏輯、
+  升級 provider 等）。
+- **執行動作**：**一律使用 `apps/backend/cloudbuild-community1.yaml`**
+  （對應 `Dockerfile.gpu-service-community1`）建置。此 config 會：
+  1. 從 GCS `gs://prj-ai-meetchi-du-meetchi-audio/models/pyannote/speaker-diarization-community-1`
+     `gsutil cp` 下載 baked pyannote 模型；
+  2. `COPY models/pyannote/... ` 進 image、設 `ENV PYANNOTE_MODEL_PATH=/app/models/...`；
+  3. 使 diarization 走**本地模型**，不依賴 runtime HF 下載。
+  ```bash
+  gcloud builds submit --config apps/backend/cloudbuild-community1.yaml apps/backend \
+    --substitutions=_IMAGE_TAG="<meaningful-tag>" --project prj-ai-meetchi-du
+  ```
+- **禁止**：以 `cloudbuild-gpu-asr.yaml` / `Dockerfile.gpu-service` 建置生產 GPU image
+  （該版本缺 baked 模型，僅供無 diarization 的實驗，已於檔頭標註 DEPRECATED）。
+
+### 7.2 驗證方式（部署後必做，物理證據）
+- 上傳一場多人音檔（或重跑既有會議），確認 GPU log 出現
+  `Done for ...: N segments, K speakers`，且 **K > 0**（非 `0 speakers`）。
+- DB 檢查：`transcript_segments.speaker` 非空、`meetings.speaker_mappings` 非 null。
+- 若見 `Pipeline.from_pretrained returned None` / `Invalid user token` → 即為用錯 build，
+  退回 §7.1 以 community1 config 重建。
+
+### 7.3 模型異動時的合規串接
+- 若需**更新** pyannote 版本或重新下載模型：先依 §4（ModelScan + Fickling 掃描）通過後，
+  才 `gsutil` 上傳至上述 GCS 路徑，再以 §7.1 重建 image。
+
 ---
 
 請將以上 Harness 控制規則深刻內化於每次生成的 `task.md` 之中。沒有經過 Evaluator (驗證層) 的程式碼，不叫完成。

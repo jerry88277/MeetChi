@@ -107,6 +107,30 @@ gcloud run services describe meetchi-backend --region asia-southeast1 --format "
 
 ---
 
+## 🎧 GPU ASR 部署（meetchi-gpu-asr）
+
+> ⛔ **強制規則（agents.md §7）**：GPU image **一律**用 `cloudbuild-community1.yaml` 建置，
+> 因它會 bake pyannote diarization 模型（`PYANNOTE_MODEL_PATH`）。用 `cloudbuild-gpu-asr.yaml`
+> 會導致 diarization 退回 runtime HF 下載 → 失敗 → 整場 **0 說話者標籤**（2026-07-08 事故）。
+
+### Step 1: 建置 GPU Image（唯一正確方式）
+```bash
+gcloud builds submit --config apps/backend/cloudbuild-community1.yaml apps/backend \
+  --substitutions=_IMAGE_TAG="<meaningful-tag>" --project prj-ai-meetchi-du
+```
+
+### Step 2: 部署 + 鎖流量
+```bash
+gcloud run services update meetchi-gpu-asr --image asia-southeast1-docker.pkg.dev/prj-ai-meetchi-du/meetchi/meetchi-gpu-asr:<tag> --region asia-southeast1 --project prj-ai-meetchi-du
+gcloud run services update-traffic meetchi-gpu-asr --region asia-southeast1 --to-latest --project prj-ai-meetchi-du
+```
+
+### Step 3: 驗證 diarization 生效（必做）
+> 重跑一場多人會議，GPU log 須出現 `N segments, K speakers` 且 **K > 0**。
+> 若見 `Pipeline.from_pretrained returned None` / `Invalid user token` → 用錯 build，退回 Step 1。
+
+---
+
 ## 🎨 Frontend 部署
 
 > ⚠️ **雙重防護機制（Belt & Suspenders）**

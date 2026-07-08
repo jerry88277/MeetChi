@@ -1,3 +1,8 @@
+# ⛔ DEPRECATED — 請勿用於生產 GPU 部署（2026-07-08）
+# 此 config 使用 Dockerfile.gpu-service，**不會 bake pyannote 模型、不設 PYANNOTE_MODEL_PATH**，
+# 導致 diarization 退回 runtime HF 下載 → 失敗 → 整場 0 說話者標籤（見 agents.md §7、devlog 2026-07-08）。
+# ✅ 生產 GPU image 一律用：apps/backend/cloudbuild-community1.yaml（含 baked pyannote）。
+# 本檔僅保留供「無 diarization 需求」的實驗用途。
 steps:
   - name: 'gcr.io/cloud-builders/docker'
     args:
