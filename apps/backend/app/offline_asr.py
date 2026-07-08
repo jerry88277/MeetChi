@@ -101,6 +101,12 @@ class BreezeASRConfig:
     no_speech_threshold: float = field(
         default_factory=lambda: float(os.getenv("ASR_NO_SPEECH_THRESHOLD", "0.6"))
     )
+    # temperature fallback ladder：**必須是多值序列**，否則 compression_ratio /
+    # log_prob 門檻無法真正丟棄壞段落（faster-whisper 只在 fallback 溫度用盡時才
+    # 依門檻放棄該段）。先前誤設單一 temperature=0.0 反而關閉此機制，殘留幻覺。
+    temperatures: tuple = field(
+        default_factory=lambda: (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
+    )
     # WhisperX diarization settings
     enable_diarization: bool = True
     min_speakers: int = 1
@@ -267,7 +273,7 @@ class BreezeASRProvider(OfflineASRProvider):
             compression_ratio_threshold=self.config.compression_ratio_threshold,
             log_prob_threshold=self.config.log_prob_threshold,
             no_speech_threshold=self.config.no_speech_threshold,
-            temperature=0.0,
+            temperature=self.config.temperatures,
         )
 
         # Materialize iterator

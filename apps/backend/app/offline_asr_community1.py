@@ -136,7 +136,7 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
             compression_ratio_threshold=self.config.compression_ratio_threshold,
             log_prob_threshold=self.config.log_prob_threshold,
             no_speech_threshold=self.config.no_speech_threshold,
-            temperature=0.0,
+            temperature=self.config.temperatures,
         )
 
         raw_segments = list(segments_iter)
