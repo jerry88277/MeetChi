@@ -2,6 +2,7 @@
 
 import React, { useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import {
     Mic,
     Clock,
@@ -65,6 +66,7 @@ import { TOUR_STORAGE_KEY, TOUR_DISMISSED_KEY } from '@/lib/config';
 // --- Main App Component ---
 export default function DashboardPage() {
     const { data: session } = useSession();
+    const router = useRouter();
 
     // Read initial view from URL ?view= param (for direct links and browser back/forward)
     const getInitialView = (): 'dashboard' | 'record' | 'detail' | 'settings' | 'templates' | 'admin' | 'rag' => {
@@ -533,34 +535,15 @@ export default function DashboardPage() {
         }
     };
 
-    const handleViewDetail = async (meeting: Meeting) => {
-        // 立即切換到 detail 頁顯示 list 帶來的 metadata (status/title/summary/decisions/risks/keyQuotes)
-        setSelectedMeeting(meeting);
-        setCurrentView('detail');
-        // 2026-05-22 (feedback #8)：URL 加上會議 ID 讓使用者可分享 / 重整保留位置。
-        // 使用 history.pushState 不觸發 Next.js 路由重渲染（SPA 內部繼續顯示），
-        // 但若 user 重整，Next 會載入 /dashboard/meetings/[meeting_id]/page.tsx
-        // deep-link 路由（已存在）→ 看到同樣的詳情頁。
-        if (typeof window !== 'undefined') {
-            window.history.pushState(null, '', `/dashboard/meetings/${meeting.id}`);
-        }
-
-        // 背景補拉完整 transcript_segments — list endpoint 為了效能不回 segments (PR #26)
-        // 使用者會先看到 TL;DR 與結論摘要，逐字稿在 1~2s 後到位
-        if (meeting.status === 'completed') {
-            try {
-                const full = await api.getMeeting(meeting.id);
-                const fullTransformed = transformMeeting(full);
-                // 期間 user 若已點別的會議，避免覆蓋
-                setSelectedMeeting(prev =>
-                    prev?.id === fullTransformed.id ? fullTransformed : prev
-                );
-            } catch (err) {
-                console.error('Failed to fetch full meeting detail:', err);
-                // graceful — list metadata 已顯示，逐字稿區塊保持空狀態提示
-            }
-        }
+    const handleViewDetail = (meeting: Meeting) => {
+        // 2026-07-08（方案 2）：改用真路由進入 /dashboard/meetings/[id]。
+        // 詳情頁改由 deep-link 路由 (page.tsx) 統一負責，成為單一真相來源，
+        // 「列表進入」與「重新整理」看到完全相同的畫面與操作（重新生成 / 刪除 /
+        // 更名 / processing 自動輪詢），消除先前 SPA 內嵌 DetailView 與 deep-link
+        // 頁功能不一致的問題。
+        router.push(`/dashboard/meetings/${meeting.id}`);
     };
+
 
     const handleRegenerateSummary = async (meetingId: string, templateName?: string) => {
         try {
