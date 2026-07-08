@@ -127,13 +127,18 @@ async def list_meetings(
     When user_upn is provided, only returns meetings where the user is a participant
     (MemPlace isolation). Without user_upn, returns all meetings (admin/legacy mode).
 
+    設計意圖（2026-07-08 釐清）：一般會議明細**一律**套用 MemPlace 隔離，
+    即使是管理者帳號，在自己的會議列表也只看到自己有權限的會議。
+    「查看/管理所有人的會議」屬**系統維運管理**職責，走 Ops Admin Panel
+    （`/api/v1/ops/meetings` + `/ops/meetings/{id}/full`），不在此端點放寬。
+
     Supports keyword search (title) and date range filtering.
     When include_meta=true, returns {items, total, skip, limit, has_more}.
     """
     query = db.query(Meeting).filter(Meeting.deleted_at.is_(None))
 
     if user_upn:
-        # MemPlace 隔離：只回傳使用者有權限的會議
+        # MemPlace 隔離：只回傳使用者有權限的會議（管理者亦同，維運看全部走 Ops Panel）
         query = (
             query
             .join(MeetingParticipant, Meeting.id == MeetingParticipant.meeting_id)

@@ -118,6 +118,10 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
         """Full pipeline: CT2 transcription → wav2vec2 alignment → community-1 diarization."""
         self._load_model()
 
+        # 防禦：zh-nan 等 MeetChi 內部模式標記非 faster-whisper 語言碼，正規化為 zh。
+        if language and language.startswith("zh-"):
+            language = "zh"
+
         # --- Step 1: CTranslate2 Transcription ---
         logger.info(f"[Community1] Step 1/3: Transcribing {audio_path}")
         segments_iter, info = self._model.transcribe(

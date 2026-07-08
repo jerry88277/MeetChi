@@ -398,10 +398,16 @@ async def _run_asr_processing(request: ASRRefineRequest, start_time: float) -> A
                     _make_and_upload_playback_denoise(audio_path, original_gs, meeting_id, temp_dir)
                 audio_path = denoised
 
+        # zh-nan（國台英混合）是 MeetChi 內部模式標記，非 faster-whisper 語言碼
+        # （faster-whisper 只接受 zh/yue 等）。主轉錄一律用 zh，台語低信心段落由
+        # 下方 Plan B (_retranscribe_low_confidence) 以 Breeze-ASR-26 台語模型補。
+        # 先前直接傳 zh-nan → ValueError → 整段 ASR 失敗、0 段落、誤標「靜音」。
+        asr_language = "zh" if request.language == "zh-nan" else request.language
+
         # Run ASR synchronously
         result = await provider.transcribe_with_diarization(
             audio_path,
-            language=request.language,
+            language=asr_language,
             initial_prompt=request.initial_prompt or "",
         )
 

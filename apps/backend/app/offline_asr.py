@@ -229,6 +229,10 @@ class BreezeASRProvider(OfflineASRProvider):
         """
         self._load_model()
 
+        # 防禦：zh-nan 等 MeetChi 內部模式標記非 faster-whisper 語言碼，正規化為 zh。
+        if language and language.startswith("zh-"):
+            language = "zh"
+
         # --- Step 1: CTranslate2 Transcription ---
         logger.info(
             f"[Breeze ASR] Step 1/3: Transcribing {audio_path}"
