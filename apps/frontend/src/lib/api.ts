@@ -554,20 +554,39 @@ class ApiClient {
      * as raw application/octet-stream. Uploads CONCURRENCY chunks in parallel with
      * per-chunk retry to handle transient proxy drops.
      */
+    /**
+     * C (2026-07-08): 查詢已上傳的分塊 index，供「只補缺塊」續傳。
+     */
+    async getUploadParts(meetingId: string, total: number): Promise<{
+        uploaded_indices: number[];
+        missing_indices: number[];
+        complete: boolean;
+    }> {
+        return this.fetch(`/api/v1/meetings/${meetingId}/upload-parts?total=${total}`);
+    }
+
     async chunkedUpload(
         meetingId: string,
         file: File,
         onProgress?: (percent: number, loaded: number, total: number) => void,
         signal?: AbortSignal,
     ): Promise<void> {
-        const CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB per chunk (was 2MB)
-        const CONCURRENCY = 4;              // 4 parallel (was 2)
-        const MAX_RETRIES = 5;              // was 3 — enterprise proxies drop often
-        // 2026-07-08 止血：企業透明 Proxy 常「hold 住連線但不回應」，XHR 既不 onload
-        // 也不 onerror → Promise 永久 pending → 重試不觸發 → 上傳靜默凍結（孤兒 PENDING）。
-        // 兩道防線：(1) xhr.timeout 硬上限；(2) 進度閒置看門狗（一段時間無 bytes 前進即 abort）。
-        const CHUNK_TIMEOUT_MS = 120_000;   // 單塊硬上限（8MB 於極慢線路 ~64s，留裕度）
+        // B-lite (2026-07-08): 依檔案大小動態選 chunk / 併發。
+        // 大檔在企業慢網下，較小 chunk + 較低併發更能穩定通過 proxy（單塊失敗成本低、
+        // 重試更快），小檔則用大 chunk 減少往返。
+        const sizeMB = file.size / (1024 * 1024);
+        const CHUNK_SIZE = (sizeMB >= 200 ? 4 : sizeMB >= 50 ? 5 : 8) * 1024 * 1024;
+        const CONCURRENCY = sizeMB >= 200 ? 3 : 4;
+        const MAX_RETRIES = 5;              // enterprise proxies drop often
+        // 止血：企業透明 Proxy 常「hold 住連線但不回應」，XHR 既不 onload 也不 onerror
+        // → Promise 永久 pending → 重試不觸發 → 上傳靜默凍結（孤兒 PENDING）。
+        // 兩道防線：(1) xhr.timeout 硬上限；(2) 進度閒置看門狗（無 bytes 前進即 abort）。
+        const CHUNK_TIMEOUT_MS = 120_000;   // 單塊硬上限
         const STALL_MS = 30_000;            // 30s 無任何進度即視為停滯 → abort → 重試
+        // G (2026-07-08): 上傳追蹤 ID，貫穿前後端 log 便於 IT 追查。
+        const uploadId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
         const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
 
         const uploadedBytes = new Array<number>(totalChunks).fill(0);
@@ -577,6 +596,25 @@ class ApiClient {
             const loaded = uploadedBytes.reduce((a, b) => a + b, 0);
             onProgress(Math.min(99, Math.floor(loaded / file.size * 100)), loaded, file.size);
         };
+
+        // C: 續傳——查已上傳分塊，已完成者直接記為滿進度、之後略過。
+        const skip = new Set<number>();
+        try {
+            const parts = await this.getUploadParts(meetingId, totalChunks);
+            for (const i of parts.uploaded_indices) {
+                if (i >= 0 && i < totalChunks) {
+                    skip.add(i);
+                    const start = i * CHUNK_SIZE;
+                    uploadedBytes[i] = Math.min(start + CHUNK_SIZE, file.size) - start;
+                }
+            }
+            if (skip.size > 0) {
+                console.info(`[MeetChi] upload_id=${uploadId} resume: skip ${skip.size}/${totalChunks} existing chunks`);
+                reportProgress();
+            }
+        } catch {
+            // 查詢失敗不致命：退化為全量上傳
+        }
 
         const uploadChunkOnce = (i: number, chunk: Blob, url: string): Promise<void> =>
             new Promise<void>((resolve, reject) => {
@@ -644,7 +682,8 @@ class ApiClient {
             const end = Math.min(start + CHUNK_SIZE, file.size);
             const chunk = file.slice(start, end);
             const url = `${this.baseUrl}/api/v1/meetings/${meetingId}/upload-chunk` +
-                `?index=${i}&total=${totalChunks}&filename=${encodeURIComponent(file.name)}`;
+                `?index=${i}&total=${totalChunks}&filename=${encodeURIComponent(file.name)}` +
+                `&upload_id=${encodeURIComponent(uploadId)}`;
 
             let lastErr: Error | null = null;
             for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -670,16 +709,27 @@ class ApiClient {
             throw new Error(`Chunk ${i}/${totalChunks} failed after ${MAX_RETRIES} attempts: ${lastErr?.message}`);
         };
 
-        // Upload with controlled concurrency: keep CONCURRENCY slots busy
-        let nextChunk = 0;
-        const runSlot = async (): Promise<void> => {
-            while (nextChunk < totalChunks) {
-                const i = nextChunk++;
-                await uploadChunkWithRetry(i);
-            }
-        };
-        const slots = Array.from({ length: Math.min(CONCURRENCY, totalChunks) }, runSlot);
-        await Promise.all(slots);
+        // Upload with controlled concurrency.
+        // C + 競態修正：先併發傳「非最後一塊」（略過已上傳者），全部完成後，再單獨
+        // 傳「最後一塊」觸發後端 compose。確保 compose 時所有 parts 皆已就緒
+        // （避免最後一塊在併發下先完成、compose 看到缺塊而 409 的競態）。
+        const lastIdx = totalChunks - 1;
+        if (totalChunks === 1) {
+            await uploadChunkWithRetry(0); // 單塊：直接觸發 compose
+        } else {
+            const queue = [...Array(lastIdx).keys()].filter(i => !skip.has(i));
+            let qp = 0;
+            const runSlot = async (): Promise<void> => {
+                while (qp < queue.length) {
+                    const i = queue[qp++];
+                    await uploadChunkWithRetry(i);
+                }
+            };
+            const slots = Array.from({ length: Math.min(CONCURRENCY, Math.max(1, queue.length)) }, runSlot);
+            await Promise.all(slots);
+            // 最後一塊一律上傳以觸發 compose（若中間仍缺塊，後端回 409 + 缺塊清單）
+            await uploadChunkWithRetry(lastIdx);
+        }
 
         if (onProgress) onProgress(100, file.size, file.size);
     }

@@ -591,6 +591,7 @@ async def upload_chunk(
     chunk_index: int = Query(..., alias="index", ge=0),
     total_chunks: int = Query(..., alias="total", ge=1),
     filename: str = Query(default="audio.webm"),
+    upload_id: str = Query(default="", description="前端生成的上傳追蹤 ID，貫穿前後端 log"),
     db: Session = Depends(get_db),
 ):
     """Receive one binary chunk and store in GCS. On the last chunk, compose all parts
@@ -609,6 +610,7 @@ async def upload_chunk(
     if not chunk_data:
         raise HTTPException(status_code=400, detail="Empty chunk body")
 
+    uid = f" upload_id={upload_id}" if upload_id else ""
     try:
         client = gcs_storage.Client()
         bucket = client.bucket(bucket_name)
@@ -616,21 +618,40 @@ async def upload_chunk(
         # Store chunk as a separate blob
         chunk_blob = bucket.blob(f"audio/{meeting_id}/parts/{chunk_index:06d}")
         chunk_blob.upload_from_string(chunk_data, content_type="application/octet-stream")
-        logger.info(f"[ChunkedUpload] meeting={meeting_id} chunk={chunk_index}/{total_chunks} size={len(chunk_data)}")
+        logger.info(f"[ChunkedUpload] meeting={meeting_id} chunk={chunk_index}/{total_chunks} size={len(chunk_data)}{uid}")
 
         # If not the last chunk, just confirm receipt
         if chunk_index < total_chunks - 1:
             return {"status": "chunk_received", "index": chunk_index}
 
-        # Last chunk: compose all parts into final audio file
-        ext = os.path.splitext(filename)[1] if filename else ".webm"
-        if not ext:
-            ext = ".webm"
-        final_blob_name = f"audio/{meeting_id}{ext}"
+        # === D (2026-07-08): compose 前驗證所有 parts 齊全 ===
+        # 先前無腦 range(total) compose，若中間有缺塊 → compose 失敗或產生壞檔。
+        # 改為逐一 exists() 檢查，缺塊回明確 409 + 缺塊清單，讓前端只補缺塊後重試。
         source_blobs = [
             bucket.blob(f"audio/{meeting_id}/parts/{i:06d}")
             for i in range(total_chunks)
         ]
+        missing = [i for i, b in enumerate(source_blobs) if not b.exists()]
+        if missing:
+            logger.warning(
+                f"[ChunkedUpload] meeting={meeting_id} compose aborted: "
+                f"{len(missing)} missing parts {missing[:20]}{'...' if len(missing) > 20 else ''}{uid}"
+            )
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "missing_chunks",
+                    "message": f"缺少 {len(missing)} 個分塊，請補傳後再合成",
+                    "missing_indices": missing,
+                    "total_chunks": total_chunks,
+                },
+            )
+
+        # Last chunk (all parts present): compose all parts into final audio file
+        ext = os.path.splitext(filename)[1] if filename else ".webm"
+        if not ext:
+            ext = ".webm"
+        final_blob_name = f"audio/{meeting_id}{ext}"
         final_blob = bucket.blob(final_blob_name)
         _compose_blobs(bucket, source_blobs, final_blob, f"audio/{meeting_id}/meta/")
 
@@ -689,9 +710,53 @@ async def upload_chunk(
         logger.info(f"[ChunkedUpload] Complete: meeting={meeting_id} chunks={total_chunks} blob={final_blob_name}")
         return {"status": "complete", "audio_url": meeting.audio_url}
 
+    except HTTPException:
+        # 明確的業務錯誤（如 409 缺塊）直接往上拋，不要被下方轉成 500
+        raise
     except Exception as e:
         logger.error(f"[ChunkedUpload] Failed for meeting {meeting_id} chunk {chunk_index}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Chunk upload failed: {str(e)}")
+
+
+@router.get("/{meeting_id}/upload-parts", tags=["Meeting Operations"])
+async def list_upload_parts(
+    meeting_id: str,
+    total: int = Query(..., ge=1, description="預期總分塊數"),
+    db: Session = Depends(get_db),
+):
+    """C (2026-07-08): 回傳已存在於 GCS 的分塊 index，供前端「只補缺塊」續傳。
+
+    前端上傳前先查此端點，跳過已完成的分塊，中斷後重傳只補缺塊，
+    大檔中斷可省去大量重複傳輸。
+    """
+    meeting = db.query(Meeting).filter(
+        Meeting.id == meeting_id, Meeting.deleted_at.is_(None)
+    ).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    bucket_name = os.getenv("GCS_BUCKET")
+    if not bucket_name:
+        raise HTTPException(status_code=500, detail="GCS_BUCKET not configured on server")
+
+    client = gcs_storage.Client()
+    bucket = client.bucket(bucket_name)
+    prefix = f"audio/{meeting_id}/parts/"
+    # 以 list_blobs 一次列出已上傳分塊（避免逐一 exists() N 次呼叫）
+    existing = set()
+    for blob in client.list_blobs(bucket, prefix=prefix):
+        name = blob.name.rsplit("/", 1)[-1]
+        if name.isdigit():
+            existing.add(int(name))
+    uploaded = sorted(i for i in existing if i < total)
+    missing = [i for i in range(total) if i not in existing]
+    return {
+        "meeting_id": meeting_id,
+        "total": total,
+        "uploaded_indices": uploaded,
+        "missing_indices": missing,
+        "complete": len(missing) == 0,
+    }
 
 
 class AudioUrlResponse(BaseModel):
