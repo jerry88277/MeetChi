@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.audit import record_action
 from app.database import get_db
+from app.auth import get_current_user
 from app.models import (
     Meeting,
     MeetingStatus,
@@ -115,34 +116,39 @@ async def create_meeting(meeting_data: MeetingCreate, db: Session = Depends(get_
 async def list_meetings(
     skip: int = 0,
     limit: int = 100,
-    user_upn: Optional[str] = Query(None, description="當前登入用戶 UPN，啟用 MemPlace 隔離"),
+    user_upn: Optional[str] = Query(None, description="（相容保留）前端登入用戶 UPN；實際隔離以認證身分為準"),
     keyword: Optional[str] = Query(None, description="依會議標題搜尋"),
     date_from: Optional[str] = Query(None, description="起始日期 (YYYY-MM-DD)"),
     date_to: Optional[str] = Query(None, description="結束日期 (YYYY-MM-DD)"),
     include_meta: bool = Query(False, description="Include pagination metadata in response"),
     db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """List active (non-deleted) meetings filtered by user access.
-
-    When user_upn is provided, only returns meetings where the user is a participant
-    (MemPlace isolation). Without user_upn, returns all meetings (admin/legacy mode).
 
     設計意圖（2026-07-08 釐清）：一般會議明細**一律**套用 MemPlace 隔離，
     即使是管理者帳號，在自己的會議列表也只看到自己有權限的會議。
     「查看/管理所有人的會議」屬**系統維運管理**職責，走 Ops Admin Panel
     （`/api/v1/ops/meetings` + `/ops/meetings/{id}/full`），不在此端點放寬。
 
+    安全（2026-07-08 修）：隔離改以**已認證身分**（get_current_user）為準，
+    **不信任**前端傳入的 `user_upn` query。修正先前 `user_upn=None → 回全部`
+    的 legacy 漏洞（前端漏傳/未帶時任何登入者都能看全部），並防越權
+    （偽造他人 user_upn 也無效）。
+
     Supports keyword search (title) and date range filtering.
     When include_meta=true, returns {items, total, skip, limit, has_more}.
     """
     query = db.query(Meeting).filter(Meeting.deleted_at.is_(None))
 
-    if user_upn:
-        # MemPlace 隔離：只回傳使用者有權限的會議（管理者亦同，維運看全部走 Ops Panel）
+    # 以認證身分強制 MemPlace 隔離。dev@example.com 為 AUTH_REQUIRED=false 的 mock，
+    # 視為 dev/legacy（不隔離，本機開發便利）；正式環境認證後一律隔離。
+    authed_email = (current_user.get("email") or "").strip()
+    if authed_email and authed_email != "dev@example.com":
         query = (
             query
             .join(MeetingParticipant, Meeting.id == MeetingParticipant.meeting_id)
-            .filter(MeetingParticipant.user_upn == user_upn)
+            .filter(MeetingParticipant.user_upn == authed_email)
         )
 
     if keyword:
@@ -907,17 +913,23 @@ async def update_corrections(corrections: dict):
 # ============================================
 @router.get("/api/v1/dashboard")
 async def get_dashboard_aggregate(
-    user_upn: Optional[str] = Query(None),
+    user_upn: Optional[str] = Query(None, description="（相容保留）實際隔離以認證身分為準"),
     db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
-    """Aggregate dashboard data in a single API call."""
+    """Aggregate dashboard data in a single API call.
+
+    安全（2026-07-08）：與 list_meetings 一致，以**已認證身分**強制 MemPlace 隔離，
+    不信任前端傳入的 user_upn（修 user_upn=None → 回全部彙總/近期會議的洩漏）。
+    """
     from sqlalchemy import func
 
     base_query = db.query(Meeting).filter(Meeting.deleted_at.is_(None))
-    if user_upn:
+    authed_email = (current_user.get("email") or "").strip()
+    if authed_email and authed_email != "dev@example.com":
         base_query = base_query.join(
             MeetingParticipant, Meeting.id == MeetingParticipant.meeting_id
-        ).filter(MeetingParticipant.user_upn == user_upn)
+        ).filter(MeetingParticipant.user_upn == authed_email)
 
     total_meetings = base_query.count()
     processing_count = base_query.filter(Meeting.status == MeetingStatus.PROCESSING).count()
