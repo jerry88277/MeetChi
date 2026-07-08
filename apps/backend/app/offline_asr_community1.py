@@ -131,6 +131,12 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
             vad_filter=self.config.vad_filter,
             vad_parameters=self.config.vad_parameters,
             word_timestamps=True,
+            # 幻覺抑制（穩健型）— 與 BreezeASRProvider 一致
+            condition_on_previous_text=self.config.condition_on_previous_text,
+            compression_ratio_threshold=self.config.compression_ratio_threshold,
+            log_prob_threshold=self.config.log_prob_threshold,
+            no_speech_threshold=self.config.no_speech_threshold,
+            temperature=0.0,
         )
 
         raw_segments = list(segments_iter)

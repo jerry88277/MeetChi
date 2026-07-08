@@ -82,9 +82,25 @@ class BreezeASRConfig:
     language: str = "zh"
     vad_filter: bool = True
     vad_parameters: Dict = field(default_factory=lambda: {
-        "min_silence_duration_ms": 500,
+        "min_silence_duration_ms": 1000,
         "speech_pad_ms": 200,
+        "threshold": 0.5,
     })
+    # 2026-07-08 幻覺抑制（穩健型）：
+    # 會前環境雜訊/靜音被 Whisper 強制解碼成連鎖幻覺（重複迴圈、無意義文字）。
+    # 這組參數斷開幻覺自我延續 + 以聲學/統計門檻濾除低品質輸出。可用 env 覆寫調校。
+    condition_on_previous_text: bool = field(
+        default_factory=lambda: os.getenv("ASR_CONDITION_ON_PREV", "false").lower() in ("1", "true", "yes")
+    )
+    compression_ratio_threshold: float = field(
+        default_factory=lambda: float(os.getenv("ASR_COMPRESSION_RATIO_THRESHOLD", "2.4"))
+    )
+    log_prob_threshold: float = field(
+        default_factory=lambda: float(os.getenv("ASR_LOGPROB_THRESHOLD", "-1.0"))
+    )
+    no_speech_threshold: float = field(
+        default_factory=lambda: float(os.getenv("ASR_NO_SPEECH_THRESHOLD", "0.6"))
+    )
     # WhisperX diarization settings
     enable_diarization: bool = True
     min_speakers: int = 1
@@ -246,6 +262,12 @@ class BreezeASRProvider(OfflineASRProvider):
             vad_parameters=self.config.vad_parameters,
             word_timestamps=True,
             initial_prompt=initial_prompt or None,
+            # 幻覺抑制（穩健型）
+            condition_on_previous_text=self.config.condition_on_previous_text,
+            compression_ratio_threshold=self.config.compression_ratio_threshold,
+            log_prob_threshold=self.config.log_prob_threshold,
+            no_speech_threshold=self.config.no_speech_threshold,
+            temperature=0.0,
         )
 
         # Materialize iterator
