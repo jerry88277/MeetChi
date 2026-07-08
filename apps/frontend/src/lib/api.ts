@@ -204,16 +204,37 @@ export interface FeedbackRead {
 class ApiClient {
     private baseUrl: string;
     private token: string | null = null;
+    // 2026-07-08：token 就緒閘門。api 是 singleton，token 由 ApiTokenSync/Dashboard
+    // 於 session 解析後（非同步）以 setToken 設定。若元件在 token 就緒前就發 API 呼叫
+    // （AUTH_REQUIRED=true 後會 401 → 例如模板頁「載入失敗」），fetch 會先等此 promise。
+    private tokenResolved = false;
+    private resolveTokenReady!: () => void;
+    private tokenReady: Promise<void>;
 
     constructor(baseUrl: string) {
         this.baseUrl = baseUrl;
+        this.tokenReady = new Promise<void>((res) => { this.resolveTokenReady = res; });
     }
 
     /**
-     * Set authentication token for API requests
+     * Set authentication token for API requests.
+     * 首次呼叫（無論 token 是否為 null）即解除 token 就緒閘門，避免 fetch 無限等待。
      */
     setToken(token: string | null): void {
         this.token = token;
+        if (!this.tokenResolved) {
+            this.tokenResolved = true;
+            this.resolveTokenReady();
+        }
+    }
+
+    /** 等待 token 就緒（最多 ~3s），避免初次載入的認證競態。 */
+    private async waitForToken(): Promise<void> {
+        if (this.tokenResolved) return;
+        await Promise.race([
+            this.tokenReady,
+            new Promise<void>((r) => setTimeout(r, 3000)),
+        ]);
     }
 
     /**
@@ -237,6 +258,8 @@ class ApiClient {
         endpoint: string,
         options: RequestInit = {}
     ): Promise<T> {
+        // 等待 token 就緒，避免初次載入時的認證競態（401）。
+        await this.waitForToken();
         const url = `${this.baseUrl}${endpoint}`;
 
         // Build headers with optional Authorization
