@@ -43,3 +43,35 @@ Score = `z(centroid) + z(rolloff) + z(ZCR)` (strongest 3 features):
 - `uat03_signal_features.png` - 8-feature time series (hop 0.5s)
 - `uat03_spectrogram.png` - spectrogram (left low-freq muffled vs right high-freq clear)
 - `uat03_speech_confidence.png` - composite confidence score + suggested threshold
+
+---
+
+## Axis-B Validation (2026-07-10) — Spectral Gate Feature Design
+
+Per user insight (boundary visible in <750Hz low band; single horizontal line on
+prior features fails), tested spectral-STRUCTURE features with per-window optimal
+single-threshold balanced accuracy against the 7:52 boundary.
+
+| Feature | Cohen's d | Single-thr bal-acc | Note |
+|---|---|---|---|
+| **A1. Spectral Tilt (2-4kHz / <750Hz, dB)** | **2.39** | **90%** | strongest single; high=real |
+| B1. Low-band CPP (dB) | 1.71 | 84% | harmonic-structure clarity, high=real |
+| B2. Low-band(<750Hz) Flatness | 0.89 | 70% | smear=high, structured=low |
+| B3. Low-band Spectral Contrast | 0.80 | 68% | harmonic peaks |
+| **A1 + B1 (multivariate)** | **2.54** | **92%** | joint shape×structure |
+| A1 + B1 + B2 | 2.76 | 92% | marginal gain |
+
+### Validated design conclusion
+- The discriminator is **spectral SHAPE + STRUCTURE**, not level (RMS d=0.02).
+- **Axis A (spectral tilt)** — energy balance high-band vs the user's <750Hz band —
+  is the single best feature (d=2.39, 90%), directly encoding "muffled far-field
+  vs articulate near-field".
+- **Axis B (low-band CPP)** — harmonic clarity in <750Hz ("clear line vs smear") —
+  is complementary; combining A1+B1 reaches **92%** with the decision boundary
+  landing at 7:52.
+- Figure: `uat03_axisB_validation.png` (each feature's best single threshold shown).
+
+### Recommended gate (to implement)
+score = z(spectral_tilt) + z(low_band_CPP); gate-out sustained low-score spans
+(hysteresis + min-duration), mask as non-speech before Whisper. Per-meeting
+adaptive normalization (median/MAD) for robustness across rooms/mics.
