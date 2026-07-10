@@ -3,7 +3,7 @@
 > **文件性質**：實作規劃（本文件於個人環境撰寫，實作於公司內部環境執行）
 > **目標**：讓 MeetChi 對 ASR 逐字稿，產出接近「未來商務展 `彙整.md`」等級的**單場深度報告**
 > **撰寫日**：2026-07-10 ｜ **基準分支**：`main`（commit `c138219`）
-> **標竿樣本**：`D:\Side_project\BusinessTripReport\202606024 未來商務展\01_簡立峰_AI趨勢與黃金十年\彙整.md`
+> **標竿樣本（in-repo）**：[`reference-quality-benchmarks.md`](./reference-quality-benchmarks.md) §1.2（原始檔在 repo 外：`202606024 未來商務展\01_簡立峰...\彙整.md`）
 
 ---
 

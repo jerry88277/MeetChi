@@ -2,7 +2,7 @@
 
 > **文件性質**：架構規劃（承接 [`meetchi-deep-report-upgrade.md`](./meetchi-deep-report-upgrade.md)，本文補上「查詢綜合層」）
 > **撰寫日**：2026-07-10 ｜ **基準分支**：`main`（commit `c138219`）
-> **逆向來源**：使用者的 Question Q（經理人視角、指定 7 場主題的綜合洞察）→ Answer A（一篇跨主題整合長文）
+> **逆向來源**：使用者的 Question Q（經理人視角、指定 7 場主題的綜合洞察）→ Answer A（一篇跨主題整合長文）。**Q + Answer A 全文（in-repo）見 [`reference-quality-benchmarks.md`](./reference-quality-benchmarks.md) §2。**
 > **情境假設**：把 `202606024 未來商務展` 資料夾中 USPACE / nuva / 華夏玻璃 / beBit / 台哥大 / 拉亞漢堡 / 會後對談等**多場逐字稿，假設為同一個音檔轉錄出來的單一長會議**，用以模擬「多主題、多講者、多語氣」。
 
 ---

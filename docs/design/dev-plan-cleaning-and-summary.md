@@ -234,7 +234,7 @@ D. 講者整合仲裁 L2（Q3 定案：本次納入）
 ### 7.1 Golden fixture
 
 - `tests/fixtures/golden/.../transcript_raw.txt` + `must_capture_anchors.yaml`（錨點 = 數字/人名/類比/宣稱）。
-- standard 化的「彙整.md」作為 speaker_content 深度基準（📝 講者原始內容層）。
+- standard 化的「彙整.md」作為 speaker_content 深度基準（📝 講者原始內容層）。**in-repo 樣本見 [`reference-quality-benchmarks.md`](./reference-quality-benchmarks.md) §1.2**（Answer A/L6 基準見 §2）。
 
 ### 7.2 量化指標
 
