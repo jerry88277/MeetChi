@@ -1,6 +1,6 @@
 # MeetChi 開發規劃：逐字稿保真清理（L1）＋ 摘要深度萃取（L4）
 
-> 狀態：規劃待拍板 ｜ 範圍：**只做**（A）逐字稿保真清理 deletion-only、（B）真實內容深度萃取。**不做**網路查證。
+> 狀態：**5 題已拍板（2026-07-10，見 §9）**，待實作 ｜ 範圍：**只做**（A）逐字稿保真清理 deletion-only、（B）真實內容深度萃取、（D）L2 講者整合仲裁（Q3 納入）。**不做**網路查證。
 > 依據：能力抽取兩份 + 對抗式批判一份 + 現有 code 事實（main c138219+）。本文已把批判的 conflicts / gaps / ordering / missing_tests / residual_risks 全部內化為工程項或紅線。
 > 出處：整合自 [`meetchi-deep-report-upgrade.md`](./meetchi-deep-report-upgrade.md)（L1-L5）與 [`meetchi-query-insight-architecture.md`](./meetchi-query-insight-architecture.md)（L6）中「保真清理 + 摘要優化」相關工程；本文聚焦「工程怎麼做」，System Prompt 全文見前兩份文件。
 > ⚠️ 行號校正：本文所有 `file:line` 僅供參考，**一律以符號（函式/類別名）定位**——產生本文的分析曾讀到過時副本而誤植行號（P0 已列為強制重定位項）。
@@ -95,8 +95,13 @@ C. 共用地基（批判補齊，兩能力共享）
 ├─ C2 golden fixture + eval 指標（anchor_hit_rate / specificity_density / cleaning-coverage）
 ├─ C3 segment id 穩定性契約（ASR→L1→L2→L3 join 不斷）
 ├─ C4 asr_flags 跨層契約（生產端 L1/L4 + 消費端前端 + 與 glossary 去重）
-├─ C5 RAG/embedding 欄位切換 + 歷史回填策略
-└─ C6 每會議成本/呼叫數上界預算
+├─ C5 RAG/embedding 欄位切換 + 歷史策略（Q4 定案：以舊會議**音檔重跑**新 pipeline，產生新版產物供新舊 A/B）
+└─ C6 每會議成本/呼叫數（Q5 定案：上界**先寬**，先實測單一長會議呼叫數再定）
+
+D. 講者整合仲裁 L2（Q3 定案：本次納入）
+├─ D1 融合聲學 cosine（`_link_speakers_across_chunks`, 門檻 0.65）與 LLM `infer_speaker_roles` 成單一 canonical speaker map；仲裁規則：衝突以聲學為主、over-merge≫over-split（預設不合併），門檻先量測 cosine 分布或用 30s overlap 錨點校準（不憑空定）
+├─ D2 speaker_content 內容歸屬吃 canonical map（B1 依賴）
+└─ D3 speak_time_pct Python 依 canonical map 由 diarization 時長聚合回填（B7 依賴，**產生真實值、不再一律 None**）
 ```
 
 ### 3.2 對照表
@@ -177,10 +182,10 @@ C. 共用地基（批判補齊，兩能力共享）
 | B4 | Pass2 → Prompt C | `multi_pass_summary.py`：`PASS2_PROMPT_TEMPLATE`、`_pass2_merge` | 跨主題二階綜合：點名橫跨哪幾個主題、保留講者宣稱標記、誠實少列。**merge 輸入改帶各主題 `essence` 全文 + `key_quotes` 全文，取代 `bullets[:5]` 截斷** | low-medium：merge context 變大但輸出小(~5K) |
 | B5 | 單次路徑資訊契約 | `template_engine.py`：`SUMMARY_V2_REQUIREMENTS`、bullets 20-30字、`long_meeting_addendum`（含 `:417`） | bullets 長度契約→具體性契約（每單元至少一個 number/named-entity/case）；加禁用套話黑名單（進行了深入討論/強調重要性/涵蓋多個面向）；深度層**放寬/移除 `long_meeting_addendum` 的「精簡優先/寧可少列」**——長會議走 multi-pass per-topic 而非壓縮單次 | low：需確認 >15K 自動走 multi-pass |
 | B6 | entity-preserving 抽樣 | `llm_utils.py`：`generate_summary` `lines[::step]`；`multi_pass_summary.py`：Pass0 sampled | `_entity_preserving_sample()`：對每行以 含數字/中文數字/具名實體/引號/專名 打分，優先保留高訊號、丟填充詞。**作用在 text_clean 之上**（合併 conflict #4：與 A5「改吃 text_clean」為**單一改動**，不 double-edit）。per-topic 路徑優先不抽樣 | medium：中文正則漏判，退化為 uniform 不致命 |
-| B7 | speak_time_pct → Optional + Python 回填 | `llm_utils.py`：`SpeakerContribution.speak_time_pct`；`template_engine.py`；`multi_pass_summary.py` Pass2 prompt；回填點 `tasks.py` | `float → Optional[float]=None`；prompt 移除要 LLM 估 `speak_time_pct`；改在 tasks.py 用 diarization segment 時長 Python 聚合回填。**回填點排在 L2 講者仲裁之後**（見 §6 懸空依賴） | low schema / medium wiring |
+| B7 | speak_time_pct → Optional + Python 回填 | `llm_utils.py`：`SpeakerContribution.speak_time_pct`；`template_engine.py`；`multi_pass_summary.py` Pass2 prompt；回填點 `tasks.py` | `float → Optional[float]=None`；prompt 移除要 LLM 估 `speak_time_pct`；改在 tasks.py 依 **L2 canonical speaker map（D3）** 用 diarization segment 時長 Python 聚合回填。L2 仲裁已納入（Q3）→ 回填**產生真實值**，排在 L2 仲裁 phase 之後 | low schema / medium wiring |
 | B8 | key_quotes 子字串驗證 | 新 helper `llm_utils.py`；呼叫點單次 `json.loads` 後、multi-pass `all_quotes` 組裝時 | `_verify_key_quotes(quotes, text_clean)`：quote.text 與 **text_clean**（非 raw，解 conflict #1）各自正規化後，驗證 quote 為 text_clean **連續子字串**；不符丟棄 + `logger.warning` | low-medium：正規化需處理標點/中英/全半形 |
 | B9 | _truncate_summary_lists 排序截尾 | `llm_utils.py`：`_truncate_summary_lists`、各層截尾迴圈 | `val[:cap]` 頭部截尾 → **先按 specificity 分數（含數字/具名實體/引號）排序再截尾**；套用 chapters/bullets/key_quotes/**speaker_content**。判準與 B10 共用同一函式 | low |
-| B10 | specificity_density + 軟閘門 + anchor | 新函式 `llm_utils.py` 或新 eval 模組；呼叫點 result 組裝後、generate_summary 回傳前 | `compute_specificity_density(units)`：含數字/具名實體單元佔比。低於閾值（如 0.6）`logger.warning`；**可選**觸發「一次有上限」重生（狀態卡榫防 retry storm）。另提供 `anchor_hit_rate` 對 golden fixture 計算供 eval | low：與截尾共用判準 |
+| B10 | specificity_density + 軟閘門 + anchor | 新函式 `llm_utils.py` 或新 eval 模組；呼叫點 result 組裝後、generate_summary 回傳前 | `compute_specificity_density(units)`：含數字/具名實體單元佔比。**Q5：閾值不硬編**——先在 P0/P2 埋探針量測長會議分布，規劃收斂機制（如取分布分位數）再定；低於閾值 `logger.warning`；重生**預設關閉**（待實測再決定是否啟用 + 「一次上限」+ 會議長度門檻）。另提供 `anchor_hit_rate` 對 golden fixture 供 eval | low：與截尾共用判準 |
 | B11 | Chapter schema 富欄位 | `llm_utils.py`：`Chapter`、新增 `SpeakerContent` | `SpeakerContent{point:str, elaboration:str}`；`Chapter` 增 `speaker_content: List[SpeakerContent]=[]` 與 `asr_flags: List[str]=[]`（Optional/default，舊資料不爆）。**扁平不加巢狀 maxItems**；list 上限靠 B9 事後截尾。**與 B7 合併為一批 schema 改動，對 live Gemini validator 一次重驗**（解 conflict #5） | low：影響單次路徑 response_schema |
 
 ### 5.2 Prompt 要點（全文放附錄/既有設計文件，此處只列工程契約）
@@ -211,13 +216,16 @@ C. 共用地基（批判補齊，兩能力共享）
 | **P1 資料模型（worktree）** | A4 alembic `segment.text_clean`（nullable，raw 不可變）；C3 segment id 穩定性契約（ASR→L1→L2→L3 join 不斷，定義 id 何時可重切併） | P0 | schema 遷移 | migration 正向套用 + raw 不受影響 + 可逆（text_clean 可 null）；worktree 驗證後才併回 | 刪 worktree / migration down |
 | **P2 L1 清理核心** | A1 EditList；A2 clean_transcript_fidelity；A3 四道護欄（消費 C1 util）；A6 glossary 順序；A7 冪等卡榫（存實際輸出）+ cleaning_coverage | P0, P1 | prompt 強度、no-op 退化 | 四道護欄 + 清理函式 unit test 綠燈；`py_compile` 過；「我不同意→我同意」被閘2 擋下 | git reset last-green |
 | **P3 L1 pipeline 整合** | A5 插入整合點（講者/主題切段前）；下游 Pass0 改吃 text_clean | P2 | 下游退化 | 實跑真實會議：text_clean 讀起來乾淨且忠於講者（人工比對，非只型別/單測） | 整合點加 feature flag 關閉 |
+| **P3b L2 講者整合仲裁（Q3 納入）** | D1 融合聲學 cosine + LLM `infer_speaker_roles` 成 canonical speaker map（仲裁：聲學為主、預設不合併、門檻先量測不憑空定）；D2 內容歸屬吃 map | P3（LLM 推斷吃 text_clean） | 門檻未校準 over-split；over-merge 不可逆 | 先量 cosine 分布/用 30s overlap 錨點；真實會議人工比對跨 chunk 同一人歸併正確、無 over-merge | flag 回退至現況雙機制 |
 | **P4 摘要 schema（一批重驗）** | B11 SpeakerContent/Chapter 富欄位 + B7 speak_time_pct→Optional，**合併為一次 Gemini validator 重驗**（解 conflict #5） | P1 | FSM 400 歸因錯誤 | 單次路徑 `response_schema=Chapter` 通過 live validator（不加 maxItems）；舊 summary JSON 缺欄讀取不爆 | schema revert |
 | **P5 needs_split 遞迴** | B3 遞迴切 mega-topic（深度/主題數上限） | P3, P4 | 遞迴爆炸、呼叫風暴 | 病態 mega-topic fixture：遞迴不超上限、冪等卡榫生效 | flag 關閉遞迴回單主題 |
 | **P6 移硬截 + 給預算** | B2 刪 `[:15000]`+`[::step]`、調高 max_output_tokens、MAX_TOKENS 改遞迴。**必在 P5 之後**（先移硬截而無遞迴會灌爆單次撞 MAX_TOKENS） | **P5** | 撞 65535 | MAX_TOKENS 回歸測試：finish_reason 非 MAX_TOKENS、JSON 不截斷 | revert 至硬截 |
-| **P7 深度萃取 prompt + 護欄** | B1 Prompt B；B4 Prompt C；B5 單次資訊契約；B6 entity-preserving（作用在 text_clean，與 A5 單一改動）；B8 key_quotes 對 text_clean 驗證；B9 排序截尾；B10 specificity_density。**B9/B10/B11 共用同一 specificity 判準函式** | P6 | 判準分歧、quote 誤丟 | key_quotes 驗證通過率趨近 100%；跨層 quote 測試（text_clean 連續、raw 非連續）通過；specificity_density≥0.6 | prompt/護欄 revert |
-| **P8 講者時長 + 檢索 + 回填** | B7 Python 回填 speak_time_pct（**排在 L2 講者仲裁之後**，見懸空依賴）；C5 embedding 改吃 text_clean + 遷移期一致性；歷史回填策略（見 §9） | P7 + L2 仲裁決策 | L2 仲裁未定成懸空依賴；新舊資料不一致 | speak_time 聚合 ~100%；embedding 切換後檢索不退化 | 回填 job 可重跑；embedding 雙索引並存 |
+| **P7 深度萃取 prompt + 護欄** | B1 Prompt B；B4 Prompt C；B5 單次資訊契約；B6 entity-preserving（作用在 text_clean，與 A5 單一改動）；B8 key_quotes 對 text_clean 驗證；B9 排序截尾；B10 specificity_density。**B9/B10/B11 共用同一 specificity 判準函式** | P6 | 判準分歧、quote 誤丟 | key_quotes 驗證通過率趨近 100%；跨層 quote 測試（text_clean 連續、raw 非連續）通過；specificity_density 達實測收斂值（Q5） | prompt/護欄 revert |
+| **P8 講者時長 + 檢索** | B7 Python 由 D3 canonical map 回填 speak_time_pct（真實值）；C5 embedding 改吃 text_clean + 遷移期一致性 | P7, **P3b** | 新舊資料不一致 | speak_time 聚合 ~100%；embedding 切換後檢索不退化 | embedding 雙索引並存 |
+| **P9 歷史 A/B（Q4 納入）** | C5 歷史策略：選定舊會議**以音檔重跑**新 pipeline，產生新版產物；對同一音檔做「舊版 ↔ 新版」A/B（anchor_hit_rate / specificity_density / 人工比對） | P7, P8 | 音檔重轉成本、diarization 非決定性致基準漂移 | 至少 1 場長會議舊/新版 A/B 報告產出；量化指標對照可解讀 | 重跑產物存旁路，不覆蓋既有會議 |
 
-> **懸空依賴警示**：P8 的 `speak_time_pct` Python 回填與 speaker_content 內容歸屬，依賴 **L2 講者仲裁**（現況聲學 cosine 0.65 與 LLM `infer_speaker_roles` **未仲裁融合**）。兩份 spec 都把講者身分當既定輸入。**需在 §9 拍板**：L2 仲裁是否納入本次範圍；若不納入，`speak_time_pct` 先一律 None、內容歸屬沿用現況。
+> **依賴已解（Q3 定案）**：L2 講者仲裁納入為 **P3b**（不再是懸空依賴）。`speak_time_pct`（B7/D3）與 speaker_content 內容歸屬（D2）皆吃 P3b 的 canonical speaker map，回填**產生真實值**。
+> **歷史策略（Q4 定案）**：改為「**以舊會議音檔重跑新 pipeline**」而非只回填 text_clean——因為新版含 L1 清理、深度萃取、L2 仲裁全鏈，只補 text_clean 無法產生可比的新版產物。重跑產物存旁路供 A/B，不覆蓋原會議。注意 diarization 非決定性，重轉的講者切分可能與舊版略異，屬已知基準漂移。
 
 ---
 
@@ -238,11 +246,12 @@ C. 共用地基（批判補齊，兩能力共享）
 | 「我不同意→我同意」反轉命題刪除 | 被閘2 擋下 | A |
 | speaker_content 字數 | 80-250 字 thesis-paragraph | B |
 | `anchor_hit_rate`（must_capture_anchors 命中率） | 較 baseline 明顯上升 | B |
-| `specificity_density`（含數字/具名實體單元佔比） | ≥ 0.6 | B |
+| `specificity_density`（含數字/具名實體單元佔比） | 閾值**待實測收斂**（Q5：先量長會議分布再定，非硬編 0.6） | B |
 | `key_quotes` 子字串驗證通過率 | 趨近 100%；假引言被丟棄 | B |
 | per-topic `finish_reason` | 非 MAX_TOKENS、JSON 不截斷 | B |
+| 跨 chunk 同一人歸併正確率 / over-merge 數 | 正確率高、over-merge=0 | D |
 
-> **eval 變因隔離（gap）**：baseline(raw) ↔ new(clean) 的對照會把「clean vs raw」與「新舊 prompt」兩變因混在一起。**anchor_hit_rate 對照只在同時具 text_clean 的樣本上做**，否則對照失去意義（見 §9 歷史回填拍板）。
+> **eval 變因（Q4 定案處理）**：改以「同一舊會議**音檔重跑**新 pipeline」做舊版↔新版 A/B，兩版吃同一音檔源 → 對照有意義（不再是 clean-only 樣本子集的偏誤對照）。已知限制：diarization 非決定性，重轉的講者切分可能與舊版略異，屬基準漂移；數字對照以 `anchor_hit_rate`/`specificity_density` 為主、輔以人工。
 
 ### 7.3 必測清單（含批判補齊的跨層測試）
 
@@ -271,25 +280,29 @@ C. 共用地基（批判補齊，兩能力共享）
 | **L1 靜默退化為 no-op** | 嚴格 token 清單 + 0.6 閘 → 全 fallback、零效益且無訊號 | `cleaning_coverage` 指標 + 告警（P2 必含） |
 | **中英夾雜盲區** | 閘2 全中文，英文 not/no/maybe/actually 反轉不被擋 | §8 標已知地板；可選加英文清單 |
 | **key_quotes 過嚴** | 移標點/助詞後連續子字串過嚴 → 真 quote 大量被丟、key_quotes 稀疏 | 對 text_clean（非 raw）驗證 + 正規化寬鬆化（去標點/全半形） |
-| **specificity 重生誤觸發** | 短會/閒聊真低內容也觸發，無效花費 | 預設關閉或設「一次上限」+ 會議長度門檻 |
+| **specificity 重生誤觸發** | 短會/閒聊真低內容也觸發，無效花費 | Q5：重生**預設關閉**，先實測分布規劃收斂機制，再決定是否啟用/閾值/會議長度門檻 |
+| **L2 over-merge 不可逆（新增，Q3 納入）** | 把兩人併一人 → 發言張冠李戴、汙染待辦歸屬且不可逆 | 聲學為主、預設不合併、門檻先量測（30s overlap 錨點）；over-split 只是標籤冗餘可修 |
 | **遷移可逆性僅 schema 層** | 血緣不可逆：摘要/embedding 已基於 text_clean 落庫後，回退欄位不回退衍生產物 | embedding 雙索引並存；回填 job 可重跑；重要節點快照 |
 | **file:line 錨點不可靠** | spec 行號可能來自不同修訂版；照行號盲改會改錯程式碼 | **P0 強制以符號重新定位每個錨點** |
-| **成本/延遲上升** | 每會議多 clean batch + needs_split 遞迴 Pass1 + 可選重生；冪等卡榫只擋 retry storm 擋不住基準呼叫量 | C6 給每會議呼叫數上界 + 成本估算（見 §9 拍板） |
+| **成本/延遲上升** | 每會議多 clean batch + needs_split 遞迴 Pass1 + L2 仲裁 + 可選重生；冪等卡榫只擋 retry storm 擋不住基準呼叫量 | Q5：上界**先寬**，先實測單一長會議實際呼叫數（含 needs_split 遞迴 + L2）再定 C6 上界 |
 
 ---
 
-## 9. 待人類拍板問題
+## 9. 已拍板決策（2026-07-10）
 
-> [!IMPORTANT] 待確認（一次最多 5 題）
+> [!IMPORTANT] 5 題已由使用者回答，決策如下並已傳播進本文各節。
 
-1. **key_quotes 驗證基準**：確認採「quote 是 text_clean 的連續子字串」（靠 text_clean⊆base⊆raw 子序列傳遞），而非直接對 raw 連續子字串驗證？（本文採前者，因後者在 deletion-only 後必然大量誤丟合法 quote——conflict #1 最尖銳。）
-2. **verify_edit 子序列參照文本**：確認以「glossary 修正後文本(base)」為基準，而非 raw？（因 glossary 改字，若對 raw 驗證閘1 全數 reject 走全域 fallback——conflict #3。）
-3. **L2 講者仲裁是否納入本次範圍**：speaker_content 內容歸屬與 speak_time_pct Python 回填都依賴它（現況 cosine 0.65 vs LLM 未仲裁融合）。若不納入，speak_time_pct 先一律 None、內容歸屬沿用現況？
-4. **歷史資料策略**：是否回填舊會議 text_clean 並重建 embedding？還是新會議才生效、eval 只在同時具 clean 的樣本對照（避免混淆「clean vs raw」與「新舊 prompt」兩變因）？
-5. **成本上界與 specificity 重生開關**：每會議可接受 LLM 呼叫數上界為何（clean batch + needs_split 遞迴 + 可選重生）？specificity_density 低於閾值的「一次上限重生」預設開或關（短會誤觸發風險）？
+| # | 問題 | 決策 | 已更新章節 |
+|---|---|---|---|
+| 1 | key_quotes 驗證基準 | **採「quote 是 text_clean 的連續子字串」**（靠 text_clean⊆base⊆raw 傳遞），不對 raw 直接驗 | §3.2、§4、§5 B8、§7.3 |
+| 2 | verify_edit 子序列參照 | **以 base（glossary 修正後）為基準**，非 raw | §4.2 閘1、§4.3、§9-A6 |
+| 3 | L2 講者仲裁 | **納入本次範圍** → 新增能力群 **D** + Phase **P3b**；`speak_time_pct`/內容歸屬吃 canonical map、**產生真實值** | §1.1、§3.1 D、§5 B7、§6 P3b/P8 |
+| 4 | 歷史資料策略 | **以舊會議音檔重跑新 pipeline**，產生新版產物做「舊版↔新版」A/B（非只回填 text_clean）| §3.1 C5、§6 P9、§7.2 |
+| 5 | 成本上界 / specificity 重生 | 上界**先寬**、先實測單一長會議呼叫數再定；`specificity_density` **規劃收斂機制**（先量分布）再定閾值，重生**預設關閉** | §3.1 C6、§5 B10、§7.2、§8 |
 
 ### 下一步
 
-- 拍板上述 5 題後，先做 **P0 共用地基**（正規化 util + fixture + 以符號重定位錨點），這是兩道護欄判準一致的前提。
-- **P1 alembic text_clean 進 worktree** 落地驗證（全案硬前置，raw 不可變、可逆設計）。
-- 依 §6 順序推進，嚴守「A 是 B 前置」與「needs_split 遞迴先於移硬截」兩條依賴紅線。
+- 先做 **P0 共用地基**（正規化 util + fixture + 以符號重定位錨點），並**埋 Q5 的量測探針**（呼叫數、specificity_density 分布）。
+- **P1 alembic `text_clean` 進 worktree**（全案硬前置，raw 不可變、可逆）。
+- 依 §6 順序推進，嚴守三條依賴紅線：**A 是 B 前置**、**P3b(L2) 先於 P8 回填**、**needs_split 遞迴(P5) 先於移硬截(P6)**。
+- 用 P0/P2 探針的實測數據，回填 C6 呼叫數上界與 specificity 收斂閾值（Q5）。
