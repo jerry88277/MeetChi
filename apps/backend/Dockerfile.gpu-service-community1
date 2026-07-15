@@ -144,6 +144,7 @@ ENV PYANNOTE_MODEL_PATH=/app/models/pyannote/speaker-diarization-community-1
 # Copy service files
 COPY app/offline_asr.py app/offline_asr.py
 COPY app/offline_asr_community1.py app/offline_asr_community1.py
+COPY app/spectral_gate.py app/spectral_gate.py
 COPY app/diarization_community1.py app/diarization_community1.py
 COPY app/models.py app/models.py
 COPY app/__init__.py app/__init__.py

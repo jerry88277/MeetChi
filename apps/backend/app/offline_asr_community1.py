@@ -122,10 +122,31 @@ class BreezeASRCommunity1Provider(OfflineASRProvider):
         if language and language.startswith("zh-"):
             language = "zh"
 
+        # --- Step 0 (optional): Pre-Whisper 頻譜 Gate（幻覺抑制訊號層）---
+        # 會議「開頭」的多人交談/會前閒聊屬遠場、悶、低頻主導的 murmur，Whisper 會
+        # 強解成連鎖幻覺。ENABLE_SPECTRAL_GATE 開啟時，於進 Whisper 前把此類低分區
+        # 遮成靜音（mask-not-delete，時間軸不變），交由 VAD 自然跳過。
+        # 研究/驗證：docs/research/uat03_hallucination_analysis/。
+        asr_input = audio_path
+        if os.getenv("ENABLE_SPECTRAL_GATE", "false").lower() in ("1", "true", "yes"):
+            try:
+                import whisperx
+                from app.spectral_gate import apply_gate, SR as _SGATE_SR
+                _audio = whisperx.load_audio(audio_path)
+                _masked, _gres = apply_gate(_audio, _SGATE_SR)
+                asr_input = _masked  # faster-whisper 接受 16k mono float32 numpy
+                logger.info(
+                    f"[Community1] SpectralGate applied: gated_frac={_gres.gated_frac:.2f}, "
+                    f"real_onset={_gres.real_onset_s}, spans={len(_gres.spans)}"
+                )
+            except Exception as _e:
+                logger.warning(f"[Community1] SpectralGate failed, using original audio: {_e}")
+                asr_input = audio_path
+
         # --- Step 1: CTranslate2 Transcription ---
         logger.info(f"[Community1] Step 1/3: Transcribing {audio_path}")
         segments_iter, info = self._model.transcribe(
-            audio_path,
+            asr_input,
             language=language,
             beam_size=self.config.beam_size,
             vad_filter=self.config.vad_filter,
