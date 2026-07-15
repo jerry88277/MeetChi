@@ -8,6 +8,25 @@ from app import lid_router
 from app.lid_router import select_taiwanese, classify_spans, _clip, SR, LID_MIN_CLIP_S
 
 
+@pytest.fixture(autouse=True)
+def _open_set(monkeypatch):
+    """多數單元測試針對開集路由邏輯；預設關閉閉集，個別測試自行開啟。"""
+    monkeypatch.setattr(lid_router, "LID_ALLOWED_LANGS", [])
+
+
+def test_select_taiwanese_closed_set_uses_renorm_nan_prob(monkeypatch):
+    """閉集模式：以重正規化後 nan 機率(nan_prob_cs) 或 top-1 路由。"""
+    monkeypatch.setattr(lid_router, "LID_ALLOWED_LANGS", ["cmn", "nan", "eng"])
+    lid = [
+        {"top_lang": "cmn", "top_prob": 0.7, "nan_prob": 0.1, "nan_prob_cs": 0.42, "top3": []},  # cs>=0.35 -> route
+        {"top_lang": "cmn", "top_prob": 0.95, "nan_prob": 0.02, "nan_prob_cs": 0.05, "top3": []},  # low -> keep
+        {"top_lang": "nan", "top_prob": 0.55, "nan_prob": 0.3, "nan_prob_cs": 0.55, "top3": []},  # top1 nan -> route
+    ]
+    assert select_taiwanese(lid, cs_nan_prob=0.35) == [0, 2]
+    # 提高門檻，第0段被排除（但第2段 top1=nan 仍路由）
+    assert select_taiwanese(lid, cs_nan_prob=0.5) == [2]
+
+
 def test_select_taiwanese_routes_nan_above_threshold():
     lid = [
         {"top_lang": "cmn", "top_prob": 0.98, "nan_prob": 0.01, "top3": [("cmn", 0.98)]},

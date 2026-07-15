@@ -42,6 +42,15 @@ LID_MIN_CLIP_S = float(os.getenv("LID_MIN_CLIP_S", "1.0"))
 # 送入 LID 的每段最長秒數（截斷，控記憶體/延遲；語言判斷不需整段）
 LID_MAX_CLIP_S = float(os.getenv("LID_MAX_CLIP_S", "10.0"))
 LID_BATCH = int(os.getenv("LID_BATCH", "8"))
+# 閉集重正規化：把 MMS-LID 機率遮罩到「這場會議可能出現的語言」再重算 argmax/top-k。
+# 第一性原理：softmax 攤在 4017 類，台語(nan)機率被近親漢語(cmn/yue/hak/wuu…)稀釋；
+# 限縮到 {cmn,nan,eng} 後 nan 只需和華語一對一比，直接解稀釋 root cause。
+# 逗號分隔 ISO 639-3；空字串＝停用（維持全 4017 類）。
+LID_ALLOWED_LANGS = [
+    x.strip() for x in os.getenv("LID_ALLOWED_LANGS", "cmn,nan,eng").split(",") if x.strip()
+]
+# 閉集模式下的 nan 路由門檻（重正規化後機率）。需以實測校準；預設 0.35 為起點。
+LID_CS_NAN_PROB = float(os.getenv("LID_CS_NAN_PROB", "0.35"))
 SR = 16000
 
 _lid_model = None
@@ -110,6 +119,14 @@ def classify_spans(
     label2id = {v: k for k, v in id2label.items()}
     nan_ids = [label2id[l] for l in TAIWANESE_LANGS if l in label2id]
 
+    # 閉集重正規化：預先算允許類的索引（保留原始 id2label 以利診斷 nan_prob）
+    allowed_ids = [label2id[l] for l in LID_ALLOWED_LANGS if l in label2id]
+    if LID_ALLOWED_LANGS and not allowed_ids:
+        logger.warning("[LID] LID_ALLOWED_LANGS=%s 皆不在模型標籤中，停用閉集", LID_ALLOWED_LANGS)
+    use_closed_set = bool(allowed_ids)
+    if use_closed_set:
+        logger.info("[LID] closed-set renormalization on: %s", LID_ALLOWED_LANGS)
+
     nan_prob_summary = []
     for b in range(0, len(clips), LID_BATCH):
         batch = clips[b:b + LID_BATCH]
@@ -119,28 +136,42 @@ def classify_spans(
         with torch.no_grad():
             logits = model(**inputs).logits
         probs = torch.softmax(logits, dim=-1)
+        # 閉集：把非允許類的機率歸零後 renormalize，argmax/top-k 只在允許類間比較。
+        # nan_prob 仍以「全 4017 類」的原始機率回報，作為未受閉集影響的診斷值。
+        full_probs = probs
+        if use_closed_set:
+            mask = torch.zeros_like(probs)
+            mask[:, allowed_ids] = 1.0
+            probs = probs * mask
+            probs = probs / (probs.sum(dim=-1, keepdim=True) + 1e-9)
         top_p, top_i = probs.max(dim=-1)
         topk_p, topk_i = torch.topk(probs, k=min(5, probs.shape[-1]), dim=-1)
         for j, orig_i in enumerate(idxs):
             top_lang = id2label[int(top_i[j].item())]
             top_prob = float(top_p[j].item())
-            nan_prob = max((float(probs[j, nid].item()) for nid in nan_ids), default=0.0)
+            nan_prob = max((float(full_probs[j, nid].item()) for nid in nan_ids), default=0.0)
+            nan_prob_cs = max((float(probs[j, nid].item()) for nid in nan_ids), default=0.0)
             topk = [(id2label[int(topk_i[j, r].item())], round(float(topk_p[j, r].item()), 3))
                     for r in range(topk_i.shape[-1])]
             results[orig_i] = {"top_lang": top_lang, "top_prob": top_prob,
-                               "nan_prob": nan_prob, "top3": topk[:3], "topk": topk}
+                               "nan_prob": nan_prob, "nan_prob_cs": nan_prob_cs,
+                               "top3": topk[:3], "topk": topk}
             nan_prob_summary.append(nan_prob)
 
     # recall 診斷摘要
     if nan_prob_summary:
         import numpy as _np
         arr = _np.array(nan_prob_summary)
+        arr_cs = _np.array([r.get("nan_prob_cs", 0.0) for r in results if r])
         logger.info(
-            "[LID] nan_prob over %d segs: max=%.3f mean=%.3f p90=%.3f | "
-            "#(nan in top3)=%d #(nan_prob>=0.3)=%d #(nan_prob>=0.15)=%d",
+            "[LID] nan_prob(open) over %d segs: max=%.3f mean=%.3f p90=%.3f | "
+            "#(nan in top3)=%d #(open>=0.3)=%d | "
+            "nan_prob_cs(closed): max=%.3f mean=%.3f #(cs>=0.5)=%d #(cs>=0.35)=%d #(cs>=0.2)=%d",
             len(arr), arr.max(), arr.mean(), float(_np.percentile(arr, 90)),
             sum(1 for r in results if r and any(l in TAIWANESE_LANGS for l, _ in r["top3"])),
-            int((arr >= 0.3).sum()), int((arr >= 0.15).sum()),
+            int((arr >= 0.3).sum()),
+            arr_cs.max(), arr_cs.mean(),
+            int((arr_cs >= 0.5).sum()), int((arr_cs >= 0.35).sum()), int((arr_cs >= 0.2).sum()),
         )
 
     return results
@@ -151,20 +182,28 @@ def select_taiwanese(
     min_prob: float = None,
     tw_prob_floor: float = None,
     tw_topk: int = None,
+    cs_nan_prob: float = None,
 ) -> List[int]:
     """回傳應路由到 Breeze-26 的段落 index。
 
-    三條路徑（OR）：
-      1. top-1 判為台語且機率 ≥ min_prob（高精準）。
-      2. nan 出現在前 tw_topk 名（主 recall 來源；實測 58% recall / 0.6% 華語誤判）。
-      3. nan 絕對機率 ≥ tw_prob_floor（備援，預設停用）。
+    分兩種模式：
+    - **閉集模式**（LID_ALLOWED_LANGS 已設）：機率經重正規化、nan 與華語公平競爭，
+      故用「重正規化後 nan 機率 ≥ cs_nan_prob」或「top-1＝台語」路由。
+      （閉集下 top-k 成員判準會因類別數少而恆真，不適用。）
+    - **開集模式**（停用閉集）：沿用舊三路徑 OR：top-1 min_prob / nan∈top-k / 絕對 floor。
     """
     min_prob = LID_MIN_PROB if min_prob is None else min_prob
     tw_prob_floor = LID_TW_PROB_FLOOR if tw_prob_floor is None else tw_prob_floor
     tw_topk = LID_TW_TOPK if tw_topk is None else tw_topk
+    cs_nan_prob = LID_CS_NAN_PROB if cs_nan_prob is None else cs_nan_prob
+    closed = bool(LID_ALLOWED_LANGS)
     out = []
     for i, r in enumerate(lid_results):
         if not r:
+            continue
+        if closed:
+            if r.get("nan_prob_cs", 0.0) >= cs_nan_prob or r["top_lang"] in TAIWANESE_LANGS:
+                out.append(i)
             continue
         if r["top_lang"] in TAIWANESE_LANGS and r["top_prob"] >= min_prob:
             out.append(i)
