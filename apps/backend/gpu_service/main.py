@@ -275,6 +275,101 @@ async def _retranscribe_low_confidence(result, audio_path: str):
     return result
 
 
+# 台語路由策略：lid（MMS-LID 語言辨識，預設）｜ confidence（舊 avg_logprob 代理）
+TAIWANESE_ROUTING = os.getenv("TAIWANESE_ROUTING", "lid").lower()
+
+
+async def _retranscribe_taiwanese_lid(result, audio_path: str):
+    """
+    zh-nan 模式的後處理（LID 路由版）。
+
+    以 facebook/mms-lid-4017 對每個 ASR-25 段落做語言辨識，判為台語（nan）的段落才
+    以 Breeze-ASR-26 重轉，其餘維持 Breeze-25。相較舊「低信心」代理，改用真正的語言
+    辨識做路由，減少誤判與漏判。
+
+    效能：整段音檔一次載入為 numpy，於記憶體切片批次跑 LID；只有台語段落做重轉。
+    """
+    from app.offline_asr import ASRSegment
+    from app import lid_router
+
+    if not result.segments:
+        return result
+
+    # 1) 載入整段音檔（16k mono numpy），一次即可
+    try:
+        import whisperx
+        audio = whisperx.load_audio(audio_path)
+    except Exception as e:
+        logger.warning(f"[LID] load_audio failed, skip Taiwanese routing: {e}")
+        return result
+
+    spans = [(s.start, s.end) for s in result.segments]
+
+    # 2) 逐段語言辨識
+    try:
+        lid_results = await asyncio.to_thread(lid_router.classify_spans, audio, spans, lid_router.SR)
+    except Exception as e:
+        logger.warning(f"[LID] classification failed, skip Taiwanese routing: {e}")
+        return result
+
+    tw_indices = lid_router.select_taiwanese(lid_results)
+    logger.info(
+        f"[LID] {len(tw_indices)}/{len(result.segments)} segments detected Taiwanese "
+        f"({sorted(lid_router.TAIWANESE_LANGS)}, min_prob={lid_router.LID_MIN_PROB}); "
+        f"re-transcribing with Breeze-ASR-26"
+    )
+    if not tw_indices:
+        return result
+
+    # 3) 載入 Breeze-26
+    try:
+        model = await asyncio.to_thread(_load_asr26_model)
+    except Exception as e:
+        logger.warning(f"[LID] Failed to load Breeze-26, skip: {e}")
+        return result
+
+    replaced = 0
+    for idx in tw_indices:
+        seg = result.segments[idx]
+        try:
+            i0 = max(0, int(round(seg.start * lid_router.SR)))
+            i1 = min(len(audio), int(round(seg.end * lid_router.SR)))
+            if i1 - i0 < int(0.5 * lid_router.SR):
+                continue
+            clip = audio[i0:i1].astype("float32")
+
+            segments_iter, _info = await asyncio.to_thread(
+                lambda: model.transcribe(
+                    clip, language="zh", beam_size=5,
+                    vad_filter=False, word_timestamps=True,
+                )
+            )
+            asr26 = list(segments_iter)
+            if not asr26:
+                continue
+            new_text = " ".join(s.text.strip() for s in asr26 if s.text.strip())
+            if not new_text:
+                continue
+            lang, prob = lid_results[idx]["top_lang"], lid_results[idx]["top_prob"]
+            result.segments[idx] = ASRSegment(
+                start=seg.start, end=seg.end, text=new_text,
+                speaker=seg.speaker,
+                confidence=sum(getattr(s, "avg_logprob", 0) for s in asr26) / len(asr26),
+                language="nan", words=seg.words,
+            )
+            replaced += 1
+            logger.debug(
+                f"[LID] seg {idx} lang={lang}({prob:.2f}) "
+                f"'{seg.text[:24]}' -> '{new_text[:24]}'"
+            )
+        except Exception as e:
+            logger.warning(f"[LID] re-transcribe seg {idx} failed: {e}")
+            continue
+
+    logger.info(f"[LID] Taiwanese re-transcription complete: replaced {replaced}/{len(tw_indices)}")
+    return result
+
+
 def _denoise_audio(audio_path: str, work_dir: Optional[str]) -> Optional[str]:
     """保守式降噪：highpass + 溫和 afftdn + loudnorm。回傳新檔路徑；失敗回 None（用原檔）。
 
@@ -411,10 +506,14 @@ async def _run_asr_processing(request: ASRRefineRequest, start_time: float) -> A
             initial_prompt=request.initial_prompt or "",
         )
 
-        # Plan B: Low-confidence re-transcription with Breeze-ASR-26 (Taiwanese)
+        # Plan B: Taiwanese re-transcription with Breeze-ASR-26
         # Only when language="zh-nan" (國台英混合 mode selected by user)
+        # TAIWANESE_ROUTING=lid（MMS-LID 語言辨識，預設）｜ confidence（舊 avg_logprob 代理）
         if request.language == "zh-nan" and result.segments:
-            result = await _retranscribe_low_confidence(result, audio_path)
+            if TAIWANESE_ROUTING == "confidence":
+                result = await _retranscribe_low_confidence(result, audio_path)
+            else:
+                result = await _retranscribe_taiwanese_lid(result, audio_path)
 
         if not result.segments:
             logger.warning(f"[ASR Refine] Empty result for {meeting_id}")

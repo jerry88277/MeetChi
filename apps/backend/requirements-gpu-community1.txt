@@ -17,6 +17,10 @@ faster-whisper>=1.0.0
 # community-1 uses pyannote v4.0 directly, bypassing whisperx.DiarizationPipeline
 whisperx>=3.1.0
 
+# Transformers — required for MMS-LID (facebook/mms-lid-4017) 台語語言辨識路由。
+# whisperx 已間接安裝，此處顯式聲明下界（MMS 需 >=4.30）。
+transformers>=4.30.0
+
 # Speaker Diarization — UPGRADED to v4.0 for community-1 model
 # WARNING: pyannote.audio 4.0 API changes:
 #   - Removed: use_auth_token parameter (use token= or session login)

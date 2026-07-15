@@ -105,8 +105,12 @@ RUN pip install --no-cache-dir --no-deps "faster-whisper>=1.0.0" && \
 
 # Stage 4: Install WhisperX with --no-deps to prevent upgrading torch/lightning
 # Then install whisperx runtime deps that aren't already present
+# transformers：whisperx wav2vec2 對齊 + MMS-LID(facebook/mms-lid-4017) 台語路由所需。
+# 不 --no-deps 讓其輕量依賴（huggingface_hub/safetensors/regex 等）到位；transformers
+# 不會在 torch 已存在時重裝 torch，故不影響 torch 2.5.x 斷言。
 RUN pip install --no-cache-dir --no-deps "whisperx>=3.1.0" && \
     pip install --no-cache-dir \
+    "transformers>=4.30.0,<5" \
     "nltk>=3.8.0" \
     "pandas>=2.0.0" || true
 
@@ -125,6 +129,9 @@ print(f'[community1] lightning=={lightning.__version__}'); \
 assert torch.__version__.startswith('2.5'), f'torch must be 2.5.x, got {torch.__version__}'; \
 lv = tuple(int(x) for x in lightning.__version__.split('.')[:2]); \
 assert lv < (2, 4), f'lightning must be <2.4, got {lightning.__version__}'; \
+import transformers; \
+from transformers import Wav2Vec2ForSequenceClassification, AutoFeatureExtractor; \
+print(f'[community1] transformers=={transformers.__version__}'); \
 print('[community1] version assertions PASSED')"
 
 # Fix: libctranslate2 executable stack issue on Cloud Run GPU (glibc >= 2.41)
@@ -145,6 +152,7 @@ ENV PYANNOTE_MODEL_PATH=/app/models/pyannote/speaker-diarization-community-1
 COPY app/offline_asr.py app/offline_asr.py
 COPY app/offline_asr_community1.py app/offline_asr_community1.py
 COPY app/spectral_gate.py app/spectral_gate.py
+COPY app/lid_router.py app/lid_router.py
 COPY app/diarization_community1.py app/diarization_community1.py
 COPY app/models.py app/models.py
 COPY app/__init__.py app/__init__.py
